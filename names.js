@@ -30,8 +30,9 @@ const Names = {
   },
 
   // What typed text means: one known player, a choice between several who
-  // share that first name (a bare name saved on its own included), or a new player. Prefixes never resolve on their own,
-  // so a new "Jo" is not silently turned into "Jose".
+  // share that first name (including someone saved under just that name), or
+  // a new player. Prefixes never resolve on their own, so a new "Jo" is not
+  // silently turned into "Jose".
   resolve(query, people) {
     const q = Names.norm(query);
     if (!q) return { fresh: '' };
