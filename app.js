@@ -53,8 +53,9 @@ const ready = () => {
   const court = state.game.onCourt;
   return court.length > 0 && court.every(c => c.team) && ['home', 'away'].every(t => court.some(c => c.team === t));
 };
-const cleanName = raw => raw.trim().replace(/\s+/g, ' ').slice(0, 60);
+const cleanName = Names.clean;
 const profileOf = name => profiles.get(name.toLowerCase());
+const playerNamed = name => state.players.find(p => p.name.toLowerCase() === name.toLowerCase());
 const avgText = name => {
   if (db !== 'online') return '';
   const p = profileOf(name);
@@ -141,7 +142,7 @@ async function sync() {
 function checkIn(raw) {
   const typed = cleanName(raw);
   if (!typed) return;
-  const p = state.players.find(p => p.name.toLowerCase() === typed.toLowerCase());
+  const p = playerNamed(typed);
   if (p?.present) return flash(`${p.name} is already checked in.`);
   if (p) { p.present = true; flash(`${p.name} is back, same place in line.`); }
   else {
@@ -150,6 +151,78 @@ function checkIn(raw) {
     flash(`${name} checked in.`);
   }
   commit();
+}
+
+// ---- name autosuggest (check-in and tonight's list) ----
+
+let editingList = !state.expected.length; // page only, not saved
+let needsChoice = []; // pasted names that match several players: { query, choices }
+
+const onList = name => state.expected.some(n => n.toLowerCase() === name.toLowerCase());
+function addToList(name) { if (name && !onList(name)) state.expected.push(name); }
+
+// Everyone the app knows: the database, tonight's list and tonight's players.
+function knownPeople() {
+  const people = new Map([...profiles.values()].map(p => [p.name.toLowerCase(), { ...p }]));
+  for (const name of [...state.expected, ...state.players.map(p => p.name)]) {
+    const key = name.toLowerCase();
+    people.set(key, { ...(people.get(key) ?? { name, games: 0 }), priority: onList(name), here: !!playerNamed(name)?.present });
+  }
+  return [...people.values()];
+}
+
+// An ARIA combobox over Names.suggest. pick(name) gets a resolved full name;
+// say(text) explains why Enter did nothing.
+function autosuggest(input, list, pick, say) {
+  let items = [], hi = -1;
+  const close = () => {
+    list.hidden = true;
+    hi = -1;
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
+  };
+  const draw = () => {
+    const q = input.value, people = knownPeople();
+    items = Names.suggest(q, people).map(p => ({
+      name: p.name,
+      label: [p.here && 'CHECKED IN', p.priority && 'TONIGHT', avgText(p.name)].filter(Boolean).join(' · '),
+    }));
+    if (cleanName(q) && !Names.resolve(q, people).name) items.push({ name: cleanName(q), label: 'NEW PLAYER' });
+    hi = Math.min(hi, items.length - 1);
+    list.innerHTML = items.map((it, i) => `<li role="option" id="${list.id}-${i}" data-i="${i}" aria-selected="${i === hi}">
+        <b>${esc(it.name)}</b><span class="mono">${it.label}</span></li>`).join('');
+    list.hidden = !items.length;
+    input.setAttribute('aria-expanded', String(!list.hidden));
+    if (hi >= 0) input.setAttribute('aria-activedescendant', `${list.id}-${hi}`);
+    else input.removeAttribute('aria-activedescendant');
+  };
+  const choose = name => { input.value = ''; close(); say(''); pick(name); };
+  const enter = () => {
+    if (hi >= 0) return choose(items[hi].name);
+    const r = Names.resolve(input.value, knownPeople());
+    if (r.name) return choose(r.name);
+    if (r.choices) { draw(); return say(`${r.choices.length} players are called ${r.choices[0].split(' ')[0]}. Pick one.`); }
+    if (!r.fresh) return;
+    if (items.length > 1) { draw(); return say('Pick a suggestion, or New player to add someone new.'); }
+    choose(r.fresh);
+  };
+  input.addEventListener('input', () => { hi = -1; say(''); draw(); });
+  input.addEventListener('blur', close);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (list.hidden) draw();
+      if (!items.length) return;
+      hi = e.key === 'ArrowDown' ? (hi + 1) % items.length : hi <= 0 ? items.length - 1 : hi - 1;
+      draw();
+    } else if (e.key === 'Escape') close();
+    else if (e.key === 'Enter') { e.preventDefault(); enter(); }
+  });
+  list.addEventListener('mousedown', e => {
+    const li = e.target.closest('[data-i]');
+    if (li) { e.preventDefault(); choose(items[li.dataset.i].name); }
+  });
+  return { enter };
 }
 
 // ---- actions (each click handler; return false to skip saving) ----
@@ -162,6 +235,18 @@ const actions = {
   out: name => { player(name).present = false; },
   back: name => { player(name).present = true; },
   checkIn: name => { checkIn(name); return false; },
+  removeName: name => { state.expected = state.expected.filter(n => n !== name); },
+  choose: (name, query) => { needsChoice = needsChoice.filter(c => c.query !== query); addToList(name); },
+  editList: () => { editingList = true; setTimeout(() => $('listAdd').focus()); },
+  doneList() {
+    editingList = false;
+    if (state.expected.length) api('/api/players', { names: state.expected }).catch(() => {}).then(render);
+  },
+  pasteList() {
+    $('pasteDlg').returnValue = '';
+    $('pasteDlg').showModal();
+    return false;
+  },
   points: (name, n) => { const c = seatOf(name); c.points = Math.max(0, c.points + Number(n)); },
 
   startPause() {
@@ -208,20 +293,30 @@ document.addEventListener('click', e => {
   if (b && actions[b.dataset.action](b.dataset.name, b.dataset.arg) !== false) commit();
 });
 
-$('checkin').onsubmit = e => {
-  e.preventDefault();
-  checkIn($('name').value);
-  $('name').value = '';
-};
+const checkInBox = autosuggest($('name'), $('nameSug'), checkIn, flash);
+$('checkin').onsubmit = e => { e.preventDefault(); checkInBox.enter(); };
 
-// Tonight's list: one name per line. Saved when the box loses focus, so a paste posts once.
-$('tonight').onchange = e => {
-  const seen = new Set();
-  state.expected = e.target.value.split('\n').map(cleanName)
-    .filter(n => n && !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()));
+const listSay = text => { $('listMsg').textContent = text; };
+autosuggest($('listAdd'), $('listSug'), name => {
+  if (onList(name)) return listSay(`${name} is already on the list.`);
+  addToList(name);
   commit();
-  if (state.expected.length) api('/api/players', { names: state.expected }).catch(() => {}).then(render);
-};
+}, listSay);
+
+// Paste: each line resolves like typing does; names shared by several players wait for a choice.
+$('pasteDlg').addEventListener('close', () => {
+  if ($('pasteDlg').returnValue !== 'add') return;
+  const people = knownPeople();
+  for (const line of $('pasteText').value.split('\n')) {
+    const r = Names.resolve(line, people);
+    if (r.name || r.fresh) addToList(r.name || r.fresh);
+    else if (r.choices && !needsChoice.some(c => Names.norm(c.query) === Names.norm(line))) {
+      needsChoice.push({ query: cleanName(line), choices: r.choices });
+    }
+  }
+  $('pasteText').value = '';
+  commit();
+});
 
 for (const t of ['home', 'away']) {
   $(t + 'Name').oninput = e => {
@@ -324,12 +419,22 @@ function renderTonight() {
       <td class="act">${btn('checkIn', name, 'Check in', { cls: 's' })}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="2" class="empty">${state.expected.length
-    ? 'Everyone on the list has checked in.' : 'No list yet. Paste this week\'s names below.'}</td></tr>`;
+    ? 'Everyone on the list has checked in.' : 'No list yet. Add this week\'s players above.'}</td></tr>`;
 
-  if (document.activeElement !== $('tonight')) $('tonight').value = state.expected.join('\n');
-  $('tonightCount').textContent = plural(state.expected.length, 'name');
-  $('members').innerHTML = [...new Set([...[...profiles.values()].map(p => p.name), ...state.expected])]
-    .map(n => `<option value="${esc(n)}">`).join('');
+  $('listEditor').hidden = !editingList;
+  $('listFolded').hidden = editingList;
+  $('listCount').textContent = state.expected.length
+    ? `${plural(state.expected.length, 'player')} on tonight's list.` : 'No list tonight.';
+  $('tonightCount').textContent = plural(state.expected.length, 'name').toUpperCase();
+  $('chips').innerHTML = state.expected.map(n => `<li class="chip">${esc(n)}${
+    db === 'online' && !profileOf(n)?.games ? '<span class="mono">NEW</span>' : ''}<button type="button" data-action="removeName"
+      data-name="${esc(n)}" aria-label="Remove ${esc(n)}">&times;</button></li>`).join('');
+  $('choices').innerHTML = needsChoice.map(c => `<div class="notice">
+      <b>${esc(c.query)} matches ${c.choices.length} players. Which one is coming?</b>
+      <div class="btns">${[...c.choices.map(n => btn('choose', n, esc(n), { arg: esc(c.query) })),
+        btn('choose', c.query, 'New player', { arg: esc(c.query) })].join('')}</div>
+    </div>`).join('');
+  $('doneBtn').disabled = needsChoice.length > 0;
 
   const pending = state.unsynced.length;
   $('dbChip').className = `stt ${pending ? 'build' : offline ? 'plan' : 'live'}`;
@@ -392,5 +497,4 @@ setInterval(renderQueue, 15000); // keep wait times current
 
 route();
 render();
-$('tonightBox').open = !state.expected.length;
 sync();

@@ -120,7 +120,30 @@ button.btn:disabled{opacity:.4;cursor:not-allowed}
 .in::placeholder{color:var(--mu)}
 .in:focus{outline:2px solid var(--ink);outline-offset:3px}
 .checkin{display:flex;gap:12px;flex-wrap:wrap}
-.checkin .in{flex:1 1 240px}
+.checkin .combo{flex:1 1 240px}
+.combo{position:relative;min-width:0}
+.combo .in{width:100%}
+.sug{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:30;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px}
+.sug li{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer}
+.sug li b{color:var(--ink);font-weight:600}
+.sug li .mono{font-size:12px;letter-spacing:.06em;text-align:right}
+.sug li[aria-selected="true"],.sug li:hover{background:var(--panel)}
+.listline{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--ink)}
+.btns.left{justify-content:flex-start}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--faint);border-radius:6px;padding:3px 3px 3px 10px;font-size:15px;color:var(--ink)}
+.chip .mono{font-size:11px;letter-spacing:.06em}
+.chip button{border:0;background:none;color:var(--mu);cursor:pointer;font:inherit;font-size:18px;line-height:1;width:30px;height:30px;border-radius:5px}
+.chip button:hover{color:var(--ink);background:var(--panel)}
+#listMsg:empty{display:none}
+#choices{display:flex;flex-direction:column;gap:12px}
+#choices:empty{display:none}
+.notice .btns{margin-top:12px;justify-content:flex-start}
+dialog{background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:14px;padding:28px;width:min(520px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+dialog h3{font-family:var(--serif);font-weight:400;font-size:28px;line-height:1.1}
+dialog form{display:flex;flex-direction:column;gap:12px}
+dialog textarea.in{width:100%;min-height:12em;resize:vertical}
 td.n{font-family:var(--serif);color:var(--mu);font-size:20px;width:44px;line-height:1.3}
 td.r,th.r{text-align:right}
 td.act{text-align:right}
@@ -132,7 +155,6 @@ td.empty{color:var(--mu)}
 .seg .btn:first-child{border-radius:8px 0 0 8px}
 .seg .btn:last-child{border-radius:0 8px 8px 0}
 .seg .btn.o + .btn.o{border-left:0}
-.c textarea.in{width:100%;min-height:10em;resize:vertical;margin-top:12px}
 
 /* Scoreboard: two score cards around an inverted clock tile, then the players. */
 #board{gap:28px}
@@ -215,10 +237,13 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
       </div>
       <div class="wide">
         <form class="checkin" id="checkin">
-          <input class="in" id="name" list="members" autocomplete="off" maxlength="60" placeholder="Player name" aria-label="Player name">
+          <div class="combo">
+            <input class="in" id="name" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="nameSug"
+              autocomplete="off" maxlength="60" placeholder="First name is enough" aria-label="Player name">
+            <ul class="sug" id="nameSug" role="listbox" aria-label="Matching players" hidden></ul>
+          </div>
           <button class="btn">Check in</button>
         </form>
-        <datalist id="members"></datalist>
         <p class="note" id="msg" role="status" style="margin-top:12px;max-width:none"></p>
       </div>
     </section>
@@ -228,14 +253,30 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
         <h2>Expected tonight.</h2>
         <p id="expectedIntro"></p>
       </div>
+      <div class="wide listline" id="listFolded">
+        <span id="listCount"></span>
+        <button class="btn o s" data-action="editList">Edit list</button>
+      </div>
+      <div class="wide c" id="listEditor">
+        <header><h3>Tonight's list</h3><span class="mono" id="tonightCount"></span></header>
+        <p class="tl">Add players by first name. Suggestions come from the database.</p>
+        <div class="combo">
+          <input class="in" id="listAdd" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="listSug"
+            autocomplete="off" maxlength="60" placeholder="Add a player" aria-label="Add a player to tonight's list">
+          <ul class="sug" id="listSug" role="listbox" aria-label="Matching players" hidden></ul>
+        </div>
+        <p class="note" id="listMsg" role="status"></p>
+        <div id="choices"></div>
+        <ul class="chips" id="chips" aria-label="Players on tonight's list"></ul>
+        <div class="btns left">
+          <button class="btn o s" data-action="pasteList">Paste a list</button>
+          <button class="btn s" data-action="doneList" id="doneBtn">Done</button>
+        </div>
+      </div>
       <div class="wide tw">
         <table>
           <tbody id="expected"></tbody>
         </table>
-        <details class="dd" id="tonightBox" style="margin-top:16px">
-          <summary>Tonight's list <span class="mono" id="tonightCount"></span></summary>
-          <textarea class="in" id="tonight" placeholder="Paste this week's names, one per line" aria-label="Tonight's list"></textarea>
-        </details>
       </div>
     </section>
 
@@ -332,7 +373,20 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
   </div>
 </main>
 
+<dialog id="pasteDlg" aria-labelledby="pasteTitle">
+  <form method="dialog">
+    <h3 id="pasteTitle">Paste a list</h3>
+    <p class="tl">One name per line. A first name is enough for anyone already in the database.</p>
+    <textarea class="in" id="pasteText" aria-label="Names, one per line"></textarea>
+    <div class="btns left">
+      <button class="btn o s" value="cancel">Cancel</button>
+      <button class="btn s" value="add">Add names</button>
+    </div>
+  </form>
+</dialog>
+
 <script src="queue.js"></script>
+<script src="names.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -11,7 +11,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-STATIC = {'/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js', '/queue.js': 'queue.js'}
+STATIC = {'/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js', '/queue.js': 'queue.js',
+          '/names.js': 'names.js'}
 TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8'}
 MAX_NAME = 60
 MAX_POINTS = 200

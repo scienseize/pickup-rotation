@@ -181,9 +181,12 @@ Design choices:
 9. **Out / Back.** Toggle a player's `present` flag from the waiting list.
 10. **New session.** Asks for confirmation and clears players, game, log and
    tonight's list. Games not yet saved to the database are kept until they are.
-11. **Tonight's list.** Paste the week's names, one per line. They appear under
-   *Expected tonight* with each player's record from the database, and a
-   Check in button for when they arrive.
+11. **Tonight's list.** Before people arrive, add the week's players one at a
+   time with the autosuggest box, or paste a list in a dialog. A first name is
+   enough when only one player in the database has it. If several do, the app
+   asks which one is coming. Press *Done* and the builder folds to one line
+   ("13 players on tonight's list · Edit list"). The players then appear under
+   *Expected tonight* with their record and a Check in button.
 
 ## 6. User interface
 
@@ -199,7 +202,14 @@ laptop screen and still works at phone width.
 
 ### Queue view (for the attendant)
 
-- **Check-in box** with autocomplete from every name in the database.
+- **Check-in box** with autosuggest. Typing a first name, last name or the
+  start of either lists matching players with their record. Tonight's list
+  ranks first, then whoever has played more. Enter checks in the only match.
+  When a first name is shared, nothing happens until a player is picked. A
+  name nobody has used shows a *New player* row.
+- **Tonight's list builder:** the same autosuggest, removable name chips, a
+  *Paste a list* dialog, and a "needs a choice" callout for shared first
+  names. It folds away once the list is done.
 - **Expected tonight:** the pasted list, minus whoever has checked in, with
   games, points and average from the database.
 - **Up next / On court:** 10 spots with a *Fill* button. Each called player's
@@ -309,6 +319,8 @@ app.js           state, saving, rendering, scoreboard, clock, buzzer
 queue.js         fairness rules, no DOM: waitingOrder, nextInLine, fill, pick, sitOut,
                  passedOver, endGame
 queue.test.js    run with `node queue.test.js`; checks the fairness rules
+names.js         name matching, no DOM: suggest (ranked prefix match), resolve
+names.test.js    run with `node names.test.js`; checks the matching rules
 server.py        local server and SQLite player database (Python standard library)
 test_server.py   run with `python3 test_server.py`; checks the database rules
 players.db       created on first run; not in git
@@ -364,8 +376,8 @@ API (JSON):
 | `POST /api/results {session, date, game, rows}` | Saves one finished game |
 
 The server validates every input: names are 1 to 60 characters, and points
-are whole numbers from 0 to 200. It serves only `index.html`, `app.js` and
-`queue.js`, never the database file or its own source.
+are whole numbers from 0 to 200. It serves only `index.html`, `app.js`,
+`queue.js` and `names.js`, never the database file or its own source.
 
 **When the server isn't running:** the queue and scoreboard work as before.
 Finished games wait in `unsynced` in the browser and are sent when the
