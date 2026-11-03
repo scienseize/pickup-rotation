@@ -71,7 +71,7 @@ const btn = (action, name, label, { arg = '', pressed, cls = 'o s' } = {}) =>
 
 // ---- tabs: the island. A tab hides every panel but its own and scrolls to the top ----
 
-const TABS = ['checkin', 'queue', 'board', 'leaders', 'session'];
+const TABS = ['checkin', 'queue', 'board', 'leaders'];
 const island = $('island'), thumb = island.querySelector('.island-thumb');
 const tabs = [...island.querySelectorAll('[role="tab"]')];
 let active = 'queue';
@@ -391,7 +391,8 @@ function renderQueue() {
       <td><b>${esc(c.name)}</b><small>${plural(player(c.name).games, 'game')} tonight${tag(c.name)}</small></td>
       <td class="act"><span>
         <span class="seg">${['home', 'away'].map(t => btn('team', c.name, esc(g[t + 'Name']), { arg: t, pressed: c.team === t, cls: c.team === t ? 's' : 'o s' })).join('')}</span>
-        ${lock ? '' : btn('sitOut', c.name, 'Sit out') + btn('remove', c.name, 'Remove')}
+        ${lock ? '' : btn('sitOut', c.name, 'Sit out') + `<button type="button" class="xbtn" data-action="remove"
+          data-name="${esc(c.name)}" data-arg="" aria-label="Remove ${esc(c.name)} from up next">&times;</button>`}
       </span></td>
     </tr>`).join('') || '<tr><td colspan="3" class="empty">Nobody called yet. Press Fill open spots.</td></tr>';
 
@@ -419,12 +420,6 @@ function renderQueue() {
     .map(p => `<tr><td><b>${esc(p.name)}</b></td><td class="r mono">${p.games}</td><td class="r mono">${p.totalPoints}</td><td class="r mono">${avgText(p.name)}</td></tr>`)
     .join('') || '<tr><td colspan="4" class="empty">No players yet.</td></tr>';
 
-  const pending = state.unsynced.length;
-  $('saveLine').textContent = [
-    saved ? 'Saved in this browser' : 'Not saved',
-    { online: 'Database online', offline: 'Database offline', connecting: 'Connecting to database' }[db],
-    pending && `${plural(pending, 'game')} not in the database yet`,
-  ].filter(Boolean).join(' · ');
 }
 
 const tag = name => (avgText(name) ? ` · ${avgText(name)}` : '');
@@ -462,11 +457,12 @@ function renderTonight() {
   $('doneBtn').disabled = needsChoice.length > 0;
 
   const pending = state.unsynced.length;
-  $('dbChip').className = `stt ${pending ? 'build' : offline ? 'plan' : 'live'}`;
-  $('dbChip').textContent = pending ? `${pending} unsaved` : offline ? 'Offline' : db === 'online' ? 'Online' : 'Connecting';
-  $('dbLine').textContent = offline
-    ? 'Run python3 server.py in this folder, then open http://localhost:8000.'
-    : `${plural(profiles.size, 'player')} on file · ${plural([...profiles.values()].reduce((t, p) => t + p.games, 0), 'result')}.`;
+  $('dbStatus').textContent = [
+    { online: `Database online · ${plural(profiles.size, 'player')} on file`,
+      offline: 'Database offline · run python3 server.py', connecting: 'Connecting to database' }[db],
+    pending && `${plural(pending, 'game')} not in the database yet`,
+    !saved && 'Not saved in this browser',
+  ].filter(Boolean).join(' · ');
 }
 
 function renderBoard() {

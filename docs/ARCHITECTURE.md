@@ -162,7 +162,7 @@ Design choices:
 3. **Pick.** Hand-picks a specific waiting player into an open spot, for
    friends who want to play together (section 3). Same timing rule as Fill.
 4. **Sit out.** For a called player who refuses or isn't there: it frees their
-   spot, and they keep their place (section 3). Same timing rule. *Remove*
+   spot, and they keep their place (section 3). Same timing rule. The × button
    frees a spot the same way but without the sit-out mark, to undo a call made
    by mistake. Sit out, Remove, Fill and Pick all lock once the clock has
    started or anyone has scored, so a clock reset cannot drop a scorer's
@@ -199,13 +199,16 @@ and the floating island tab bar. The fonts come from Google Fonts when the lapto
 is online. Offline, the page falls back to Georgia and the system font, and
 everything still works.
 
-One page with five tabs in the island: Check in, Queue, Scoreboard,
-Leaderboard and Session. Each tab is a whole view, and its name is kept in the
+One page with four tabs in the island: Check in, Queue, Scoreboard and
+Leaderboard. Each tab is a whole view, and its name is kept in the
 URL (`#checkin`, `#queue`, ...) so a refresh returns to it. The layout targets a
 laptop screen and still works at phone width.
 
 ### Check in tab (for the attendant)
 
+- **Top of the tab:** when the session started, how many are checked in and
+  waiting, a database status line (online or offline, players on file, and any
+  games not yet in the database), and *Start a new session*.
 - **Check-in box** with autosuggest. Typing a first name, last name or the
   start of either lists matching players with their record. Tonight's list
   ranks first, then whoever has played more. Enter checks in the only match.
@@ -224,7 +227,7 @@ laptop screen and still works at phone width.
 
 - **Up next / On court:** 10 spots with a *Fill* button. Each called player's
   row has their name, games played, a Home/Away toggle, a *Sit out* button and
-  a *Remove* button. Remove undoes a call: the player goes back in line where
+  a × button to remove them. Removing undoes a call: the player goes back in line where
   they were, with no "Sitting out" mark, and Fill may call them again. Sit out
   is for someone who doesn't want this game: Fill skips them until the next
   game. Empty spots show as open. Fill, Pick, Sit out and Remove are hidden
@@ -240,12 +243,6 @@ laptop screen and still works at phone width.
 
 - Tonight's name, games played and total points, sorted by points, plus each
   player's all-time average from the database.
-
-### Session tab
-
-- **Player database card:** online / offline / unsaved games, and how many
-  players and results are on file.
-- **New session** card.
 
 ### Scoreboard view (for the court; full screen)
 
@@ -410,5 +407,5 @@ are whole numbers from 0 to 200. It serves only `index.html`, `app.js`,
 
 **When the server isn't running:** the queue and scoreboard work as before.
 Finished games wait in `unsynced` in the browser and are sent when the
-database is back (on page load and after every End game). The footer and the
-database card show how many games are waiting.
+database is back (on page load and after every End game). The database status
+line at the top of the Check in tab shows how many games are waiting.

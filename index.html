@@ -55,7 +55,6 @@ ol,ul,dl{margin:0;padding:0;list-style:none}
 .hero.sm h1{font-size:clamp(36px,5.6vw,60px)}
 .hero.sm .date{max-width:680px}
 .tabpanel > .hero.sm + section{margin-top:-40px}
-.kicker{font-size:15px;font-weight:600;color:var(--ink)}
 .date{font-size:16px;color:var(--tx)}
 .btns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
 .btn{display:inline-flex;align-items:center;gap:8px;background:var(--btn);color:var(--btn-tx);padding:13px 22px;border-radius:8px;font-weight:500;font-size:16px;text-decoration:none}
@@ -107,7 +106,6 @@ td small{display:block;color:var(--mu);font-size:14px;margin-top:2px}
 .notice{border:1px dashed var(--faint);border-radius:14px;padding:22px 24px;color:var(--mu);font-size:15px}
 .notice b{color:var(--ink);font-weight:600;display:block;margin-bottom:4px;font-size:16px}
 
-footer.pf{max-width:1080px;margin:120px auto 0;padding-top:20px;border-top:1px solid var(--line);font-size:14px;color:var(--mu);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
 
 /* App additions, in the same idiom. */
 button.btn{border:0;cursor:pointer;font-family:inherit;line-height:1.2;justify-content:center}
@@ -133,8 +131,8 @@ button.btn:disabled{opacity:.4;cursor:not-allowed}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--faint);border-radius:6px;padding:3px 3px 3px 10px;font-size:15px;color:var(--ink)}
 .chip .mono{font-size:11px;letter-spacing:.06em}
-.chip button{border:0;background:none;color:var(--mu);cursor:pointer;font:inherit;font-size:18px;line-height:1;width:30px;height:30px;border-radius:5px}
-.chip button:hover{color:var(--ink);background:var(--panel)}
+.chip button,.xbtn{border:0;background:none;color:var(--mu);cursor:pointer;font:inherit;font-size:18px;line-height:1;width:30px;height:30px;border-radius:5px}
+.chip button:hover,.xbtn:hover{color:var(--ink);background:var(--panel)}
 #listMsg:empty{display:none}
 #choices{display:flex;flex-direction:column;gap:12px}
 #choices:empty{display:none}
@@ -158,7 +156,6 @@ td.empty{color:var(--mu)}
 
 /* Scoreboard: two score cards around an inverted clock tile, then the players. */
 #board{gap:28px}
-#board:not([hidden]) ~ footer.pf{display:none}
 /* Full screen leaves nothing empty: the player lists keep their natural height,
    the score row takes the rest, and its numerals size to their own cards. */
 #board:fullscreen{background:var(--bg);padding:20px 24px;height:100vh;gap:16px;overflow:auto}
@@ -228,7 +225,6 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
     <button role="tab" id="tab-queue" data-tab="queue" aria-controls="queue" aria-selected="true">Queue</button>
     <button role="tab" id="tab-board" data-tab="board" aria-controls="board" aria-selected="false" tabindex="-1">Scoreboard</button>
     <button role="tab" id="tab-leaders" data-tab="leaders" aria-controls="leaders" aria-selected="false" tabindex="-1">Leaderboard</button>
-    <button role="tab" id="tab-session" data-tab="session" aria-controls="session" aria-selected="false" tabindex="-1">Session</button>
   </div>
   <span class="clk" id="islandClock"></span>
 </nav>
@@ -236,9 +232,10 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 <main class="page">
   <div class="tabpanel" id="checkin" role="tabpanel" aria-labelledby="tab-checkin" hidden>
     <div class="hero sm">
-      <div class="kicker">Basketball · Pick-up session</div>
       <h1>Who's here</h1>
       <p class="date session-line"></p>
+      <p class="mono" id="dbStatus" role="status"></p>
+      <div class="btns"><button class="btn o" data-action="newSession">Start a new session</button></div>
     </div>
 
     <section>
@@ -295,7 +292,6 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 
   <div class="tabpanel" id="queue" role="tabpanel" aria-labelledby="tab-queue">
     <div class="hero sm">
-      <div class="kicker">Basketball · Pick-up session</div>
       <h1>Who plays next</h1>
       <p class="date session-line"></p>
       <div class="btns">
@@ -340,7 +336,6 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 
   <div class="tabpanel" id="leaders" role="tabpanel" aria-labelledby="tab-leaders" hidden>
     <div class="hero sm">
-      <div class="kicker">Basketball · Pick-up session</div>
       <h1>Leaderboard</h1>
       <p class="date">Games and points from tonight, with each player's average across every week.</p>
     </div>
@@ -351,30 +346,6 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
           <thead><tr><th>Player</th><th class="r">Games</th><th class="r">Points</th><th class="r">Avg</th></tr></thead>
           <tbody id="leaderRows"></tbody>
         </table>
-      </div>
-    </section>
-
-  </div>
-
-  <div class="tabpanel" id="session" role="tabpanel" aria-labelledby="tab-session" hidden>
-    <div class="hero sm">
-      <div class="kicker">Basketball · Pick-up session</div>
-      <h1>Session</h1>
-      <p class="date session-line"></p>
-    </div>
-
-    <section>
-      <div class="wide cards two">
-        <div class="c">
-          <header><h3>Player database</h3><span class="stt plan" id="dbChip"></span></header>
-          <p class="tl">players.db, served by server.py on this laptop.</p>
-          <p id="dbLine"></p>
-        </div>
-        <div class="c mute">
-          <header><h3>New session</h3></header>
-          <p class="tl">Clears tonight's players, list and points. The database keeps every result.</p>
-          <div><button class="btn o s" data-action="newSession">Start a new session</button></div>
-        </div>
       </div>
     </section>
 
@@ -405,7 +376,6 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
     <p class="note" style="text-align:center">Space starts and pauses the clock.</p>
   </div>
 
-  <footer class="pf"><span>Pick-up rotation · basketball</span><span id="saveLine"></span></footer>
 </main>
 
 <dialog id="pasteDlg" aria-labelledby="pasteTitle">
