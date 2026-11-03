@@ -27,12 +27,13 @@ Goals:
 
 ## 2. Constraints
 
-- **One laptop, offline.** Gyms often have weak Wi-Fi. No account and no
-  internet needed after the files are copied.
-- **Zero install.** Run `python3 server.py` (built into macOS) and open
-  http://localhost:8000. That adds the player database (section 12). Opening
-  `index.html` by double-clicking still runs the queue and scoreboard, just
-  without profiles. No build step and no dependencies.
+- **Any laptop, offline-safe.** The app is hosted (section 13). Any laptop or
+  phone with a browser opens it, with nothing to install or copy. Gym Wi-Fi is
+  weak, so everything keeps working without a connection: finished games wait
+  in the browser and save when the connection is back, and once a laptop has
+  loaded the page it opens again offline.
+- **No build step.** Plain HTML, CSS and JavaScript in `public/`. The only
+  tooling is Cloudflare's `wrangler`, used to run it locally and deploy.
 - **One court.** One game at a time.
 - **Survives refresh.** All state is saved to the browser's `localStorage`
   after every change and reloaded on open.
@@ -323,11 +324,11 @@ the scoreboard code.
 | Not included                      | Add it when                                              |
 |-----------------------------------|----------------------------------------------------------|
 | Accounts, logins                  | Several organizers need separate permissions.           |
-| Multiple devices or live sync     | The queue needs to run on a phone while a TV shows the score. This needs a small server or a sync service. |
+| Live sync of tonight's queue      | The queue needs to run on a phone while a TV shows the score, or a laptop dies mid-night. Profiles and results already live on the server; this adds a session snapshot table. |
 | Stats beyond points (rebounds, assists, fouls) | Someone is actually available to track them during play. |
 | Season leaderboards, CSV export   | The organization wants them. The `results` table already has the rows. |
-| Over/under for spectators (imaginary money) | The group wants it. Lines come from `results` (a player's average and spread, recent form). It needs a hosted server so phones can join, plus a `bets` ledger table. Nothing in today's schema has to change. |
-| Renaming or merging players in the UI | Typos pile up. Until then, fix names in `players.db` by hand. |
+| Over/under for spectators (imaginary money) | The group wants it. Lines come from `results` (a player's average and spread, recent form). The hosted Worker is already in place; it needs a `bets` ledger table and spectator sign-in. Nothing in today's schema has to change. |
+| Renaming or merging players in the UI | Typos pile up. Until then, fix names with `npx wrangler d1 execute pickup --remote --command "UPDATE ..."`. |
 | More than one court               | Sessions regularly have 20+ people waiting.              |
 | Linked groups that the app calls together | Hand-picking for groups becomes a regular, time-consuming chore. The app would call a group only when it fits, ranked by its member with the most games. |
 | Mid-game substitutions            | Injuries or early exits during a game are common enough that a game count should be split. |
@@ -337,25 +338,27 @@ the scoreboard code.
 ## 10. Files
 
 ```
-index.html       markup and styles; served by `python3 server.py` at
-                 http://localhost:8000. Opened directly, it still runs the queue
-                 and scoreboard without the database
-app.js           state, saving, rendering, scoreboard, clock, buzzer
-queue.js         fairness rules, no DOM: waitingOrder, nextInLine, fill, pick, remove, sitOut,
-                 passedOver, endGame
-queue.test.js    run with `node queue.test.js`; checks the fairness rules
-names.js         name matching, no DOM: suggest (ranked prefix match), resolve
-names.test.js    run with `node names.test.js`; checks the matching rules
-server.py        local server and SQLite player database (Python standard library)
-test_server.py   run with `python3 test_server.py`; checks the database rules
-players.db       created on first run; not in git
+public/index.html   markup and styles
+public/app.js       state, saving, rendering, scoreboard, clock, buzzer, sync, passcode
+public/queue.js     fairness rules, no DOM: waitingOrder, nextInLine, fill, pick, remove,
+                    sitOut, passedOver, endGame
+public/names.js     name matching, no DOM: suggest (ranked prefix match), resolve
+public/sw.js        service worker: opens the page offline once it has loaded
+worker/index.js     Cloudflare Worker: the API on D1
+worker/rules.js     API input rules and the passcode check, no I/O
+schema.sql          the D1 tables
+wrangler.toml       Worker, assets folder and D1 binding
+package.json        pins wrangler; `npm test`, `npm run dev`, `npm run deploy`
+queue.test.js       node queue.test.js
+names.test.js       node names.test.js
+worker/rules.test.mjs  node worker/rules.test.mjs
+.dev.vars           local test passcode for `npm run dev`; not in git
+README.md           how to run, deploy and back up
 docs/ARCHITECTURE.md
 ```
 
-`queue.js` is a plain script, not an ES module. Browsers block module imports
-from a page opened as a file (`file://`), and double-clicking the file has to
-work. It ends with a small `module.exports` guard so Node can load it for the
-test.
+`queue.js` and `names.js` are plain scripts, not ES modules, and end with a
+small `module.exports` guard so Node can load them for the tests.
 
 ## 11. How it will be verified
 
@@ -364,8 +367,11 @@ test.
   pick takes a specific player and flags passed-over players, end game adds
   points to totals.
 - `node names.test.js` covers the name matching rules.
-- `python3 test_server.py` covers the database rules and the JSON-only POST
-  check (other content types get 415).
+- `node worker/rules.test.mjs` covers the API rules: names, points, rows,
+  dates, the JSON-only check and the passcode compare. `npm test` runs all
+  three files.
+- `npm run dev` runs the real Worker against a local D1 at
+  http://localhost:8787, separate from the live database, for trying changes.
 - Manual run in a browser. Check in 13 players and run two games, confirming
   the 3 who did not play go first. Add a latecomer and confirm they go first.
   Sit someone out and confirm they lead the next game; hand-pick a player and
@@ -376,10 +382,8 @@ test.
 
 ## 12. Player database
 
-A small SQLite file, `players.db`, that keeps every player and every game
-result across weeks. `server.py` serves the app and the database on
-`127.0.0.1:8000` only. It uses the Python standard library, so there is nothing
-to install.
+Every player and every game result across weeks, in Cloudflare D1 (SQLite).
+The Worker in `worker/index.js` serves the app's files and this API.
 
 ```sql
 players (name TEXT PRIMARY KEY COLLATE NOCASE, added_on TEXT)
@@ -393,21 +397,47 @@ results (session INTEGER, played_on TEXT, game INTEGER, name TEXT,
 - **Names ignore case,** like check-in. "ana" and "Ana" are the same player,
   and the database's spelling is kept.
 - **A game can't be counted twice.** `UNIQUE (session, game, name)` makes a
-  retried save harmless.
+  retried save harmless, and each game is saved in one transaction.
 
 API (JSON):
 
-| Call | Does |
-|------|------|
-| `GET /api/profiles` | Every player with games, points and average |
-| `POST /api/players {names}` | Adds new names from tonight's list |
-| `POST /api/results {session, date, game, rows}` | Saves one finished game |
+| Call | Does | Passcode |
+|------|------|----------|
+| `GET /api/profiles` | Every player with games, points and average | No |
+| `POST /api/players {names}` | Adds new names from tonight's list | Yes |
+| `POST /api/results {session, date, game, rows}` | Saves one finished game | Yes |
 
-The server validates every input: names are 1 to 60 characters, and points
-are whole numbers from 0 to 200. It serves only `index.html`, `app.js`,
-`queue.js` and `names.js`, never the database file or its own source.
+The Worker validates every input: names are 1 to 60 characters, points are
+whole numbers from 0 to 200, rows are a list of objects, and the date is real.
+POSTs must be JSON, so other websites can't write. Only the files in `public/`
+are served.
 
-**When the server isn't running:** the queue and scoreboard work as before.
+**When the connection drops:** the queue and scoreboard work as before.
 Finished games wait in `unsynced` in the browser and are sent when the
-database is back (on page load and after every End game). The database dot in
-the island turns red; hovering over it shows how many games are waiting.
+database is back (on page load and after every End game). The last profiles
+list is kept in the browser, so suggestions and averages still show. The
+database dot in the island turns red; hovering over it shows how many games are
+waiting.
+
+## 13. Hosting, passcode and backups
+
+- **Hosting:** one Cloudflare Worker on the free plan serves `public/` and the
+  API, with the database in D1. Nothing sleeps between weekly sessions. The
+  code lives in a private GitHub repository.
+- **Organizer passcode:** saving players or results needs the passcode, sent as
+  `Authorization: Bearer ...` and kept in the browser after it is entered once
+  on a laptop. The Worker compares it in constant time with the
+  `ORGANIZER_PASSCODE` secret, set with `npx wrangler secret put` and never
+  stored in the repository. A missing or wrong passcode gets 401; the app opens
+  the passcode dialog and keeps the games until it is right. Viewing needs no
+  passcode, so anyone with the link can see names and averages.
+- **Offline loading:** `public/sw.js` serves the last copy of the page when
+  there is no connection. A laptop must load the page online once (a phone
+  hotspot is enough) before it can open it offline.
+- **Backups:** D1 Time Travel can restore the database to any point in the
+  last few days. A weekly `npx wrangler d1 export pickup --remote --output
+  backup-YYYY-MM-DD.sql` keeps a copy on the laptop (`*.sql` backups stay out
+  of git).
+- **Still in one browser:** tonight's queue order. If a laptop dies mid-night,
+  finished games are safe on the server, but the queue is rebuilt by checking
+  people in again.
