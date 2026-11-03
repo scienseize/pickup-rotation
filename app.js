@@ -12,18 +12,23 @@ const newGame = number => ({
   number, onCourt: [], satOut: [], homeName: 'Home', awayName: 'Away',
   remainingMs: GAME_MS, endsAt: null, started: false,
 });
-const newSession = roster => ({ players: [], game: newGame(1), log: [], roster, startedAt: Date.now() });
+const newSession = () => ({ players: [], game: newGame(1), log: [], expected: [], unsynced: [], startedAt: Date.now() });
 
 let state = load();
 let saved = true;
 let audio; // created on the first click; browsers block sound before one
+let profiles = new Map(); // lowercase name -> { name, games, points, avg } from players.db
+let db = 'connecting'; // 'online' | 'offline'
 
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s) return s;
+    if (s) {
+      delete s.roster; // replaced by the database
+      return { expected: [], unsynced: [], startedAt: Date.now(), ...s };
+    }
   } catch {}
-  return newSession([]);
+  return newSession();
 }
 
 function save() {
@@ -48,6 +53,14 @@ const ready = () => {
   const court = state.game.onCourt;
   return court.length > 0 && court.every(c => c.team) && ['home', 'away'].every(t => court.some(c => c.team === t));
 };
+const cleanName = raw => raw.trim().replace(/\s+/g, ' ').slice(0, 60);
+const profileOf = name => profiles.get(name.toLowerCase());
+const avgText = name => {
+  if (db !== 'online') return '';
+  const p = profileOf(name);
+  return p?.games ? `AVG ${p.avg.toFixed(1)}` : 'NEW';
+};
+const localDate = ms => new Date(ms).toLocaleDateString('en-CA'); // YYYY-MM-DD
 const btn = (action, name, label, { arg = '', pressed, cls = 'o s' } = {}) =>
   `<button class="btn ${cls}" data-action="${action}" data-name="${esc(name)}" data-arg="${arg}"` +
   `${pressed === undefined ? '' : ` aria-pressed="${pressed}"`}>${label}</button>`;
@@ -94,6 +107,51 @@ window.addEventListener('hashchange', route);
 window.addEventListener('resize', place);
 document.fonts?.ready.then(place);
 
+// ---- database: players.db through server.py; the app keeps working without it ----
+
+class Rejected extends Error {}
+
+async function api(path, body) {
+  if (location.protocol === 'file:') throw new Error('opened as a file');
+  const res = await fetch(path, body === undefined ? {} : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (res.status === 400) throw new Rejected((await res.json()).error);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  profiles = new Map((await res.json()).map(p => [p.name.toLowerCase(), p]));
+  db = 'online';
+}
+
+// Finished games wait in state.unsynced (saved in this browser) until the database has them.
+async function sync() {
+  try {
+    await api('/api/profiles');
+    while (state.unsynced.length) {
+      try { await api('/api/results', state.unsynced[0]); }
+      catch (e) { if (!(e instanceof Rejected)) throw e; flash(`The database rejected a game: ${e.message}`); }
+      state.unsynced.shift();
+      save();
+    }
+  } catch (e) {
+    if (!(e instanceof Rejected)) db = 'offline';
+  }
+  render();
+}
+
+function checkIn(raw) {
+  const typed = cleanName(raw);
+  if (!typed) return;
+  const p = state.players.find(p => p.name.toLowerCase() === typed.toLowerCase());
+  if (p?.present) return flash(`${p.name} is already checked in.`);
+  if (p) { p.present = true; flash(`${p.name} is back, same place in line.`); }
+  else {
+    const name = profileOf(typed)?.name ?? typed; // keep the database's spelling
+    state.players.push({ name, games: 0, readyAt: Date.now(), present: true, totalPoints: 0 });
+    flash(`${name} checked in.`);
+  }
+  commit();
+}
+
 // ---- actions (each click handler; return false to skip saving) ----
 
 const actions = {
@@ -103,6 +161,7 @@ const actions = {
   team: (name, team) => { const c = seatOf(name); c.team = c.team === team ? null : team; },
   out: name => { player(name).present = false; },
   back: name => { player(name).present = true; },
+  checkIn: name => { checkIn(name); return false; },
   points: (name, n) => { const c = seatOf(name); c.points = Math.max(0, c.points + Number(n)); },
 
   startPause() {
@@ -121,14 +180,19 @@ const actions = {
     if (!g.onCourt.length) return false;
     if (!confirm(`End game ${g.number}? ${g.homeName} ${score('home')}, ${g.awayName} ${score('away')}.`)) return false;
     state.log.push(...Queue.endGame(state.players, g, Date.now()));
+    state.unsynced.push({
+      session: state.startedAt, date: localDate(state.startedAt), game: g.number,
+      rows: g.onCourt.map(c => ({ name: c.name, points: c.points })),
+    });
     state.game = newGame(g.number + 1);
+    setTimeout(sync);
     if (document.fullscreenElement) document.exitFullscreen();
     go('queue');
   },
 
   newSession() {
-    if (!confirm('Start a new session? This clears all players, games and points. The member list is kept.')) return false;
-    state = newSession(state.roster);
+    if (!confirm('Start a new session? This clears tonight\'s players, list and points. The database keeps every result.')) return false;
+    state = { ...newSession(), unsynced: state.unsynced };
   },
 
   fullscreen() {
@@ -146,20 +210,17 @@ document.addEventListener('click', e => {
 
 $('checkin').onsubmit = e => {
   e.preventDefault();
-  const name = $('name').value.trim().replace(/\s+/g, ' ');
-  if (!name) return;
-  const p = state.players.find(p => p.name.toLowerCase() === name.toLowerCase());
-  if (p?.present) return flash(`${p.name} is already checked in.`);
-  if (p) { p.present = true; flash(`${p.name} is back, same place in line.`); }
-  else { state.players.push({ name, games: 0, readyAt: Date.now(), present: true, totalPoints: 0 }); flash(`${name} checked in.`); }
+  checkIn($('name').value);
   $('name').value = '';
-  commit();
 };
 
-$('roster').oninput = e => {
-  state.roster = e.target.value.split('\n').map(s => s.trim()).filter(Boolean);
-  save();
-  renderMembers();
+// Tonight's list: one name per line. Saved when the box loses focus, so a paste posts once.
+$('tonight').onchange = e => {
+  const seen = new Set();
+  state.expected = e.target.value.split('\n').map(cleanName)
+    .filter(n => n && !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()));
+  commit();
+  if (state.expected.length) api('/api/players', { names: state.expected }).catch(() => {}).then(render);
 };
 
 for (const t of ['home', 'away']) {
@@ -184,7 +245,7 @@ function render() {
   renderQueue();
   renderBoard();
   renderClock();
-  renderMembers();
+  renderTonight();
 }
 
 function renderQueue() {
@@ -207,7 +268,7 @@ function renderQueue() {
 
   $('upnext').innerHTML = g.onCourt.map((c, i) => `<tr>
       <td class="n">${i + 1}</td>
-      <td><b>${esc(c.name)}</b><small>${plural(player(c.name).games, 'game')}</small></td>
+      <td><b>${esc(c.name)}</b><small>${plural(player(c.name).games, 'game')} tonight${tag(c.name)}</small></td>
       <td class="act"><span>
         <span class="seg">${['home', 'away'].map(t => btn('team', c.name, esc(g[t + 'Name']), { arg: t, pressed: c.team === t, cls: c.team === t ? 's' : 'o s' })).join('')}</span>
         ${locked ? '' : btn('sitOut', c.name, 'Sit out')}
@@ -220,7 +281,7 @@ function renderQueue() {
       + (passed.has(p.name) ? '<span class="stt build">Passed over</span>' : '');
     return `<tr>
       <td class="n">${i + 1}</td>
-      <td><b>${esc(p.name)}</b><small>${plural(p.games, 'game')} · waiting ${Math.floor((now - p.readyAt) / 60000)} min</small></td>
+      <td><b>${esc(p.name)}</b><small>${plural(p.games, 'game')} tonight · waiting ${Math.floor((now - p.readyAt) / 60000)} min${tag(p.name)}</small></td>
       <td class="tags hide-sm"><span>${tags}</span></td>
       <td class="act"><span>${open ? btn('pick', p.name, 'Pick') : ''}${btn('out', p.name, 'Out')}</span></td>
     </tr>`;
@@ -235,10 +296,47 @@ function renderQueue() {
 
   $('leaders').innerHTML = [...state.players]
     .sort((a, b) => b.totalPoints - a.totalPoints || a.name.localeCompare(b.name))
-    .map(p => `<tr><td><b>${esc(p.name)}</b></td><td class="r mono">${p.games}</td><td class="r mono">${p.totalPoints}</td></tr>`)
-    .join('') || '<tr><td colspan="3" class="empty">No players yet.</td></tr>';
+    .map(p => `<tr><td><b>${esc(p.name)}</b></td><td class="r mono">${p.games}</td><td class="r mono">${p.totalPoints}</td><td class="r mono">${avgText(p.name)}</td></tr>`)
+    .join('') || '<tr><td colspan="4" class="empty">No players yet.</td></tr>';
 
-  $('saveLine').textContent = saved ? 'Saved in this browser' : 'Not saved';
+  const pending = state.unsynced.length;
+  $('saveLine').textContent = [
+    saved ? 'Saved in this browser' : 'Not saved',
+    { online: 'Database online', offline: 'Database offline', connecting: 'Connecting to database' }[db],
+    pending && `${plural(pending, 'game')} not in the database yet`,
+  ].filter(Boolean).join(' · ');
+}
+
+const tag = name => (avgText(name) ? ` · ${avgText(name)}` : '');
+
+function renderTonight() {
+  const here = new Set(state.players.map(p => p.name.toLowerCase()));
+  const waiting = state.expected.filter(n => !here.has(n.toLowerCase()));
+  const offline = db === 'offline';
+  $('expectedIntro').textContent = offline
+    ? 'Database offline. Start server.py to load profiles. Check-in still works.'
+    : 'This week\'s list with each player\'s record. Check people in as they arrive.';
+  $('expected').innerHTML = waiting.map(n => {
+    const p = profileOf(n), name = p?.name ?? n;
+    const record = offline ? '' : p?.games ? `${plural(p.games, 'game')} · ${p.points} points · AVG ${p.avg.toFixed(1)}` : 'First game';
+    return `<tr>
+      <td><b>${esc(name)}</b><small>${record}</small></td>
+      <td class="act">${btn('checkIn', name, 'Check in', { cls: 's' })}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="2" class="empty">${state.expected.length
+    ? 'Everyone on the list has checked in.' : 'No list yet. Paste this week\'s names below.'}</td></tr>`;
+
+  if (document.activeElement !== $('tonight')) $('tonight').value = state.expected.join('\n');
+  $('tonightCount').textContent = plural(state.expected.length, 'name');
+  $('members').innerHTML = [...new Set([...[...profiles.values()].map(p => p.name), ...state.expected])]
+    .map(n => `<option value="${esc(n)}">`).join('');
+
+  const pending = state.unsynced.length;
+  $('dbChip').className = `stt ${pending ? 'build' : offline ? 'plan' : 'live'}`;
+  $('dbChip').textContent = pending ? `${pending} unsaved` : offline ? 'Offline' : db === 'online' ? 'Online' : 'Connecting';
+  $('dbLine').textContent = offline
+    ? 'Run python3 server.py in this folder, then open http://localhost:8000.'
+    : `${plural(profiles.size, 'player')} on file · ${plural([...profiles.values()].reduce((t, p) => t + p.games, 0), 'result')}.`;
 }
 
 function renderBoard() {
@@ -250,7 +348,7 @@ function renderBoard() {
     $(t + 'Lbl').textContent = g[t + 'Name'];
     $(t + 'Count').textContent = plural(team.length, 'player').toUpperCase();
     $(t + 'Players').innerHTML = team.map(c => `<div class="pl">
-        <b>${esc(c.name)}</b><span class="pts">${c.points}</span>
+        <span><b>${esc(c.name)}</b><small class="mono">${avgText(c.name)}</small></span><span class="pts">${c.points}</span>
         <span class="pt">${[1, 2, 3, -1].map(n => btn('points', c.name, n > 0 ? `+${n}` : '&minus;1', { arg: n, cls: 'o' })).join('')}</span>
       </div>`).join('') || '<p class="empty">No players on this team.</p>';
   }
@@ -266,12 +364,6 @@ function renderClock() {
   $('startBtn').disabled = !g.endsAt && (!ready() || ms === 0);
   $('islandClock').textContent = `Game ${g.number} · ${g.endsAt || g.started ? clockText(ms) : 'Not started'}`;
   $('islandClock').classList.toggle('on', !!g.endsAt);
-}
-
-function renderMembers() {
-  if (document.activeElement !== $('roster')) $('roster').value = state.roster.join('\n');
-  $('members').innerHTML = state.roster.map(n => `<option value="${esc(n)}">`).join('');
-  $('memberCount').textContent = plural(state.roster.length, 'name');
 }
 
 // ponytail: plain oscillator tone; swap for a recorded horn if the gym needs louder
@@ -300,3 +392,5 @@ setInterval(renderQueue, 15000); // keep wait times current
 
 route();
 render();
+$('tonightBox').open = !state.expected.length;
+sync();

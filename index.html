@@ -153,6 +153,8 @@ td.empty{color:var(--mu)}
 .hint{text-align:center;color:var(--mu);font-size:15px;min-height:1.6em}
 .pl{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px 14px;padding:12px 0;border-top:1px solid var(--line)}
 .pl b{color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+.pl small{display:block;font-size:12px;letter-spacing:.06em}
+details.dd summary .mono{margin-left:auto;margin-right:8px}
 .pl .pts{font-family:var(--serif);font-size:32px;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums;min-width:2ch;text-align:right}
 .pl .pt{display:flex;gap:6px}
 .pl .pt .btn{min-width:54px;min-height:50px;padding:8px 10px;font-size:17px;font-variant-numeric:tabular-nums}
@@ -213,11 +215,27 @@ td.empty{color:var(--mu)}
       </div>
       <div class="wide">
         <form class="checkin" id="checkin">
-          <input class="in" id="name" list="members" autocomplete="off" placeholder="Player name" aria-label="Player name">
+          <input class="in" id="name" list="members" autocomplete="off" maxlength="60" placeholder="Player name" aria-label="Player name">
           <button class="btn">Check in</button>
         </form>
         <datalist id="members"></datalist>
         <p class="note" id="msg" role="status" style="margin-top:12px;max-width:none"></p>
+      </div>
+    </section>
+
+    <section>
+      <div class="sh">
+        <h2>Expected tonight.</h2>
+        <p id="expectedIntro"></p>
+      </div>
+      <div class="wide tw">
+        <table>
+          <tbody id="expected"></tbody>
+        </table>
+        <details class="dd" id="tonightBox" style="margin-top:16px">
+          <summary>Tonight's list <span class="mono" id="tonightCount"></span></summary>
+          <textarea class="in" id="tonight" placeholder="Paste this week's names, one per line" aria-label="Tonight's list"></textarea>
+        </details>
       </div>
     </section>
 
@@ -256,11 +274,11 @@ td.empty{color:var(--mu)}
     <section>
       <div class="sh">
         <h2>Leaderboard.</h2>
-        <p>Points from finished games this session.</p>
+        <p>Games and points are from tonight. Avg is points per game across every week in the database.</p>
       </div>
       <div class="wide tw">
         <table>
-          <thead><tr><th>Player</th><th class="r">Games</th><th class="r">Points</th></tr></thead>
+          <thead><tr><th>Player</th><th class="r">Games</th><th class="r">Points</th><th class="r">Avg</th></tr></thead>
           <tbody id="leaders"></tbody>
         </table>
       </div>
@@ -269,20 +287,17 @@ td.empty{color:var(--mu)}
     <section>
       <div class="sh">
         <h2>Session.</h2>
-        <p>The member list fills check-in autocomplete. A new session clears players and points.</p>
+        <p>Tonight lives in this browser. Every finished game is also saved to the player database.</p>
       </div>
       <div class="wide cards two">
         <div class="c">
-          <header><h3>Member list</h3><span class="stt plan" id="memberCount"></span></header>
-          <p class="tl">One name per line. Kept across sessions.</p>
-          <details class="dd">
-            <summary>Edit list</summary>
-            <textarea class="in" id="roster" placeholder="One name per line" aria-label="Member list"></textarea>
-          </details>
+          <header><h3>Player database</h3><span class="stt plan" id="dbChip"></span></header>
+          <p class="tl">players.db, served by server.py on this laptop.</p>
+          <p id="dbLine"></p>
         </div>
         <div class="c mute">
           <header><h3>New session</h3></header>
-          <p class="tl">Clears all players, games and points. The member list stays.</p>
+          <p class="tl">Clears tonight's players, list and points. The database keeps every result.</p>
           <div><button class="btn o s" data-action="newSession">Start a new session</button></div>
         </div>
       </div>

@@ -27,10 +27,12 @@ Goals:
 
 ## 2. Constraints
 
-- **One laptop, offline.** Gyms often have weak Wi-Fi. No server, no account,
-  no internet needed after the files are copied.
-- **Zero install.** Open `index.html` by double-clicking it in any modern
-  browser (Chrome, Edge, Safari, Firefox). No build step and no dependencies.
+- **One laptop, offline.** Gyms often have weak Wi-Fi. No account and no
+  internet needed after the files are copied.
+- **Zero install.** Run `python3 server.py` (built into macOS) and open
+  http://localhost:8000. That adds the player database (section 12). Opening
+  `index.html` by double-clicking still runs the queue and scoreboard, just
+  without profiles. No build step and no dependencies.
 - **One court.** One game at a time.
 - **Survives refresh.** All state is saved to the browser's `localStorage`
   after every change and reloaded on open.
@@ -120,10 +122,13 @@ state = {
     started                         // clock has run; locks Fill, Pick, Sit out
   },
   log: [ { gameNumber, name, team, points } ],   // one row per player per finished game
-  roster: [ names ],                // optional saved member list for autocomplete
-  view: 'queue' | 'board'           // which tab is open, so a refresh returns to it
+  expected: [ names ],              // tonight's list, pasted each week
+  unsynced: [ game payloads ],      // finished games the database doesn't have yet
+  startedAt                         // session start; also the session id in the database
 }
 ```
+
+The open tab lives in the URL (`#queue`, `#board`), so a refresh returns to it.
 
 Design choices:
 
@@ -132,10 +137,9 @@ Design choices:
 - **Team score is derived, never stored.** `home score = sum of points of
   onCourt players with team 'home'`. One source of truth means the big number
   and the player rows can never disagree.
-- **`roster` is separate from `players`.** The member list is only for
-  autocomplete. Being on the roster does not put anyone in the queue. Only
-  check-in does. The roster survives a session reset, and everything else is
-  cleared.
+- **`expected` is separate from `players`.** Tonight's list only shows who
+  should come and their record. Being on the list does not put anyone in the
+  queue. Only check-in does, so arrival order still decides fairness.
 - **`log`** keeps the per-game breakdown so the leaderboard can show more than
   totals later, without changing the model.
 
@@ -175,8 +179,11 @@ Design choices:
    and a row per player goes into `log`. The court is then empty, ready for
    *Fill*.
 9. **Out / Back.** Toggle a player's `present` flag from the waiting list.
-10. **New session.** Asks for confirmation and clears players, game and log.
-   Keeps the roster.
+10. **New session.** Asks for confirmation and clears players, game, log and
+   tonight's list. Games not yet saved to the database are kept until they are.
+11. **Tonight's list.** Paste the week's names, one per line. They appear under
+   *Expected tonight* with each player's record from the database, and a
+   Check in button for when they arrive.
 
 ## 6. User interface
 
@@ -192,7 +199,9 @@ laptop screen and still works at phone width.
 
 ### Queue view (for the attendant)
 
-- **Check-in box** with autocomplete and an Add button.
+- **Check-in box** with autocomplete from every name in the database.
+- **Expected tonight:** the pasted list, minus whoever has checked in, with
+  games, points and average from the database.
 - **Up next / On court:** 10 spots with a *Fill* button. Each called player's
   row has their name, games played, a Home/Away toggle, and a *Sit out* button.
   Empty spots show as open. Fill, Pick and Sit out are hidden once the clock
@@ -204,9 +213,9 @@ laptop screen and still works at phone width.
   A *Passed over* badge appears on anyone with fewer games than a player in
   Up next.
 - **Leaderboard** for the session: name, games played, total points, sorted by
-  points.
-- **Member list:** a collapsible text area. Paste names one per line to fill
-  autocomplete.
+  points, plus each player's all-time average from the database.
+- **Player database card:** online / offline / unsaved games, and how many
+  players and results are on file.
 
 ### Scoreboard view (for the court; full screen)
 
@@ -283,7 +292,9 @@ the scoreboard code.
 | Accounts, logins                  | Several organizers need separate permissions.           |
 | Multiple devices or live sync     | The queue needs to run on a phone while a TV shows the score. This needs a small server or a sync service. |
 | Stats beyond points (rebounds, assists, fouls) | Someone is actually available to track them during play. |
-| Stats across session days, CSV export | The organization wants season leaderboards. The `log` already has the rows for it. |
+| Season leaderboards, CSV export   | The organization wants them. The `results` table already has the rows. |
+| Over/under for spectators (imaginary money) | The group wants it. Lines come from `results` (a player's average and spread, recent form). It needs a hosted server so phones can join, plus a `bets` ledger table. Nothing in today's schema has to change. |
+| Renaming or merging players in the UI | Typos pile up. Until then, fix names in `players.db` by hand. |
 | More than one court               | Sessions regularly have 20+ people waiting.              |
 | Linked groups that the app calls together | Hand-picking for groups becomes a regular, time-consuming chore. The app would call a group only when it fits, ranked by its member with the most games. |
 | Mid-game substitutions            | Injuries or early exits during a game are common enough that a game count should be split. |
@@ -298,6 +309,9 @@ app.js           state, saving, rendering, scoreboard, clock, buzzer
 queue.js         fairness rules, no DOM: waitingOrder, nextInLine, fill, pick, sitOut,
                  passedOver, endGame
 queue.test.js    run with `node queue.test.js`; checks the fairness rules
+server.py        local server and SQLite player database (Python standard library)
+test_server.py   run with `python3 test_server.py`; checks the database rules
+players.db       created on first run; not in git
 docs/ARCHITECTURE.md
 ```
 
@@ -319,3 +333,41 @@ test.
   Credit points and confirm the team totals match. Refresh mid-game and confirm
   the clock and scores continue. Let the clock reach 0:00 and confirm the
   buzzer sounds.
+
+## 12. Player database
+
+A small SQLite file, `players.db`, that keeps every player and every game
+result across weeks. `server.py` serves the app and the database on
+`127.0.0.1:8000` only. It uses the Python standard library, so there is nothing
+to install.
+
+```sql
+players (name TEXT PRIMARY KEY COLLATE NOCASE, added_on TEXT)
+results (session INTEGER, played_on TEXT, game INTEGER, name TEXT,
+         points INTEGER CHECK (points BETWEEN 0 AND 200),
+         UNIQUE (session, game, name))
+```
+
+- **One row per player per game.** Averages are computed by a query and never
+  stored. The same rows will set over/under lines later.
+- **Names ignore case,** like check-in. "ana" and "Ana" are the same player,
+  and the database's spelling is kept.
+- **A game can't be counted twice.** `UNIQUE (session, game, name)` makes a
+  retried save harmless.
+
+API (JSON):
+
+| Call | Does |
+|------|------|
+| `GET /api/profiles` | Every player with games, points and average |
+| `POST /api/players {names}` | Adds new names from tonight's list |
+| `POST /api/results {session, date, game, rows}` | Saves one finished game |
+
+The server validates every input: names are 1 to 60 characters, and points
+are whole numbers from 0 to 200. It serves only `index.html`, `app.js` and
+`queue.js`, never the database file or its own source.
+
+**When the server isn't running:** the queue and scoreboard work as before.
+Finished games wait in `unsynced` in the browser and are sent when the
+database is back (on page load and after every End game). The footer and the
+database card show how many games are waiting.
