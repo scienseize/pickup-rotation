@@ -126,15 +126,11 @@ button.btn:disabled{opacity:.4;cursor:not-allowed}
 .sug li b{color:var(--ink);font-weight:600}
 .sug li .mono{font-size:12px;letter-spacing:.06em;text-align:right}
 .sug li[aria-selected="true"],.sug li:hover{background:var(--panel)}
-.listline{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--ink)}
 .btns.left{justify-content:flex-start}
-.chips{display:flex;flex-wrap:wrap;gap:8px}
-.chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--faint);border-radius:6px;padding:3px 3px 3px 10px;font-size:15px;color:var(--ink)}
-.chip .mono{font-size:11px;letter-spacing:.06em}
-.chip button,.xbtn{border:0;background:none;color:var(--mu);cursor:pointer;font:inherit;font-size:18px;line-height:1;width:30px;height:30px;border-radius:5px}
-.chip button:hover,.xbtn:hover{color:var(--ink);background:var(--panel)}
-#listMsg:empty{display:none}
-#choices{display:flex;flex-direction:column;gap:12px}
+.xbtn{border:0;background:none;color:var(--mu);cursor:pointer;font:inherit;font-size:18px;line-height:1;width:30px;height:30px;border-radius:5px}
+.xbtn:hover{color:var(--ink);background:var(--panel)}
+#msg:empty{display:none}
+#choices{display:flex;flex-direction:column;gap:12px;margin-top:12px}
 #choices:empty{display:none}
 .notice .btns{margin-top:12px;justify-content:flex-start}
 dialog{background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:14px;padding:28px;width:min(520px,calc(100vw - 32px))}
@@ -240,49 +236,24 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 
     <section>
       <div class="sh">
-        <h2>Check in.</h2>
-        <p>Type a name as each person arrives. A returning player keeps their place in line.</p>
-      </div>
-      <div class="wide">
-        <form class="checkin" id="checkinForm">
-          <div class="combo">
-            <input class="in" id="name" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="nameSug"
-              autocomplete="off" maxlength="60" placeholder="First name is enough" aria-label="Player name">
-            <ul class="sug" id="nameSug" role="listbox" aria-label="Matching players" hidden></ul>
-          </div>
-          <button class="btn">Check in</button>
-        </form>
-        <p class="note" id="msg" role="status" style="margin-top:12px;max-width:none"></p>
-      </div>
-    </section>
-
-    <section>
-      <div class="sh">
-        <h2>Expected tonight.</h2>
+        <h2>Tonight's list.</h2>
         <p id="expectedIntro"></p>
       </div>
-      <div class="wide listline" id="listFolded">
-        <span id="listCount"></span>
-        <button class="btn o s" data-action="editList">Edit list</button>
-      </div>
-      <div class="wide c" id="listEditor">
-        <header><h3>Tonight's list</h3><span class="mono" id="tonightCount"></span></header>
-        <p class="tl">Add players by first name. Suggestions come from the database.</p>
-        <div class="combo">
-          <input class="in" id="listAdd" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="listSug"
-            autocomplete="off" maxlength="60" placeholder="Add a player" aria-label="Add a player to tonight's list">
-          <ul class="sug" id="listSug" role="listbox" aria-label="Matching players" hidden></ul>
+      <div class="wide">
+        <div class="checkin">
+          <div class="combo">
+            <input class="in" id="listAdd" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="listSug"
+              autocomplete="off" maxlength="60" placeholder="Add a player, first name is enough" aria-label="Add a player to tonight's list">
+            <ul class="sug" id="listSug" role="listbox" aria-label="Matching players" hidden></ul>
+          </div>
+          <button class="btn o" type="button" data-action="pasteList">Paste a list</button>
         </div>
-        <p class="note" id="listMsg" role="status"></p>
+        <p class="note" id="msg" role="status" style="margin-top:12px;max-width:none"></p>
         <div id="choices"></div>
-        <ul class="chips" id="chips" aria-label="Players on tonight's list"></ul>
-        <div class="btns left">
-          <button class="btn o s" data-action="pasteList">Paste a list</button>
-          <button class="btn s" data-action="doneList" id="doneBtn">Done</button>
-        </div>
       </div>
       <div class="wide tw">
         <table>
+          <thead><tr><th>Player</th><th class="r" id="expectedCount"></th></tr></thead>
           <tbody id="expected"></tbody>
         </table>
       </div>
@@ -325,7 +296,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
         </table>
       </div>
       <div class="wide tw" id="outBox">
-        <h3>Out</h3>
+        <h3>Done for the night</h3>
         <table>
           <tbody id="out"></tbody>
         </table>

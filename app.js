@@ -154,30 +154,29 @@ function checkIn(raw) {
   const typed = cleanName(raw);
   if (!typed) return;
   const p = playerNamed(typed);
-  if (p?.present) return flash(`${p.name} is already checked in.`);
-  if (p) { p.present = true; flash(`${p.name} is back, same place in line.`); }
-  else {
-    const name = profileOf(typed)?.name ?? typed; // keep the database's spelling
-    state.players.push({ name, games: 0, readyAt: Date.now(), present: true, totalPoints: 0 });
-    flash(`${name} checked in.`);
-  }
+  if (p) return flash(p.present ? `${p.name} is already checked in.` : `${p.name} is done for the night.`);
+  const name = profileOf(typed)?.name ?? typed; // keep the database's spelling
+  state.players.push({ name, games: 0, readyAt: Date.now(), present: true, totalPoints: 0 });
+  flash(`${name} checked in.`);
   commit();
 }
 
 // ---- name autosuggest (check-in and tonight's list) ----
 
-let editingList = !state.expected.length; // page only, not saved
 let needsChoice = []; // pasted names that match several players: { query, choices }
 
 const onList = name => state.expected.some(n => n.toLowerCase() === name.toLowerCase());
 function addToList(name) { if (name && !onList(name)) state.expected.push(name); }
+// New names reach the database as soon as they're on the list; offline is fine, games add them later.
+const saveList = () => { if (state.expected.length) api('/api/players', { names: state.expected }).catch(() => {}).then(render); };
 
 // Everyone the app knows: the database, tonight's list and tonight's players.
 function knownPeople() {
   const people = new Map([...profiles.values()].map(p => [p.name.toLowerCase(), { ...p }]));
   for (const name of [...state.expected, ...state.players.map(p => p.name)]) {
     const key = name.toLowerCase();
-    people.set(key, { ...(people.get(key) ?? { name, games: 0 }), priority: onList(name), here: !!playerNamed(name)?.present });
+    const p = playerNamed(name);
+    people.set(key, { ...(people.get(key) ?? { name, games: 0 }), priority: onList(name), here: !!p?.present, done: p?.present === false });
   }
   return [...people.values()];
 }
@@ -196,7 +195,7 @@ function autosuggest(input, list, pick, say) {
     const q = input.value, people = knownPeople();
     items = Names.suggest(q, people).map(p => ({
       name: p.name,
-      label: [p.here && 'CHECKED IN', p.priority && 'TONIGHT', avgText(p.name)].filter(Boolean).join(' · '),
+      label: [p.here && 'CHECKED IN', p.done && 'DONE', p.priority && 'TONIGHT', avgText(p.name)].filter(Boolean).join(' · '),
     }));
     if (cleanName(q) && !Names.resolve(q, people).name) items.push({ name: cleanName(q), label: 'NEW PLAYER' });
     hi = Math.min(hi, items.length - 1);
@@ -244,16 +243,14 @@ const actions = {
   sitOut(name) { if (locked()) return false; Queue.sitOut(state.game, name); },
   remove(name) { if (locked()) return false; Queue.remove(state.game, name); },
   team: (name, team) => { const c = seatOf(name); c.team = c.team === team ? null : team; },
-  out: name => { player(name).present = false; },
-  back: name => { player(name).present = true; },
+  done(name) {
+    if (!confirm(`Mark ${name} done for the night? They won't be called again.`)) return false;
+    player(name).present = false;
+  },
+  undoDone: name => { player(name).present = true; },
   checkIn: name => { checkIn(name); return false; },
   removeName: name => { state.expected = state.expected.filter(n => n !== name); },
-  choose: (name, query) => { needsChoice = needsChoice.filter(c => c.query !== query); addToList(name); },
-  editList: () => { editingList = true; setTimeout(() => $('listAdd').focus()); },
-  doneList() {
-    editingList = false;
-    if (state.expected.length) api('/api/players', { names: state.expected }).catch(() => {}).then(render);
-  },
+  choose: (name, query) => { needsChoice = needsChoice.filter(c => c.query !== query); addToList(name); saveList(); },
   pasteList() {
     $('pasteDlg').returnValue = '';
     $('pasteDlg').showModal();
@@ -290,7 +287,6 @@ const actions = {
   newSession() {
     if (!confirm('Start a new session? This clears tonight\'s players, list and points. The database keeps every result.')) return false;
     state = { ...newSession(), unsynced: state.unsynced };
-    editingList = true;
     needsChoice = [];
   },
 
@@ -307,15 +303,14 @@ document.addEventListener('click', e => {
   if (b && actions[b.dataset.action](b.dataset.name, b.dataset.arg) !== false) commit();
 });
 
-const checkInBox = autosuggest($('name'), $('nameSug'), checkIn, flash);
-$('checkinForm').onsubmit = e => { e.preventDefault(); checkInBox.enter(); };
-
-const listSay = text => { $('listMsg').textContent = text; };
 autosuggest($('listAdd'), $('listSug'), name => {
-  if (onList(name)) return listSay(`${name} is already on the list.`);
+  const p = playerNamed(name);
+  if (p) return flash(p.present ? `${p.name} is already checked in.` : `${p.name} is done for the night.`);
+  if (onList(name)) return flash(`${name} is already on the list.`);
   addToList(name);
   commit();
-}, listSay);
+  saveList();
+}, flash);
 
 // Paste: each line resolves like typing does; names shared by several players wait for a choice.
 $('pasteDlg').addEventListener('close', () => {
@@ -330,6 +325,7 @@ $('pasteDlg').addEventListener('close', () => {
   }
   $('pasteText').value = '';
   commit();
+  saveList();
 });
 
 for (const t of ['home', 'away']) {
@@ -404,7 +400,7 @@ function renderQueue() {
       <td class="n">${i + 1}</td>
       <td><b>${esc(p.name)}</b><small>${plural(p.games, 'game')} tonight · waiting ${Math.floor((now - p.readyAt) / 60000)} min${tag(p.name)}</small></td>
       <td class="tags hide-sm"><span>${tags}</span></td>
-      <td class="act"><span>${open ? btn('pick', p.name, 'Pick') : ''}${btn('out', p.name, 'Out')}</span></td>
+      <td class="act"><span>${open ? btn('pick', p.name, 'Pick') : ''}${btn('done', p.name, 'Done')}</span></td>
     </tr>`;
   }).join('') || `<tr><td colspan="4" class="empty">Nobody waiting.${state.players.length ? '' : ' Check people in on the Check in tab.'}</td></tr>`;
 
@@ -412,7 +408,7 @@ function renderQueue() {
   $('outBox').hidden = !out.length;
   $('out').innerHTML = out.map(p => `<tr>
       <td><b>${esc(p.name)}</b><small>${plural(p.games, 'game')}</small></td>
-      <td class="act">${btn('back', p.name, 'Back')}</td>
+      <td class="act">${btn('undoDone', p.name, 'Undo')}</td>
     </tr>`).join('');
 
   $('leaderRows').innerHTML = [...state.players]
@@ -430,31 +426,24 @@ function renderTonight() {
   const offline = db === 'offline';
   $('expectedIntro').textContent = offline
     ? 'Database offline. Start server.py to load profiles. Check-in still works.'
-    : 'This week\'s list with each player\'s record. Check people in as they arrive.';
+    : 'Add this week\'s players before they arrive, then check each one in as they show up. Walk-ins too: add, then check in.';
+  $('expectedCount').textContent = state.expected.length ? `${waiting.length} OF ${state.expected.length} TO ARRIVE` : '';
   $('expected').innerHTML = waiting.map(n => {
     const p = profileOf(n), name = p?.name ?? n;
     const record = offline ? '' : p?.games ? `${plural(p.games, 'game')} · ${p.points} points · AVG ${p.avg.toFixed(1)}` : 'First game';
     return `<tr>
       <td><b>${esc(name)}</b><small>${record}</small></td>
-      <td class="act">${btn('checkIn', name, 'Check in', { cls: 's' })}</td>
+      <td class="act"><span>${btn('checkIn', name, 'Check in', { cls: 's' })}<button type="button" class="xbtn" data-action="removeName"
+        data-name="${esc(n)}" data-arg="" aria-label="Remove ${esc(name)} from tonight's list">&times;</button></span></td>
     </tr>`;
   }).join('') || `<tr><td colspan="2" class="empty">${state.expected.length
-    ? 'Everyone on the list has checked in.' : 'No list yet. Add this week\'s players above.'}</td></tr>`;
+    ? 'Everyone on the list has checked in.' : 'Nobody on the list yet. Add players above, or paste this week\'s list.'}</td></tr>`;
 
-  $('listEditor').hidden = !editingList;
-  $('listFolded').hidden = editingList;
-  $('listCount').textContent = state.expected.length
-    ? `${plural(state.expected.length, 'player')} on tonight's list.` : 'No list tonight.';
-  $('tonightCount').textContent = plural(state.expected.length, 'name').toUpperCase();
-  $('chips').innerHTML = state.expected.map(n => `<li class="chip">${esc(n)}${
-    db === 'online' && !profileOf(n)?.games ? '<span class="mono">NEW</span>' : ''}<button type="button" data-action="removeName"
-      data-name="${esc(n)}" aria-label="Remove ${esc(n)}">&times;</button></li>`).join('');
   $('choices').innerHTML = needsChoice.map(c => `<div class="notice">
       <b>${esc(c.query)} matches ${c.choices.length} players. Which one is coming?</b>
       <div class="btns">${[...c.choices.map(n => btn('choose', n, esc(n), { arg: esc(c.query) })),
         btn('choose', c.query, 'New player', { arg: esc(c.query) })].join('')}</div>
     </div>`).join('');
-  $('doneBtn').disabled = needsChoice.length > 0;
 
   const pending = state.unsynced.length;
   $('dbStatus').textContent = [

@@ -83,12 +83,13 @@ Edge rules:
   `readyAt`), so they are first in line next game. Passing costs nobody a
   game, because the next person takes the spot. The open spot is filled by
   *Fill* (next in line) or by a hand-pick (below).
-- **Resting or gone:** the *Out / Back* toggle on the waiting list
-  (`present = false`) takes a player out of the queue for as long as they like,
-  whether they're resting for a few games or gone for the day. They stay on the
-  leaderboard. *Back* restores their game count and their place, so stepping
-  out does not reset anyone to the front, and it doesn't push them to the back
-  either.
+- **Short break:** use *Sit out* when a player is called. They keep their
+  place and lead the next game.
+- **Done for the night:** the *Done* button on the waiting list
+  (`present = false`, after a confirm) takes a player out of the queue for the
+  rest of the session. Fill never calls them again. They stay on the
+  leaderboard. Players don't leave and come back, so there is no "back"
+  button; *Undo* in the "Done for the night" list only fixes a mistaken tap.
 - **Players who want to play together (hand-pick):** the app does not try to
   keep groups together. The attendant can *Pick* any waiting player into an
   open "Up next" spot, so friends can be called together. Because this can skip
@@ -101,8 +102,8 @@ Edge rules:
   - The waiting list always stays in fairness order, so it is clear who
     *should* be next, whatever was picked.
 - **Same name twice:** check-in matches names without case across tonight's
-  players. A player already present is refused, and one marked Out comes back
-  with the same place, so nobody is in the queue twice by mistake.
+  players. A player already checked in, or done for the night, is refused, so
+  nobody is in the queue twice by mistake.
 
 ## 4. Data model
 
@@ -111,7 +112,7 @@ The entire app state is one JSON object, saved under one `localStorage` key.
 ```js
 state = {
   players: [
-    { name, games, readyAt, present, totalPoints }    // name is the key
+    { name, games, readyAt, present, totalPoints }    // name is the key; present = false means done for the night
   ],
   game: {                           // the current or next game; never empty
     number,                         // 1, 2, 3 ... within the session
@@ -154,8 +155,9 @@ Design choices:
                └─────── End game: games+1, readyAt = now, points added to totals
 ```
 
-1. **Check in.** Type a name in the check-in box. It autocompletes from the
-   saved member list. Enter adds the player with `games = 0`, `readyAt = now`.
+1. **Check in.** Tap *Check in* on the player's row in tonight's list. That
+   adds them with `games = 0`, `readyAt = now`. A walk-in is added to the list
+   first, then checked in the same way.
 2. **Fill.** Fills every open "Up next" spot from the fairness order. On an
    empty court this calls a full game of 10. Allowed only before the clock
    first starts and while nobody has scored.
@@ -180,15 +182,16 @@ Design choices:
    `games + 1` and `readyAt = now`, their game points go into `totalPoints`,
    and the game is queued in `unsynced` for the database. The court is then
    empty, ready for *Fill*.
-9. **Out / Back.** Toggle a player's `present` flag from the waiting list.
+9. **Done for the night.** *Done* on the waiting list clears a player's
+   `present` flag for the rest of the session. *Undo* reverses a mistaken tap.
 10. **New session.** Asks for confirmation and clears players, game and
    tonight's list. Games not yet saved to the database are kept until they are.
 11. **Tonight's list.** Before people arrive, add the week's players one at a
    time with the autosuggest box, or paste a list in a dialog. A first name is
    enough when only one player in the database has it. If several do, the app
-   asks which one is coming. Press *Done* and the builder folds to one line
-   ("13 players on tonight's list · Edit list"). The players then appear under
-   *Expected tonight* with their record and a Check in button.
+   asks which one is coming. Each player then has a row with their record, a
+   *Check in* button and a × to take them off the list. Checked-in players
+   leave the list and move to the queue.
 
 ## 6. User interface
 
@@ -209,19 +212,16 @@ laptop screen and still works at phone width.
 - **Top of the tab:** when the session started, how many are checked in and
   waiting, a database status line (online or offline, players on file, and any
   games not yet in the database), and *Start a new session*.
-- **Check-in box** with autosuggest. Typing a first name, last name or the
-  start of either lists matching players with their record. Tonight's list
-  ranks first, then whoever has played more. Enter checks in the only match.
-  When a first name is shared, nothing happens until a player is picked. A
-  single word shared by several players always asks which one, including
-  when someone is saved under just that first name. A
-  name nobody has used shows a *New player* row.
-- **Tonight's list builder:** the same autosuggest, removable name chips, a
-  *Paste a list* dialog, and a "needs a choice" callout for shared first
-  names (the same single-word rule applies). It folds away once the list is
-  done.
-- **Expected tonight:** the pasted list, minus whoever has checked in, with
-  games, points and average from the database.
+- **Tonight's list:** one box with autosuggest adds players. Typing a first
+  name, last name or the start of either lists matching players with their
+  record, then whoever has played more. Enter adds the only match. A single
+  word shared by several players always asks which one, including when
+  someone is saved under just that first name. A name nobody has used shows a
+  *New player* row. *Paste a list* opens a dialog for the weekly names, and
+  shared first names wait in a "Which one is coming?" callout.
+- **List rows:** everyone on the list who hasn't checked in yet, with games,
+  points and average from the database, a *Check in* button and a × to take
+  them off the list. The header counts how many are still to arrive.
 
 ### Queue tab (for the attendant)
 
@@ -234,8 +234,9 @@ laptop screen and still works at phone width.
   once the clock has started or anyone has scored.
 - **Waiting list,** in exact fairness order, so everyone can see where they
   stand. Each row shows the player's name, games played, live wait time
-  ("waiting 34 min"), a *Pick* button (enabled when a spot is open) and an
-  *Out / Back* toggle. The rows that Fill would take are marked "next in line".
+  ("waiting 34 min"), a *Pick* button (enabled when a spot is open) and a
+  *Done* button for players leaving for the night. Below it, a "Done for the
+  night" list with *Undo* for mistaken taps. The rows that Fill would take are marked "next in line".
   A *Passed over* badge appears on anyone with fewer games than a player in
   Up next.
 
@@ -297,7 +298,7 @@ What stays the same:
 - The fairness rule and queue. They don't depend on the sport. The pick
   function takes `teamSize` as a parameter (basketball 5, volleyball 6), so
   volleyball calls 12 players.
-- Check-in, fill, pick, sit out, out/back, team assignment, the leaderboard, saving, and the
+- Check-in, fill, pick, sit out, done for the night, team assignment, the leaderboard, saving, and the
   page layout.
 
 What changes, all of it in the scoreboard:
