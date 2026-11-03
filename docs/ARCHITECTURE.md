@@ -204,14 +204,14 @@ everything still works.
 
 One page with four tabs in the island: Check in, Queue, Scoreboard and
 Leaderboard. Each tab is a whole view, and its name is kept in the
-URL (`#checkin`, `#queue`, ...) so a refresh returns to it. The layout targets a
+URL (`#checkin`, `#queue`, ...) so a refresh returns to it. A small footer
+on every tab except the scoreboard shows the word "Database" in green when the
+database is online and red when it is offline, plus any games not saved yet. The layout targets a
 laptop screen and still works at phone width.
 
 ### Check in tab (for the attendant)
 
-- **Top of the tab:** when the session started, how many are checked in and
-  waiting, a database status line (online or offline, players on file, and any
-  games not yet in the database), and *Start a new session*.
+- **Top of the tab:** the "Tonight's list" heading and *Start a new session*.
 - **Tonight's list:** one box with autosuggest adds players. Typing a first
   name, last name or the start of either lists matching players with their
   record, then whoever has played more. Enter adds the only match. A single
@@ -408,5 +408,5 @@ are whole numbers from 0 to 200. It serves only `index.html`, `app.js`,
 
 **When the server isn't running:** the queue and scoreboard work as before.
 Finished games wait in `unsynced` in the browser and are sent when the
-database is back (on page load and after every End game). The database status
-line at the top of the Check in tab shows how many games are waiting.
+database is back (on page load and after every End game). The database footer
+turns red and shows how many games are waiting.

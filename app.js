@@ -446,12 +446,11 @@ function renderTonight() {
     </div>`).join('');
 
   const pending = state.unsynced.length;
-  $('dbStatus').textContent = [
-    { online: `Database online · ${plural(profiles.size, 'player')} on file`,
-      offline: 'Database offline · run python3 server.py', connecting: 'Connecting to database' }[db],
-    pending && `${plural(pending, 'game')} not in the database yet`,
-    !saved && 'Not saved in this browser',
-  ].filter(Boolean).join(' · ');
+  $('dbFooter').className = `dbf ${{ online: 'on', offline: 'off' }[db] ?? ''}`;
+  $('dbFooter').title = offline ? 'Run python3 server.py, then open http://localhost:8000' : `${plural(profiles.size, 'player')} on file`;
+  $('dbState').textContent = ` ${db}`;
+  $('dbNote').textContent = [pending && `· ${plural(pending, 'game')} not saved yet`, !saved && '· not saved in this browser']
+    .filter(Boolean).join(' ');
 }
 
 function renderBoard() {

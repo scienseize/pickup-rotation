@@ -12,7 +12,7 @@
 :root{
   --bg:#faf8f5; --panel:#f1ede8; --card:#ffffff; --line:#e6e1dc; --ink:#1c1a19; --tx:#3d3936; --mu:#77706a; --faint:#d6d0ca;
   --btn:#1c1a19; --btn-tx:#faf8f5; --btn-mu:rgba(250,248,245,.6); --tag:#dfe4ef; --tag-tx:#273044; --ember:#de4a26;
-  --shadow:0 12px 32px rgba(28,26,25,.18); --dot:rgba(28,26,25,.13);
+  --shadow:0 12px 32px rgba(28,26,25,.18); --dot:rgba(28,26,25,.13); --ok:#2f8a4c; --bad:#c8372d;
   --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
   --sans:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
@@ -21,11 +21,11 @@
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#1b1a19; --panel:#252321; --card:#2b2927; --line:#36332f; --ink:#f3efea; --tx:#d9d3cd; --mu:#a39c95; --faint:#4a4642;
   --btn:#f3efea; --btn-tx:#1b1a19; --btn-mu:rgba(27,26,25,.62); --tag:#323a4d; --tag-tx:#dfe4ef; --ember:#ef6a47;
-  --shadow:0 12px 32px rgba(0,0,0,.45); --dot:rgba(243,239,234,.1); color-scheme:dark}}
+  --shadow:0 12px 32px rgba(0,0,0,.45); --dot:rgba(243,239,234,.1); --ok:#5fc27a; --bad:#f0625a; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#1b1a19; --panel:#252321; --card:#2b2927; --line:#36332f; --ink:#f3efea; --tx:#d9d3cd; --mu:#a39c95; --faint:#4a4642;
   --btn:#f3efea; --btn-tx:#1b1a19; --btn-mu:rgba(27,26,25,.62); --tag:#323a4d; --tag-tx:#dfe4ef; --ember:#ef6a47;
-  --shadow:0 12px 32px rgba(0,0,0,.45); --dot:rgba(243,239,234,.1); color-scheme:dark}
+  --shadow:0 12px 32px rgba(0,0,0,.45); --dot:rgba(243,239,234,.1); --ok:#5fc27a; --bad:#f0625a; color-scheme:dark}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--tx);font-family:var(--sans);font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased}
@@ -130,6 +130,14 @@ button.btn:disabled{opacity:.4;cursor:not-allowed}
 .xbtn{border:0;background:none;color:var(--mu);cursor:pointer;font:inherit;font-size:18px;line-height:1;width:30px;height:30px;border-radius:5px}
 .xbtn:hover{color:var(--ink);background:var(--panel)}
 #msg:empty{display:none}
+/* Database footer: green when the database is online, red when it is not. */
+.dbf{max-width:1080px;margin:96px auto 0;padding-top:16px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mu)}
+.dbf i{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.dbf.on{color:var(--ok)}.dbf.on i{background:var(--ok)}
+.dbf.off{color:var(--bad)}.dbf.off i{background:var(--bad)}
+#dbNote{color:var(--mu)}
+#board:not([hidden]) ~ .dbf{display:none}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 #choices{display:flex;flex-direction:column;gap:12px;margin-top:12px}
 #choices:empty{display:none}
 .notice .btns{margin-top:12px;justify-content:flex-start}
@@ -227,17 +235,11 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 
 <main class="page">
   <div class="tabpanel" id="checkin" role="tabpanel" aria-labelledby="tab-checkin" hidden>
-    <div class="hero sm">
-      <h1>Who's here</h1>
-      <p class="date session-line"></p>
-      <p class="mono" id="dbStatus" role="status"></p>
-      <div class="btns"><button class="btn o" data-action="newSession">Start a new session</button></div>
-    </div>
-
     <section>
       <div class="sh">
         <h2>Tonight's list.</h2>
         <p id="expectedIntro"></p>
+        <div><button class="btn o s" data-action="newSession">Start a new session</button></div>
       </div>
       <div class="wide">
         <div class="checkin">
@@ -347,6 +349,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
     <p class="note" style="text-align:center">Space starts and pauses the clock.</p>
   </div>
 
+  <footer class="dbf" id="dbFooter" role="status"><i aria-hidden="true"></i>Database<span class="sr" id="dbState"></span><span id="dbNote"></span></footer>
 </main>
 
 <dialog id="pasteDlg" aria-labelledby="pasteTitle">
