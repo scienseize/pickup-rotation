@@ -12,7 +12,7 @@ const newGame = number => ({
   number, onCourt: [], satOut: [], homeName: 'Home', awayName: 'Away',
   remainingMs: GAME_MS, endsAt: null, started: false,
 });
-const newSession = () => ({ players: [], game: newGame(1), log: [], expected: [], unsynced: [], startedAt: Date.now() });
+const newSession = () => ({ players: [], game: newGame(1), expected: [], unsynced: [], startedAt: Date.now() });
 
 let state = load();
 let saved = true;
@@ -25,6 +25,7 @@ function load() {
     const s = JSON.parse(localStorage.getItem(KEY));
     if (s) {
       delete s.roster; // replaced by the database
+      delete s.log; // never read
       return { expected: [], unsynced: [], startedAt: Date.now(), ...s };
     }
   } catch {}
@@ -49,6 +50,8 @@ const clockText = ms => {
   const s = Math.ceil(ms / 1000);
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 };
+// Fill, Pick and Sit out lock once the clock has started or anyone has scored.
+const locked = () => state.game.started || state.game.onCourt.some(c => c.points > 0);
 const ready = () => {
   const court = state.game.onCourt;
   return court.length > 0 && court.every(c => c.team) && ['home', 'away'].every(t => court.some(c => c.team === t));
@@ -124,7 +127,11 @@ async function api(path, body) {
 }
 
 // Finished games wait in state.unsynced (saved in this browser) until the database has them.
+// One sync at a time: an overlapping one could send the same game twice or shift the wrong one.
+let syncing = false, syncAgain = false;
 async function sync() {
+  if (syncing) { syncAgain = true; return; }
+  syncing = true;
   try {
     await api('/api/profiles');
     while (state.unsynced.length) {
@@ -135,6 +142,9 @@ async function sync() {
     }
   } catch (e) {
     if (!(e instanceof Rejected)) db = 'offline';
+  } finally {
+    syncing = false;
+    if (syncAgain) { syncAgain = false; sync(); }
   }
   render();
 }
@@ -228,9 +238,9 @@ function autosuggest(input, list, pick, say) {
 // ---- actions (each click handler; return false to skip saving) ----
 
 const actions = {
-  fill: () => Queue.fill(state.players, state.game, SPOTS),
-  pick: name => Queue.pick(state.game, name, SPOTS),
-  sitOut: name => Queue.sitOut(state.game, name),
+  fill() { if (locked()) return false; Queue.fill(state.players, state.game, SPOTS); },
+  pick(name) { if (locked()) return false; Queue.pick(state.game, name, SPOTS); },
+  sitOut(name) { if (locked()) return false; Queue.sitOut(state.game, name); },
   team: (name, team) => { const c = seatOf(name); c.team = c.team === team ? null : team; },
   out: name => { player(name).present = false; },
   back: name => { player(name).present = true; },
@@ -264,7 +274,7 @@ const actions = {
     const g = state.game;
     if (!g.onCourt.length) return false;
     if (!confirm(`End game ${g.number}? ${g.homeName} ${score('home')}, ${g.awayName} ${score('away')}.`)) return false;
-    state.log.push(...Queue.endGame(state.players, g, Date.now()));
+    Queue.endGame(state.players, g, Date.now());
     state.unsynced.push({
       session: state.startedAt, date: localDate(state.startedAt), game: g.number,
       rows: g.onCourt.map(c => ({ name: c.name, points: c.points })),
@@ -278,6 +288,8 @@ const actions = {
   newSession() {
     if (!confirm('Start a new session? This clears tonight\'s players, list and points. The database keeps every result.')) return false;
     state = { ...newSession(), unsynced: state.unsynced };
+    editingList = true;
+    needsChoice = [];
   },
 
   fullscreen() {
@@ -336,28 +348,39 @@ document.addEventListener('keydown', e => {
 
 // ---- rendering ----
 
+// Re-rendering rebuilds the buttons; put keyboard focus back on the same one.
+function keepFocus(draw) {
+  const d = document.activeElement?.dataset;
+  draw();
+  if (!d?.action) return;
+  const at = k => `[data-${k}="${CSS.escape(d[k] ?? '')}"]`;
+  document.querySelector(`[data-action="${CSS.escape(d.action)}"]${at('name')}${at('arg')}`)?.focus();
+}
+
 function render() {
-  renderQueue();
-  renderBoard();
-  renderClock();
-  renderTonight();
+  keepFocus(() => {
+    renderQueue();
+    renderBoard();
+    renderClock();
+    renderTonight();
+  });
 }
 
 function renderQueue() {
   const g = state.game;
-  const locked = g.started;
-  const open = !locked && g.onCourt.length < SPOTS;
+  const lock = locked();
+  const open = !lock && g.onCourt.length < SPOTS;
   const order = Queue.waitingOrder(state.players, g);
   const next = new Set(Queue.nextInLine(state.players, g, SPOTS).map(p => p.name));
-  const passed = new Set(locked ? [] : Queue.passedOver(state.players, g)); // nothing to fix once play starts
+  const passed = new Set(lock ? [] : Queue.passedOver(state.players, g)); // nothing to fix once play starts
   const present = state.players.filter(p => p.present).length;
   const now = Date.now();
   const time = new Date(state.startedAt ?? now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
   $('sessionLine').textContent = `Session started ${time} · ${present} checked in · ${order.length} waiting`;
-  $('fillBtn').hidden = locked;
+  $('fillBtn').hidden = lock;
   $('fillBtn').disabled = !open || !next.size;
-  $('upnextIntro').textContent = locked
+  $('upnextIntro').textContent = lock
     ? `Game ${g.number} is on. Spots unlock when it ends.`
     : `Game ${g.number}. ${g.onCourt.length} of ${SPOTS} spots filled. Players choose sides, then set each one's team here.`;
 
@@ -366,7 +389,7 @@ function renderQueue() {
       <td><b>${esc(c.name)}</b><small>${plural(player(c.name).games, 'game')} tonight${tag(c.name)}</small></td>
       <td class="act"><span>
         <span class="seg">${['home', 'away'].map(t => btn('team', c.name, esc(g[t + 'Name']), { arg: t, pressed: c.team === t, cls: c.team === t ? 's' : 'o s' })).join('')}</span>
-        ${locked ? '' : btn('sitOut', c.name, 'Sit out')}
+        ${lock ? '' : btn('sitOut', c.name, 'Sit out')}
       </span></td>
     </tr>`).join('') || '<tr><td colspan="3" class="empty">Nobody called yet. Press Fill open spots.</td></tr>';
 
@@ -493,7 +516,7 @@ setInterval(() => {
   }
   renderClock();
 }, 250);
-setInterval(renderQueue, 15000); // keep wait times current
+setInterval(() => keepFocus(renderQueue), 15000); // keep wait times current
 
 route();
 render();

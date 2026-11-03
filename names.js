@@ -30,14 +30,15 @@ const Names = {
   },
 
   // What typed text means: one known player, a choice between several who
-  // share that first name, or a new player. Prefixes never resolve on their own,
+  // share that first name (a bare name saved on its own included), or a new player. Prefixes never resolve on their own,
   // so a new "Jo" is not silently turned into "Jose".
   resolve(query, people) {
     const q = Names.norm(query);
     if (!q) return { fresh: '' };
     const exact = people.find(p => Names.norm(p.name) === q);
-    if (exact) return { name: exact.name };
     const first = people.filter(p => Names.rank(q, Names.norm(p.name)) === 1);
+    // a bare first name shared with others must not hide them: ask which one
+    if (exact) return !q.includes(' ') && first.length ? { choices: [exact.name, ...first.map(p => p.name)] } : { name: exact.name };
     if (first.length === 1) return { name: first[0].name };
     if (first.length > 1) return { choices: first.map(p => p.name) };
     return { fresh: Names.clean(query) };

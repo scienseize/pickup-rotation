@@ -58,6 +58,8 @@ def whole(value, low, high, what):
 
 
 def add_players(db, names, today=None):
+    if not isinstance(names, list):
+        raise ValueError('names must be a list')
     rows = [(clean_name(n), today or date.today().isoformat()) for n in names]
     with db:
         db.executemany('INSERT OR IGNORE INTO players VALUES (?, ?)', rows)
@@ -68,6 +70,10 @@ def save_game(db, session, played_on, game, rows):
     session = whole(session, 0, 2 ** 53, 'session')
     game = whole(game, 1, 1000, 'game')
     played_on = date.fromisoformat(played_on).isoformat()
+    if not isinstance(rows, list):
+        raise ValueError('rows must be a list')
+    if not all(isinstance(r, dict) for r in rows):
+        raise ValueError('each row must be an object')
     results = [(session, played_on, game, clean_name(r['name']), whole(r['points'], 0, MAX_POINTS, 'points'))
                for r in rows]
     with db:
@@ -105,6 +111,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         db = self.server.db
+        # JSON only: a cross-site form can't send it without a CORS preflight, which we don't answer
+        if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
+            return self.send(415, {'error': 'send JSON'})
         try:
             length = int(self.headers.get('Content-Length') or 0)
             if length > MAX_BODY:

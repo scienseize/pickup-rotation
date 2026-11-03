@@ -1,4 +1,8 @@
 # Run: python3 test_server.py
+import json
+import threading
+import urllib.error
+import urllib.request
 import server
 
 db = server.connect(':memory:')
@@ -30,5 +34,31 @@ for bad in ('', '   ', 'x' * 61, 7):
     except ValueError:
         pass
 assert {p['name']: p for p in server.profiles(db)}['Ana']['games'] == 2
+
+# A names string must not be split into letters.
+before = server.profiles(db)
+try:
+    server.add_players(db, 'Ana')
+    raise AssertionError('accepted a string for names')
+except ValueError:
+    pass
+assert server.profiles(db) == before
+
+# POST accepts JSON only, so other websites can't write (browsers would need a preflight).
+httpd = server.HTTPServer(('127.0.0.1', 0), server.Handler)
+def run():
+    httpd.db = server.connect(':memory:')  # sqlite connections stay on their thread
+    httpd.serve_forever()
+threading.Thread(target=run, daemon=True).start()
+def post(kind):
+    req = urllib.request.Request('http://127.0.0.1:%d/api/players' % httpd.server_port,
+                                 json.dumps({'names': ['Zed']}).encode(), {'Content-Type': kind})
+    try:
+        return urllib.request.urlopen(req).status
+    except urllib.error.HTTPError as e:
+        return e.code
+assert post('text/plain') == 415
+assert post('application/json; charset=utf-8') == 200
+httpd.shutdown()
 
 print('test_server.py: all checks passed')

@@ -35,4 +35,9 @@ assert.deepEqual(Names.resolve('Ana', people), { choices: ['Ana Reyes', 'Ana Cru
 assert.deepEqual(Names.resolve('  Zed   Park ', people), { fresh: 'Zed Park' });
 assert.deepEqual(Names.resolve('Jos', people), { fresh: 'Jos' }); // a prefix alone never resolves
 
+// A bare first name shared with longer names asks which one; a full name does not.
+const anas = [{ name: 'Ana', games: 1 }, { name: 'Ana Reyes', games: 3 }, { name: 'Ana Cruz', games: 9 }];
+assert.deepEqual(Names.resolve('ana', anas), { choices: ['Ana', 'Ana Reyes', 'Ana Cruz'] });
+assert.deepEqual(Names.resolve('Ana Reyes', anas), { name: 'Ana Reyes' });
+
 console.log('names.test.js: all checks passed');

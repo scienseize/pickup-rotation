@@ -49,15 +49,14 @@ const Queue = {
       .map(p => p.name);
   },
 
-  // Count the game for everyone on court; returns one log row per player.
+  // Count the game for everyone on court.
   endGame(players, game, now) {
-    return game.onCourt.map(c => {
+    for (const c of game.onCourt) {
       const p = players.find(p => p.name === c.name);
       p.games += 1;
       p.readyAt = now;
       p.totalPoints += c.points;
-      return { gameNumber: game.number, name: c.name, team: c.team, points: c.points };
-    });
+    }
   },
 
   seat: name => ({ name, team: null, points: 0 }),

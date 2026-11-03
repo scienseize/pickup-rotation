@@ -100,8 +100,9 @@ Edge rules:
     is unfair and to whom.
   - The waiting list always stays in fairness order, so it is clear who
     *should* be next, whatever was picked.
-- **Same name twice:** check-in refuses an exact duplicate name among present
-  players, so nobody is in the queue twice by mistake.
+- **Same name twice:** check-in matches names without case across tonight's
+  players. A player already present is refused, and one marked Out comes back
+  with the same place, so nobody is in the queue twice by mistake.
 
 ## 4. Data model
 
@@ -121,7 +122,6 @@ state = {
     remainingMs,                    // used while paused
     started                         // clock has run; locks Fill, Pick, Sit out
   },
-  log: [ { gameNumber, name, team, points } ],   // one row per player per finished game
   expected: [ names ],              // tonight's list, pasted each week
   unsynced: [ game payloads ],      // finished games the database doesn't have yet
   startedAt                         // session start; also the session id in the database
@@ -140,8 +140,6 @@ Design choices:
 - **`expected` is separate from `players`.** Tonight's list only shows who
   should come and their record. Being on the list does not put anyone in the
   queue. Only check-in does, so arrival order still decides fairness.
-- **`log`** keeps the per-game breakdown so the leaderboard can show more than
-  totals later, without changing the model.
 
 ## 5. Flows
 
@@ -160,11 +158,13 @@ Design choices:
    saved member list. Enter adds the player with `games = 0`, `readyAt = now`.
 2. **Fill.** Fills every open "Up next" spot from the fairness order. On an
    empty court this calls a full game of 10. Allowed only before the clock
-   first starts.
+   first starts and while nobody has scored.
 3. **Pick.** Hand-picks a specific waiting player into an open spot, for
    friends who want to play together (section 3). Same timing rule as Fill.
 4. **Sit out.** For a called player who refuses or isn't there: it frees their
-   spot, and they keep their place (section 3). Same timing rule.
+   spot, and they keep their place (section 3). Same timing rule. Sit out, Fill
+   and Pick all lock once the clock has started or anyone has scored, so a
+   clock reset cannot drop a scorer's points.
 5. **Assign teams.** The players choose their own sides. The attendant taps
    each called player to set Home or Away. The scoreboard is enabled once all
    called players have a team, with at least one per side. That is normally 10;
@@ -176,10 +176,10 @@ Design choices:
    let a tie play on.
 8. **End game.** Asks for confirmation. Every on-court player gets
    `games + 1` and `readyAt = now`, their game points go into `totalPoints`,
-   and a row per player goes into `log`. The court is then empty, ready for
-   *Fill*.
+   and the game is queued in `unsynced` for the database. The court is then
+   empty, ready for *Fill*.
 9. **Out / Back.** Toggle a player's `present` flag from the waiting list.
-10. **New session.** Asks for confirmation and clears players, game, log and
+10. **New session.** Asks for confirmation and clears players, game and
    tonight's list. Games not yet saved to the database are kept until they are.
 11. **Tonight's list.** Before people arrive, add the week's players one at a
    time with the autosuggest box, or paste a list in a dialog. A first name is
@@ -206,16 +206,19 @@ laptop screen and still works at phone width.
   start of either lists matching players with their record. Tonight's list
   ranks first, then whoever has played more. Enter checks in the only match.
   When a first name is shared, nothing happens until a player is picked. A
+  single word shared by several players always asks which one, including
+  when someone is saved under just that first name. A
   name nobody has used shows a *New player* row.
 - **Tonight's list builder:** the same autosuggest, removable name chips, a
   *Paste a list* dialog, and a "needs a choice" callout for shared first
-  names. It folds away once the list is done.
+  names (the same single-word rule applies). It folds away once the list is
+  done.
 - **Expected tonight:** the pasted list, minus whoever has checked in, with
   games, points and average from the database.
 - **Up next / On court:** 10 spots with a *Fill* button. Each called player's
   row has their name, games played, a Home/Away toggle, and a *Sit out* button.
   Empty spots show as open. Fill, Pick and Sit out are hidden once the clock
-  has started.
+  has started or anyone has scored.
 - **Waiting list,** in exact fairness order, so everyone can see where they
   stand. Each row shows the player's name, games played, live wait time
   ("waiting 34 min"), a *Pick* button (enabled when a spot is open) and an
@@ -314,7 +317,9 @@ the scoreboard code.
 ## 10. Files
 
 ```
-index.html       markup and styles; open this to run the app
+index.html       markup and styles; served by `python3 server.py` at
+                 http://localhost:8000. Opened directly, it still runs the queue
+                 and scoreboard without the database
 app.js           state, saving, rendering, scoreboard, clock, buzzer
 queue.js         fairness rules, no DOM: waitingOrder, nextInLine, fill, pick, sitOut,
                  passedOver, endGame
@@ -338,6 +343,9 @@ test.
   latecomer first, short-queue fill, sit-out keeps place and counts no game,
   pick takes a specific player and flags passed-over players, end game adds
   points to totals.
+- `node names.test.js` covers the name matching rules.
+- `python3 test_server.py` covers the database rules and the JSON-only POST
+  check (other content types get 415).
 - Manual run in a browser. Check in 13 players and run two games, confirming
   the 3 who did not play go first. Add a latecomer and confirm they go first.
   Sit someone out and confirm they lead the next game; hand-pick a player and
