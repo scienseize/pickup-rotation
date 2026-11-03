@@ -1,6 +1,6 @@
 // Run: node queue.test.js
 const assert = require('node:assert');
-const Queue = require('./queue.js');
+const Queue = require('./public/queue.js');
 
 const join = (name, readyAt) => ({ name, games: 0, readyAt, present: true, totalPoints: 0 });
 const newGame = number => ({ number, onCourt: [], satOut: [] });

@@ -130,10 +130,13 @@ button.btn:disabled{opacity:.4;cursor:not-allowed}
 .xbtn{border:0;background:none;color:var(--mu);cursor:pointer;font:inherit;font-size:18px;line-height:1;width:30px;height:30px;border-radius:5px}
 .xbtn:hover{color:var(--ink);background:var(--panel)}
 #msg:empty{display:none}
-/* Database dot in the island: green when the database is online, red when it is not. */
-.island-db{width:8px;height:8px;border-radius:50%;background:var(--btn-mu);flex-shrink:0;margin:0 6px 0 -6px}
-.island-db.on{background:var(--ok)}
-.island-db.off{background:var(--bad)}
+/* Database dot in the island: green when the database is online, red when it is not.
+   It is a button (opens the passcode dialog) with a 24px target around an 8px dot. */
+.island-db{width:24px;height:24px;border:0;padding:0;background:none;display:grid;place-items:center;flex-shrink:0;margin:0 2px 0 -10px;cursor:pointer;border-radius:50%}
+.island-db::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--btn-mu)}
+.island-db.on::before{background:var(--ok)}
+.island-db.off::before{background:var(--bad)}
+.island-db:focus-visible{outline:2px solid var(--ember);outline-offset:-2px}
 #choices{display:flex;flex-direction:column;gap:12px;margin-top:12px}
 #choices:empty{display:none}
 .notice .btns{margin-top:12px;justify-content:flex-start}
@@ -204,7 +207,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 @media (max-width:600px){
   .page{padding-inline:16px}
   .island-mark{display:none}
-  .island-db{margin:0 2px 0 10px}
+  .island-db{margin:0 0 0 6px}
   .island-tabs button{padding:11px 10px;letter-spacing:.05em;font-size:11px}
   .island .clk{display:none}
   .hero{padding-block:40px 40px}
@@ -220,7 +223,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 <body>
 <nav class="island" id="island" aria-label="Pick-up rotation">
   <span class="island-mark" aria-hidden="true"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="7"/></svg></span>
-  <span class="island-db" id="dbDot" role="img" aria-label="Database connecting"></span>
+  <button type="button" class="island-db" id="dbDot" aria-label="Database connecting"></button>
   <div class="island-tabs" role="tablist" aria-label="Views">
     <span class="island-thumb" aria-hidden="true"></span>
     <button role="tab" id="tab-checkin" data-tab="checkin" aria-controls="checkin" aria-selected="false" tabindex="-1">Check in</button>
@@ -356,6 +359,18 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
     <div class="btns left">
       <button class="btn o s" value="cancel">Cancel</button>
       <button class="btn s" value="add">Add names</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="passDlg" aria-labelledby="passTitle">
+  <form method="dialog">
+    <h3 id="passTitle">Organizer passcode</h3>
+    <p class="tl">Needed once on each laptop to save players and results. Viewing works without it.</p>
+    <input class="in" id="passText" type="password" autocomplete="current-password" aria-label="Organizer passcode">
+    <div class="btns left">
+      <button class="btn o s" value="cancel">Cancel</button>
+      <button class="btn s" value="save">Save</button>
     </div>
   </form>
 </dialog>

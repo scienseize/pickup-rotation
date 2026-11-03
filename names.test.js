@@ -1,6 +1,6 @@
 // Run: node names.test.js
 const assert = require('node:assert');
-const Names = require('./names.js');
+const Names = require('./public/names.js');
 
 const people = [
   { name: 'Ana Reyes', games: 3 },

@@ -17,8 +17,11 @@ const newSession = () => ({ players: [], game: newGame(1), expected: [], unsynce
 let state = load();
 let saved = true;
 let audio; // created on the first click; browsers block sound before one
-let profiles = new Map(); // lowercase name -> { name, games, points, avg } from players.db
-let db = 'connecting'; // 'online' | 'offline'
+const PASS_KEY = 'pickup-passcode', PROFILES_KEY = 'pickup-profiles';
+const stored = key => { try { return localStorage.getItem(key); } catch { return null; } };
+// lowercase name -> { name, games, points, avg }; the last copy is kept so profiles still show offline
+let profiles = new Map((JSON.parse(stored(PROFILES_KEY)) || []).map(p => [p.name.toLowerCase(), p]));
+let db = 'connecting'; // 'online' | 'offline' | 'locked' (needs the organizer passcode)
 
 function load() {
   try {
@@ -60,7 +63,7 @@ const cleanName = Names.clean;
 const profileOf = name => profiles.get(name.toLowerCase());
 const playerNamed = name => state.players.find(p => p.name.toLowerCase() === name.toLowerCase());
 const avgText = name => {
-  if (db !== 'online') return '';
+  if (!profiles.size) return '';
   const p = profileOf(name);
   return p?.games ? `AVG ${p.avg.toFixed(1)}` : 'NEW';
 };
@@ -112,19 +115,33 @@ window.addEventListener('hashchange', route);
 window.addEventListener('resize', place);
 document.fonts?.ready.then(place);
 
-// ---- database: players.db through server.py; the app keeps working without it ----
+// ---- database: D1 behind the Worker; the app keeps working without it ----
 
 class Rejected extends Error {}
+class Locked extends Error {}
 
 async function api(path, body) {
   if (location.protocol === 'file:') throw new Error('opened as a file');
   const res = await fetch(path, body === undefined ? {} : {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${stored(PASS_KEY) || ''}` },
   });
+  if (res.status === 401) { db = 'locked'; askPasscode(); throw new Locked(); }
   if (res.status === 400) throw new Rejected((await res.json()).error);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  profiles = new Map((await res.json()).map(p => [p.name.toLowerCase(), p]));
-  db = 'online';
+  const list = await res.json();
+  profiles = new Map(list.map(p => [p.name.toLowerCase(), p]));
+  try { localStorage.setItem(PROFILES_KEY, JSON.stringify(list)); } catch {}
+  if (body !== undefined || db !== 'locked') db = 'online'; // a read alone doesn't prove the passcode works
+}
+
+// Writes need the organizer passcode, entered once per laptop and kept in this browser.
+function askPasscode() {
+  const dlg = $('passDlg');
+  if (dlg.open) return;
+  dlg.returnValue = '';
+  $('passText').value = '';
+  dlg.showModal();
 }
 
 // Finished games wait in state.unsynced (saved in this browser) until the database has them.
@@ -142,7 +159,7 @@ async function sync() {
       save();
     }
   } catch (e) {
-    if (!(e instanceof Rejected)) db = 'offline';
+    if (!(e instanceof Rejected || e instanceof Locked)) db = 'offline';
   } finally {
     syncing = false;
     if (syncAgain) { syncAgain = false; sync(); }
@@ -425,12 +442,12 @@ function renderTonight() {
   const waiting = state.expected.filter(n => !here.has(n.toLowerCase()));
   const offline = db === 'offline';
   $('expectedIntro').textContent = offline
-    ? 'Database offline. Start server.py to load profiles. Check-in still works.'
+    ? 'No connection. Showing saved profiles; finished games are kept and saved when it\'s back.'
     : 'Add this week\'s players before they arrive, then check each one in as they show up. Walk-ins too: add, then check in.';
   $('expectedCount').textContent = state.expected.length ? `${waiting.length} OF ${state.expected.length} TO ARRIVE` : '';
   $('expected').innerHTML = waiting.map(n => {
     const p = profileOf(n), name = p?.name ?? n;
-    const record = offline ? '' : p?.games ? `${plural(p.games, 'game')} · ${p.points} points · AVG ${p.avg.toFixed(1)}` : 'First game';
+    const record = !profiles.size ? '' : p?.games ? `${plural(p.games, 'game')} · ${p.points} points · AVG ${p.avg.toFixed(1)}` : 'First game';
     return `<tr>
       <td><b>${esc(name)}</b><small>${record}</small></td>
       <td class="act"><span>${btn('checkIn', name, 'Check in', { cls: 's' })}<button type="button" class="xbtn" data-action="removeName"
@@ -446,10 +463,12 @@ function renderTonight() {
     </div>`).join('');
 
   const pending = state.unsynced.length;
-  const dot = $('dbDot'), label = `Database ${db}${pending ? ` · ${plural(pending, 'game')} not saved yet` : ''}`;
-  dot.className = `island-db ${{ online: 'on', offline: 'off' }[db] ?? ''}`;
-  dot.setAttribute('aria-label', label);
-  dot.title = offline ? `${label}. Run python3 server.py, then open http://localhost:8000` : `${label} · ${plural(profiles.size, 'player')} on file`;
+  const dot = $('dbDot');
+  const label = `Database ${db === 'locked' ? 'needs the organizer passcode' : db}${pending ? ` · ${plural(pending, 'game')} not saved yet` : ''}`;
+  dot.className = `island-db ${{ online: 'on', offline: 'off', locked: 'off' }[db] ?? ''}`;
+  dot.setAttribute('aria-label', db === 'locked' ? `${label}. Enter passcode` : label);
+  dot.title = offline ? `${label}. Games are kept on this laptop until the connection is back.`
+    : db === 'locked' ? `${label}. Click to enter it.` : `${label} · ${plural(profiles.size, 'player')} on file`;
 }
 
 function renderBoard() {
@@ -502,6 +521,19 @@ setInterval(() => {
   renderClock();
 }, 250);
 setInterval(() => keepFocus(renderQueue), 15000); // keep wait times current
+
+$('dbDot').onclick = askPasscode;
+$('passDlg').addEventListener('close', () => {
+  if ($('passDlg').returnValue !== 'save' || !$('passText').value) return;
+  try { localStorage.setItem(PASS_KEY, $('passText').value); } catch {}
+  $('passText').value = '';
+  db = 'connecting';
+  sync();
+  saveList();
+});
+
+// Keeps the page opening with no connection once it has loaded here (sw.js).
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 route();
 render();
