@@ -5,7 +5,7 @@ basketball sessions. Design and rules: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.
 
 ## On game night (any laptop)
 
-1. Open the app's address (the `*.workers.dev` URL from the last deploy).
+1. Open https://pickup-rotation.pickup-rotation.workers.dev
 2. The first time on a laptop, click the dot next to the black mark in the top
    bar and enter the organizer passcode. Viewing works without it.
 3. Green dot: saving to the database. Red dot: no connection or passcode needed.
