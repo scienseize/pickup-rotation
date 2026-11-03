@@ -252,6 +252,10 @@ laptop screen and still works at phone width.
 - Team names are editable inline. The default is Home / Away.
 - In the last minute the clock changes color. At 0:00 the buzzer sounds.
 - **Full screen** uses the browser's Fullscreen API. Esc exits.
+  In full screen the board fills the whole display. The player lists keep
+  their natural height, the score row takes the rest, and the scores and clock
+  size to their own cards. The small HOME/AWAY chips and the Space hint are
+  hidden there. A display shorter than about 850px scrolls the player lists.
 - **Keyboard shortcuts** (space = start/pause) for the attendant. Per-player
   scoring stays on buttons, because 10 players times 4 actions is too many
   keys to remember.
