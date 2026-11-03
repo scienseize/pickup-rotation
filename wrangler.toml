@@ -9,4 +9,4 @@ directory = "public"
 [[d1_databases]]
 binding = "DB"
 database_name = "pickup"
-database_id = "00000000-0000-0000-0000-000000000000" # replaced by the id from `wrangler d1 create pickup`
+database_id = "03feea7f-b4b5-48e9-9f3a-110c14da278a"
