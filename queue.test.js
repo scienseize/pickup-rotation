@@ -46,6 +46,14 @@ game = newGame(5);
 Queue.fill(players, game, 10);
 assert.equal(game.onCourt[0].name, refuser);
 
+// Remove: off the court with no sit-out mark and nothing counted, so Fill calls them again.
+const removed = game.onCourt[1].name;
+Queue.remove(game, removed);
+assert.equal(game.onCourt.length, 9);
+assert.deepEqual(game.satOut, []);
+Queue.fill(players, game, 10);
+assert.ok(called(game).includes(removed));
+
 // Hand-pick: a player with the most games skips players with fewer, who get flagged.
 game = newGame(6);
 const most = players.reduce((a, b) => (b.games > a.games ? b : a));

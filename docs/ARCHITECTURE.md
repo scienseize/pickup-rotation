@@ -162,9 +162,11 @@ Design choices:
 3. **Pick.** Hand-picks a specific waiting player into an open spot, for
    friends who want to play together (section 3). Same timing rule as Fill.
 4. **Sit out.** For a called player who refuses or isn't there: it frees their
-   spot, and they keep their place (section 3). Same timing rule. Sit out, Fill
-   and Pick all lock once the clock has started or anyone has scored, so a
-   clock reset cannot drop a scorer's points.
+   spot, and they keep their place (section 3). Same timing rule. *Remove*
+   frees a spot the same way but without the sit-out mark, to undo a call made
+   by mistake. Sit out, Remove, Fill and Pick all lock once the clock has
+   started or anyone has scored, so a clock reset cannot drop a scorer's
+   points.
 5. **Assign teams.** The players choose their own sides. The attendant taps
    each called player to set Home or Away. The scoreboard is enabled once all
    called players have a team, with at least one per side. That is normally 10;
@@ -197,10 +199,12 @@ and the floating island tab bar. The fonts come from Google Fonts when the lapto
 is online. Offline, the page falls back to Georgia and the system font, and
 everything still works.
 
-One page with two views and a tab switch between them. The layout targets a
+One page with five tabs in the island: Check in, Queue, Scoreboard,
+Leaderboard and Session. Each tab is a whole view, and its name is kept in the
+URL (`#checkin`, `#queue`, ...) so a refresh returns to it. The layout targets a
 laptop screen and still works at phone width.
 
-### Queue view (for the attendant)
+### Check in tab (for the attendant)
 
 - **Check-in box** with autosuggest. Typing a first name, last name or the
   start of either lists matching players with their record. Tonight's list
@@ -215,20 +219,33 @@ laptop screen and still works at phone width.
   done.
 - **Expected tonight:** the pasted list, minus whoever has checked in, with
   games, points and average from the database.
+
+### Queue tab (for the attendant)
+
 - **Up next / On court:** 10 spots with a *Fill* button. Each called player's
-  row has their name, games played, a Home/Away toggle, and a *Sit out* button.
-  Empty spots show as open. Fill, Pick and Sit out are hidden once the clock
-  has started or anyone has scored.
+  row has their name, games played, a Home/Away toggle, a *Sit out* button and
+  a *Remove* button. Remove undoes a call: the player goes back in line where
+  they were, with no "Sitting out" mark, and Fill may call them again. Sit out
+  is for someone who doesn't want this game: Fill skips them until the next
+  game. Empty spots show as open. Fill, Pick, Sit out and Remove are hidden
+  once the clock has started or anyone has scored.
 - **Waiting list,** in exact fairness order, so everyone can see where they
   stand. Each row shows the player's name, games played, live wait time
   ("waiting 34 min"), a *Pick* button (enabled when a spot is open) and an
   *Out / Back* toggle. The rows that Fill would take are marked "next in line".
   A *Passed over* badge appears on anyone with fewer games than a player in
   Up next.
-- **Leaderboard** for the session: name, games played, total points, sorted by
-  points, plus each player's all-time average from the database.
+
+### Leaderboard tab
+
+- Tonight's name, games played and total points, sorted by points, plus each
+  player's all-time average from the database.
+
+### Session tab
+
 - **Player database card:** online / offline / unsaved games, and how many
   players and results are on file.
+- **New session** card.
 
 ### Scoreboard view (for the court; full screen)
 
@@ -325,7 +342,7 @@ index.html       markup and styles; served by `python3 server.py` at
                  http://localhost:8000. Opened directly, it still runs the queue
                  and scoreboard without the database
 app.js           state, saving, rendering, scoreboard, clock, buzzer
-queue.js         fairness rules, no DOM: waitingOrder, nextInLine, fill, pick, sitOut,
+queue.js         fairness rules, no DOM: waitingOrder, nextInLine, fill, pick, remove, sitOut,
                  passedOver, endGame
 queue.test.js    run with `node queue.test.js`; checks the fairness rules
 names.js         name matching, no DOM: suggest (ranked prefix match), resolve

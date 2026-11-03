@@ -158,6 +158,7 @@ td.empty{color:var(--mu)}
 
 /* Scoreboard: two score cards around an inverted clock tile, then the players. */
 #board{gap:28px}
+#board:not([hidden]) ~ footer.pf{display:none}
 /* Full screen leaves nothing empty: the player lists keep their natural height,
    the score row takes the rest, and its numerals size to their own cards. */
 #board:fullscreen{background:var(--bg);padding:20px 24px;height:100vh;gap:16px;overflow:auto}
@@ -207,7 +208,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
   .page{padding-inline:16px}
   .island-mark{display:none}
   .island-tabs button{padding:11px 10px;letter-spacing:.05em;font-size:11px}
-  .island .clk{padding:11px 10px 11px 6px;letter-spacing:.05em;font-size:11px}
+  .island .clk{display:none}
   .hero{padding-block:40px 40px}
   .c{padding:22px 20px}
   .hide-sm{display:none}
@@ -223,22 +224,21 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
   <span class="island-mark" aria-hidden="true"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="7"/></svg></span>
   <div class="island-tabs" role="tablist" aria-label="Views">
     <span class="island-thumb" aria-hidden="true"></span>
+    <button role="tab" id="tab-checkin" data-tab="checkin" aria-controls="checkin" aria-selected="false" tabindex="-1">Check in</button>
     <button role="tab" id="tab-queue" data-tab="queue" aria-controls="queue" aria-selected="true">Queue</button>
     <button role="tab" id="tab-board" data-tab="board" aria-controls="board" aria-selected="false" tabindex="-1">Scoreboard</button>
+    <button role="tab" id="tab-leaders" data-tab="leaders" aria-controls="leaders" aria-selected="false" tabindex="-1">Leaderboard</button>
+    <button role="tab" id="tab-session" data-tab="session" aria-controls="session" aria-selected="false" tabindex="-1">Session</button>
   </div>
   <span class="clk" id="islandClock"></span>
 </nav>
 
 <main class="page">
-  <div class="tabpanel" id="queue" role="tabpanel" aria-labelledby="tab-queue">
+  <div class="tabpanel" id="checkin" role="tabpanel" aria-labelledby="tab-checkin" hidden>
     <div class="hero sm">
       <div class="kicker">Basketball · Pick-up session</div>
-      <h1>Who plays next</h1>
-      <p class="date" id="sessionLine"></p>
-      <div class="btns">
-        <button class="btn" data-action="fill" id="fillBtn">Fill open spots</button>
-        <a class="btn o" href="#board">Open scoreboard</a>
-      </div>
+      <h1>Who's here</h1>
+      <p class="date session-line"></p>
     </div>
 
     <section>
@@ -247,7 +247,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
         <p>Type a name as each person arrives. A returning player keeps their place in line.</p>
       </div>
       <div class="wide">
-        <form class="checkin" id="checkin">
+        <form class="checkin" id="checkinForm">
           <div class="combo">
             <input class="in" id="name" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="nameSug"
               autocomplete="off" maxlength="60" placeholder="First name is enough" aria-label="Player name">
@@ -291,6 +291,19 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
       </div>
     </section>
 
+  </div>
+
+  <div class="tabpanel" id="queue" role="tabpanel" aria-labelledby="tab-queue">
+    <div class="hero sm">
+      <div class="kicker">Basketball · Pick-up session</div>
+      <h1>Who plays next</h1>
+      <p class="date session-line"></p>
+      <div class="btns">
+        <button class="btn" data-action="fill" id="fillBtn">Fill open spots</button>
+        <a class="btn o" href="#board">Open scoreboard</a>
+      </div>
+    </div>
+
     <section>
       <div class="sh">
         <h2>Up next.</h2>
@@ -323,24 +336,34 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
       </div>
     </section>
 
+  </div>
+
+  <div class="tabpanel" id="leaders" role="tabpanel" aria-labelledby="tab-leaders" hidden>
+    <div class="hero sm">
+      <div class="kicker">Basketball · Pick-up session</div>
+      <h1>Leaderboard</h1>
+      <p class="date">Games and points from tonight, with each player's average across every week.</p>
+    </div>
+
     <section>
-      <div class="sh">
-        <h2>Leaderboard.</h2>
-        <p>Games and points are from tonight. Avg is points per game across every week in the database.</p>
-      </div>
       <div class="wide tw">
         <table>
           <thead><tr><th>Player</th><th class="r">Games</th><th class="r">Points</th><th class="r">Avg</th></tr></thead>
-          <tbody id="leaders"></tbody>
+          <tbody id="leaderRows"></tbody>
         </table>
       </div>
     </section>
 
+  </div>
+
+  <div class="tabpanel" id="session" role="tabpanel" aria-labelledby="tab-session" hidden>
+    <div class="hero sm">
+      <div class="kicker">Basketball · Pick-up session</div>
+      <h1>Session</h1>
+      <p class="date session-line"></p>
+    </div>
+
     <section>
-      <div class="sh">
-        <h2>Session.</h2>
-        <p>Tonight lives in this browser. Every finished game is also saved to the player database.</p>
-      </div>
       <div class="wide cards two">
         <div class="c">
           <header><h3>Player database</h3><span class="stt plan" id="dbChip"></span></header>
@@ -355,7 +378,6 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
       </div>
     </section>
 
-    <footer class="pf"><span>Pick-up rotation · basketball</span><span id="saveLine"></span></footer>
   </div>
 
   <div class="tabpanel" id="board" role="tabpanel" aria-labelledby="tab-board" hidden>
@@ -382,6 +404,8 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
     </div>
     <p class="note" style="text-align:center">Space starts and pauses the clock.</p>
   </div>
+
+  <footer class="pf"><span>Pick-up rotation · basketball</span><span id="saveLine"></span></footer>
 </main>
 
 <dialog id="pasteDlg" aria-labelledby="pasteTitle">

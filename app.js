@@ -50,7 +50,7 @@ const clockText = ms => {
   const s = Math.ceil(ms / 1000);
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 };
-// Fill, Pick and Sit out lock once the clock has started or anyone has scored.
+// Fill, Pick, Sit out and Remove lock once the clock has started or anyone has scored.
 const locked = () => state.game.started || state.game.onCourt.some(c => c.points > 0);
 const ready = () => {
   const court = state.game.onCourt;
@@ -71,7 +71,7 @@ const btn = (action, name, label, { arg = '', pressed, cls = 'o s' } = {}) =>
 
 // ---- tabs: the island. A tab hides every panel but its own and scrolls to the top ----
 
-const TABS = ['queue', 'board'];
+const TABS = ['checkin', 'queue', 'board', 'leaders', 'session'];
 const island = $('island'), thumb = island.querySelector('.island-thumb');
 const tabs = [...island.querySelectorAll('[role="tab"]')];
 let active = 'queue';
@@ -89,6 +89,7 @@ function show(name) {
   tabs.forEach(t => { const on = t.dataset.tab === name; t.setAttribute('aria-selected', on); t.tabIndex = on ? 0 : -1; });
   TABS.forEach(id => { $(id).hidden = id !== name; });
   place();
+  island.querySelector('[aria-selected="true"]').scrollIntoView({ block: 'nearest', inline: 'nearest' });
   if (changed) window.scrollTo(0, 0);
 }
 const route = () => show(decodeURIComponent(location.hash.slice(1)));
@@ -241,6 +242,7 @@ const actions = {
   fill() { if (locked()) return false; Queue.fill(state.players, state.game, SPOTS); },
   pick(name) { if (locked()) return false; Queue.pick(state.game, name, SPOTS); },
   sitOut(name) { if (locked()) return false; Queue.sitOut(state.game, name); },
+  remove(name) { if (locked()) return false; Queue.remove(state.game, name); },
   team: (name, team) => { const c = seatOf(name); c.team = c.team === team ? null : team; },
   out: name => { player(name).present = false; },
   back: name => { player(name).present = true; },
@@ -306,7 +308,7 @@ document.addEventListener('click', e => {
 });
 
 const checkInBox = autosuggest($('name'), $('nameSug'), checkIn, flash);
-$('checkin').onsubmit = e => { e.preventDefault(); checkInBox.enter(); };
+$('checkinForm').onsubmit = e => { e.preventDefault(); checkInBox.enter(); };
 
 const listSay = text => { $('listMsg').textContent = text; };
 autosuggest($('listAdd'), $('listSug'), name => {
@@ -377,7 +379,7 @@ function renderQueue() {
   const now = Date.now();
   const time = new Date(state.startedAt ?? now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
-  $('sessionLine').textContent = `Session started ${time} · ${present} checked in · ${order.length} waiting`;
+  document.querySelectorAll('.session-line').forEach(el => { el.textContent = `Session started ${time} · ${present} checked in · ${order.length} waiting`; });
   $('fillBtn').hidden = lock;
   $('fillBtn').disabled = !open || !next.size;
   $('upnextIntro').textContent = lock
@@ -389,7 +391,7 @@ function renderQueue() {
       <td><b>${esc(c.name)}</b><small>${plural(player(c.name).games, 'game')} tonight${tag(c.name)}</small></td>
       <td class="act"><span>
         <span class="seg">${['home', 'away'].map(t => btn('team', c.name, esc(g[t + 'Name']), { arg: t, pressed: c.team === t, cls: c.team === t ? 's' : 'o s' })).join('')}</span>
-        ${lock ? '' : btn('sitOut', c.name, 'Sit out')}
+        ${lock ? '' : btn('sitOut', c.name, 'Sit out') + btn('remove', c.name, 'Remove')}
       </span></td>
     </tr>`).join('') || '<tr><td colspan="3" class="empty">Nobody called yet. Press Fill open spots.</td></tr>';
 
@@ -403,7 +405,7 @@ function renderQueue() {
       <td class="tags hide-sm"><span>${tags}</span></td>
       <td class="act"><span>${open ? btn('pick', p.name, 'Pick') : ''}${btn('out', p.name, 'Out')}</span></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="4" class="empty">Nobody waiting.</td></tr>';
+  }).join('') || `<tr><td colspan="4" class="empty">Nobody waiting.${state.players.length ? '' : ' Check people in on the Check in tab.'}</td></tr>`;
 
   const out = state.players.filter(p => !p.present);
   $('outBox').hidden = !out.length;
@@ -412,7 +414,7 @@ function renderQueue() {
       <td class="act">${btn('back', p.name, 'Back')}</td>
     </tr>`).join('');
 
-  $('leaders').innerHTML = [...state.players]
+  $('leaderRows').innerHTML = [...state.players]
     .sort((a, b) => b.totalPoints - a.totalPoints || a.name.localeCompare(b.name))
     .map(p => `<tr><td><b>${esc(p.name)}</b></td><td class="r mono">${p.games}</td><td class="r mono">${p.totalPoints}</td><td class="r mono">${avgText(p.name)}</td></tr>`)
     .join('') || '<tr><td colspan="4" class="empty">No players yet.</td></tr>';

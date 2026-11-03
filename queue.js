@@ -32,10 +32,16 @@ const Queue = {
     game.onCourt.push(Queue.seat(name));
   },
 
+  // Undo a call: back in line exactly where they were, with no sit-out mark,
+  // so Fill may call them again.
+  remove(game, name) {
+    game.onCourt = game.onCourt.filter(c => c.name !== name);
+  },
+
   // Off the court with nothing counted: games and readyAt are untouched,
   // so the player keeps their place and leads the next game.
   sitOut(game, name) {
-    game.onCourt = game.onCourt.filter(c => c.name !== name);
+    Queue.remove(game, name);
     if (!game.satOut.includes(name)) game.satOut.push(name);
   },
 
