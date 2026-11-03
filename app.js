@@ -446,11 +446,10 @@ function renderTonight() {
     </div>`).join('');
 
   const pending = state.unsynced.length;
-  $('dbFooter').className = `dbf ${{ online: 'on', offline: 'off' }[db] ?? ''}`;
-  $('dbFooter').title = offline ? 'Run python3 server.py, then open http://localhost:8000' : `${plural(profiles.size, 'player')} on file`;
-  $('dbState').textContent = ` ${db}`;
-  $('dbNote').textContent = [pending && `· ${plural(pending, 'game')} not saved yet`, !saved && '· not saved in this browser']
-    .filter(Boolean).join(' ');
+  const dot = $('dbDot'), label = `Database ${db}${pending ? ` · ${plural(pending, 'game')} not saved yet` : ''}`;
+  dot.className = `island-db ${{ online: 'on', offline: 'off' }[db] ?? ''}`;
+  dot.setAttribute('aria-label', label);
+  dot.title = offline ? `${label}. Run python3 server.py, then open http://localhost:8000` : `${label} · ${plural(profiles.size, 'player')} on file`;
 }
 
 function renderBoard() {

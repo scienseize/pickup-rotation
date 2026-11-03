@@ -204,9 +204,10 @@ everything still works.
 
 One page with four tabs in the island: Check in, Queue, Scoreboard and
 Leaderboard. Each tab is a whole view, and its name is kept in the
-URL (`#checkin`, `#queue`, ...) so a refresh returns to it. A small footer
-on every tab except the scoreboard shows the word "Database" in green when the
-database is online and red when it is offline, plus any games not saved yet. The layout targets a
+URL (`#checkin`, `#queue`, ...) so a refresh returns to it. A small dot beside
+the mark in the island shows the database: green when online, red when
+offline. Hovering over it (or a screen reader) gives the state and any games
+not saved yet. The layout targets a
 laptop screen and still works at phone width.
 
 ### Check in tab (for the attendant)
@@ -408,5 +409,5 @@ are whole numbers from 0 to 200. It serves only `index.html`, `app.js`,
 
 **When the server isn't running:** the queue and scoreboard work as before.
 Finished games wait in `unsynced` in the browser and are sent when the
-database is back (on page load and after every End game). The database footer
-turns red and shows how many games are waiting.
+database is back (on page load and after every End game). The database dot in
+the island turns red; hovering over it shows how many games are waiting.
