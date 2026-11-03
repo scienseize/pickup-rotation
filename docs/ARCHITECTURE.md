@@ -434,10 +434,13 @@ waiting.
 - **Offline loading:** `public/sw.js` serves the last copy of the page when
   there is no connection. A laptop must load the page online once (a phone
   hotspot is enough) before it can open it offline.
-- **Backups:** D1 Time Travel can restore the database to any point in the
-  last few days. A weekly `npx wrangler d1 export pickup --remote --output
-  backup-YYYY-MM-DD.sql` keeps a copy on the laptop (`*.sql` backups stay out
-  of git).
+- **Backups:** a GitHub Actions job (`.github/workflows/backup.yml`) exports
+  the live database every day and commits it to the `backups` branch of the
+  private repo, but only when it changed, so each game night is kept in git
+  history. It uses a Cloudflare API token limited to D1 (repo secret
+  `CLOUDFLARE_API_TOKEN`) and the account id (repo variable). GitHub emails the
+  owner if a run fails. D1 Time Travel also restores to any point in the last
+  few days.
 - **Still in one browser:** tonight's queue order. If a laptop dies mid-night,
   finished games are safe on the server, but the queue is rebuilt by checking
   people in again.
