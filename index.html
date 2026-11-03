@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Pick-up Rotation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&display=swap">
+<style>
+/* Base and components: verbatim from ~/.claude/design/artifact-reference.html. */
+:root{
+  --bg:#faf8f5; --panel:#f1ede8; --card:#ffffff; --line:#e6e1dc; --ink:#1c1a19; --tx:#3d3936; --mu:#77706a; --faint:#d6d0ca;
+  --btn:#1c1a19; --btn-tx:#faf8f5; --btn-mu:rgba(250,248,245,.6); --tag:#dfe4ef; --tag-tx:#273044; --ember:#de4a26;
+  --shadow:0 12px 32px rgba(28,26,25,.18); --dot:rgba(28,26,25,.13);
+  --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --sans:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --island:72px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#1b1a19; --panel:#252321; --card:#2b2927; --line:#36332f; --ink:#f3efea; --tx:#d9d3cd; --mu:#a39c95; --faint:#4a4642;
+  --btn:#f3efea; --btn-tx:#1b1a19; --btn-mu:rgba(27,26,25,.62); --tag:#323a4d; --tag-tx:#dfe4ef; --ember:#ef6a47;
+  --shadow:0 12px 32px rgba(0,0,0,.45); --dot:rgba(243,239,234,.1); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#1b1a19; --panel:#252321; --card:#2b2927; --line:#36332f; --ink:#f3efea; --tx:#d9d3cd; --mu:#a39c95; --faint:#4a4642;
+  --btn:#f3efea; --btn-tx:#1b1a19; --btn-mu:rgba(27,26,25,.62); --tag:#323a4d; --tag-tx:#dfe4ef; --ember:#ef6a47;
+  --shadow:0 12px 32px rgba(0,0,0,.45); --dot:rgba(243,239,234,.1); color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:var(--sans);font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--ink);text-underline-offset:3px}
+a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:6px}
+h1,h2,h3{color:var(--ink);font-weight:400;margin:0;text-wrap:balance}
+h1{font-family:var(--serif);font-size:clamp(40px,6.4vw,76px);line-height:1.05;letter-spacing:-.025em}
+h2{font-family:var(--serif);font-size:clamp(30px,4vw,42px);line-height:1.12;letter-spacing:-.015em}
+h3{font-size:18px;font-weight:600;line-height:1.3}
+p{margin:0}
+ol,ul,dl{margin:0;padding:0;list-style:none}
+
+.island{position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);left:50%;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:4px;padding:5px;border-radius:999px;background:var(--btn);color:var(--btn-tx);box-shadow:var(--shadow);max-width:calc(100vw - 24px)}
+.island-mark{width:34px;height:34px;display:grid;place-items:center;flex-shrink:0;color:var(--btn-tx)}
+.island-mark svg{width:15px;height:15px;fill:currentColor;display:block}
+.island-tabs{position:relative;display:flex;overflow-x:auto;scrollbar-width:none;border-radius:999px}
+.island-tabs::-webkit-scrollbar{display:none}
+.island-thumb{position:absolute;top:0;bottom:0;left:0;width:0;border-radius:999px;background:var(--btn-tx);transition:transform .24s cubic-bezier(.34,1.2,.64,1),width .24s cubic-bezier(.34,1.2,.64,1)}
+.island-tabs button{position:relative;z-index:1;border:0;background:none;color:var(--btn-mu);font:600 12px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;padding:12px 16px;border-radius:999px;white-space:nowrap;cursor:pointer;transition:color .16s}
+.island-tabs button:hover{color:var(--btn-tx)}
+.island-tabs button[aria-selected="true"]{color:var(--btn)}
+.island-tabs button:focus-visible{outline:2px solid var(--ember);outline-offset:-2px}
+
+.page{padding-inline:24px;padding-block:calc(env(safe-area-inset-top,0px) + 88px) 120px}
+.hero{max-width:900px;margin:0 auto;text-align:center;padding-block:56px 56px;display:flex;flex-direction:column;align-items:center;gap:28px}
+.hero.sm{padding-block:40px 8px;gap:18px}
+.hero.sm h1{font-size:clamp(36px,5.6vw,60px)}
+.hero.sm .date{max-width:680px}
+.tabpanel > .hero.sm + section{margin-top:-40px}
+.kicker{font-size:15px;font-weight:600;color:var(--ink)}
+.date{font-size:16px;color:var(--tx)}
+.btns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.btn{display:inline-flex;align-items:center;gap:8px;background:var(--btn);color:var(--btn-tx);padding:13px 22px;border-radius:8px;font-weight:500;font-size:16px;text-decoration:none}
+.btn.o{background:transparent;color:var(--ink);border:1px solid var(--faint)}
+.tabpanel{display:flex;flex-direction:column;gap:96px}
+section{display:flex;flex-direction:column;gap:28px}
+.wide{max-width:1080px;margin:0 auto;width:100%;min-width:0}
+.sh{max-width:760px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:14px;min-width:0}
+.sh > p{color:var(--mu);font-size:17px}
+.note{font-size:15px;color:var(--mu);max-width:760px;margin:0 auto;width:100%}
+.mono{font-family:var(--mono);font-size:13px;color:var(--mu);font-variant-numeric:tabular-nums}
+.tw{overflow-x:auto}
+
+.stt{display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.stt.live{background:var(--btn);color:var(--btn-tx)}
+.stt.shadow{background:var(--tag);color:var(--tag-tx)}
+.stt.build{border:1px solid var(--ember);color:var(--ink)}
+.stt.plan{border:1px solid var(--faint);color:var(--mu)}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--mu)}
+.st i{width:8px;height:8px;border-radius:50%;display:block}
+.st.doing i{background:var(--ember)}
+.st.waiting i{background:transparent;border:1.5px solid var(--ember)}
+.st.todo i{background:var(--faint)}
+.st.done i{background:var(--ink)}
+
+.fs{background:var(--panel);border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.fs .s{font-family:var(--mono);font-size:12px;color:var(--mu);margin-top:auto;padding-top:8px}
+.fs.k{background:var(--btn)}.fs.k b,.fs.k p,.fs.k .i,.fs.k .s{color:var(--btn-tx)}
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.cards.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.c{background:var(--panel);border-radius:14px;padding:28px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.c header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.c h3{font-family:var(--serif);font-weight:400;font-size:28px;line-height:1.1}
+.c .tl{color:var(--mu);font-size:15px;margin-top:-6px}
+.c p{font-size:16px;color:var(--ink)}
+.c.mute{background:transparent;border:1px dashed var(--faint)}
+.c.mute h3{font-size:22px}
+details.dd{border-top:1px solid var(--line);padding-top:12px;margin-top:auto}
+details.dd summary{cursor:pointer;font-weight:600;color:var(--ink);font-size:15px;list-style:none;display:flex;justify-content:space-between;gap:12px}
+details.dd summary::-webkit-details-marker{display:none}
+details.dd summary:after{content:"+";font-family:var(--mono);color:var(--mu)}
+details.dd[open] summary:after{content:"\2212"}
+
+table{border-collapse:collapse;width:100%;font-size:16px}
+th,td{text-align:left;padding:14px 16px 14px 0;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;font-weight:500;color:var(--mu);white-space:nowrap}
+td b{color:var(--ink);font-weight:600}
+td small{display:block;color:var(--mu);font-size:14px;margin-top:2px}
+.notice{border:1px dashed var(--faint);border-radius:14px;padding:22px 24px;color:var(--mu);font-size:15px}
+.notice b{color:var(--ink);font-weight:600;display:block;margin-bottom:4px;font-size:16px}
+
+footer.pf{max-width:1080px;margin:120px auto 0;padding-top:20px;border-top:1px solid var(--line);font-size:14px;color:var(--mu);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+
+/* App additions, in the same idiom. */
+button.btn{border:0;cursor:pointer;font-family:inherit;line-height:1.2;justify-content:center}
+button.btn.o{border:1px solid var(--faint)}
+button.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.s{padding:8px 14px;font-size:14px}
+.island .clk{color:var(--btn-mu);font:600 12px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;padding:12px 14px 12px 10px;white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
+.island .clk.on{color:var(--btn-tx)}
+.in{font:inherit;font-size:16px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0}
+.in::placeholder{color:var(--mu)}
+.in:focus{outline:2px solid var(--ink);outline-offset:3px}
+.checkin{display:flex;gap:12px;flex-wrap:wrap}
+.checkin .in{flex:1 1 240px}
+td.n{font-family:var(--serif);color:var(--mu);font-size:20px;width:44px;line-height:1.3}
+td.r,th.r{text-align:right}
+td.act{text-align:right}
+td.act > span{display:inline-flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+td.tags > span{display:inline-flex;gap:6px;flex-wrap:wrap}
+td.empty{color:var(--mu)}
+.seg{display:inline-flex}
+.seg .btn{border-radius:0}
+.seg .btn:first-child{border-radius:8px 0 0 8px}
+.seg .btn:last-child{border-radius:0 8px 8px 0}
+.seg .btn.o + .btn.o{border-left:0}
+.c textarea.in{width:100%;min-height:10em;resize:vertical;margin-top:12px}
+
+/* Scoreboard: two score cards around an inverted clock tile, then the players. */
+#board{gap:28px}
+#board:fullscreen{background:var(--bg);padding:24px;overflow:auto}
+.scorebar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto) minmax(0,1fr);gap:16px;align-items:stretch}
+.team{text-align:center;align-items:center}
+.tname{width:100%;text-align:center;font-family:var(--serif);font-size:28px;line-height:1.1;color:var(--ink);background:transparent;border:1px solid transparent;border-radius:8px;padding:4px 8px}
+.tname:focus{border-color:var(--faint);outline:none}
+.big{font-family:var(--serif);font-weight:400;line-height:1;letter-spacing:-.025em;font-variant-numeric:tabular-nums;color:var(--ink)}
+.team .big{font-size:clamp(96px,13vw,220px)}
+.clockt{align-items:center;justify-content:center;text-align:center;padding:22px 28px}
+.clockt .big{font-size:clamp(72px,9vw,150px);color:var(--btn-tx)}
+.clockt .big.low{color:var(--ember)}
+.clockt .s{margin:0;padding:0;text-transform:uppercase;letter-spacing:.08em}
+.clockt .btns{margin-top:12px}
+.btn.inv{background:var(--btn-tx);color:var(--btn)}
+.btn.inv.o{background:transparent;color:var(--btn-tx);border:1px solid var(--btn-mu)}
+.hint{text-align:center;color:var(--mu);font-size:15px;min-height:1.6em}
+.pl{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px 14px;padding:12px 0;border-top:1px solid var(--line)}
+.pl b{color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+.pl .pts{font-family:var(--serif);font-size:32px;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums;min-width:2ch;text-align:right}
+.pl .pt{display:flex;gap:6px}
+.pl .pt .btn{min-width:54px;min-height:50px;padding:8px 10px;font-size:17px;font-variant-numeric:tabular-nums}
+.c .empty{color:var(--mu);font-size:15px;border-top:1px solid var(--line);padding-top:12px}
+
+@media (max-width:900px){
+  .scorebar{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .clockt{grid-column:1 / -1;order:-1}
+}
+@media (max-width:700px){
+  .cards.two{grid-template-columns:minmax(0,1fr)}
+  .pl{grid-template-columns:minmax(0,1fr) auto}
+  .pl .pt{grid-column:1 / -1}
+  .pl .pt .btn{flex:1}
+}
+@media (max-width:600px){
+  .page{padding-inline:16px}
+  .island-mark{display:none}
+  .island-tabs button{padding:11px 10px;letter-spacing:.05em;font-size:11px}
+  .island .clk{padding:11px 10px 11px 6px;letter-spacing:.05em;font-size:11px}
+  .hero{padding-block:40px 40px}
+  .c{padding:22px 20px}
+  .hide-sm{display:none}
+  .scorebar{gap:10px}
+  .tname{font-size:22px}
+}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+@media (prefers-reduced-motion:reduce){.island-thumb,.island-tabs button{transition:none}}
+</style>
+</head>
+<body>
+<nav class="island" id="island" aria-label="Pick-up rotation">
+  <span class="island-mark" aria-hidden="true"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="7"/></svg></span>
+  <div class="island-tabs" role="tablist" aria-label="Views">
+    <span class="island-thumb" aria-hidden="true"></span>
+    <button role="tab" id="tab-queue" data-tab="queue" aria-controls="queue" aria-selected="true">Queue</button>
+    <button role="tab" id="tab-board" data-tab="board" aria-controls="board" aria-selected="false" tabindex="-1">Scoreboard</button>
+  </div>
+  <span class="clk" id="islandClock"></span>
+</nav>
+
+<main class="page">
+  <div class="tabpanel" id="queue" role="tabpanel" aria-labelledby="tab-queue">
+    <div class="hero sm">
+      <div class="kicker">Basketball · Pick-up session</div>
+      <h1>Who plays next</h1>
+      <p class="date" id="sessionLine"></p>
+      <div class="btns">
+        <button class="btn" data-action="fill" id="fillBtn">Fill open spots</button>
+        <a class="btn o" href="#board">Open scoreboard</a>
+      </div>
+    </div>
+
+    <section>
+      <div class="sh">
+        <h2>Check in.</h2>
+        <p>Type a name as each person arrives. A returning player keeps their place in line.</p>
+      </div>
+      <div class="wide">
+        <form class="checkin" id="checkin">
+          <input class="in" id="name" list="members" autocomplete="off" placeholder="Player name" aria-label="Player name">
+          <button class="btn">Check in</button>
+        </form>
+        <datalist id="members"></datalist>
+        <p class="note" id="msg" role="status" style="margin-top:12px;max-width:none"></p>
+      </div>
+    </section>
+
+    <section>
+      <div class="sh">
+        <h2>Up next.</h2>
+        <p id="upnextIntro"></p>
+      </div>
+      <div class="wide tw">
+        <table>
+          <thead><tr><th>#</th><th>Player</th><th class="r">Team</th></tr></thead>
+          <tbody id="upnext"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="sh">
+        <h2>Waiting.</h2>
+        <p>In fairness order: fewest games first, then longest wait. Pick calls a specific player into an open spot.</p>
+      </div>
+      <div class="wide tw">
+        <table>
+          <thead><tr><th>#</th><th>Player</th><th class="hide-sm">Status</th><th></th></tr></thead>
+          <tbody id="waiting"></tbody>
+        </table>
+      </div>
+      <div class="wide tw" id="outBox">
+        <h3>Out</h3>
+        <table>
+          <tbody id="out"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="sh">
+        <h2>Leaderboard.</h2>
+        <p>Points from finished games this session.</p>
+      </div>
+      <div class="wide tw">
+        <table>
+          <thead><tr><th>Player</th><th class="r">Games</th><th class="r">Points</th></tr></thead>
+          <tbody id="leaders"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="sh">
+        <h2>Session.</h2>
+        <p>The member list fills check-in autocomplete. A new session clears players and points.</p>
+      </div>
+      <div class="wide cards two">
+        <div class="c">
+          <header><h3>Member list</h3><span class="stt plan" id="memberCount"></span></header>
+          <p class="tl">One name per line. Kept across sessions.</p>
+          <details class="dd">
+            <summary>Edit list</summary>
+            <textarea class="in" id="roster" placeholder="One name per line" aria-label="Member list"></textarea>
+          </details>
+        </div>
+        <div class="c mute">
+          <header><h3>New session</h3></header>
+          <p class="tl">Clears all players, games and points. The member list stays.</p>
+          <div><button class="btn o s" data-action="newSession">Start a new session</button></div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="pf"><span>Pick-up rotation · basketball</span><span id="saveLine"></span></footer>
+  </div>
+
+  <div class="tabpanel" id="board" role="tabpanel" aria-labelledby="tab-board" hidden>
+    <div class="wide scorebar">
+      <div class="c team"><input id="homeName" class="tname" aria-label="Home team name"><span class="stt plan">Home</span><div class="big" id="homeScore">0</div></div>
+      <div class="fs k clockt">
+        <p class="s" id="boardGame"></p>
+        <div class="big" id="clock">20:00</div>
+        <div class="btns">
+          <button class="btn inv" data-action="startPause" id="startBtn">Start</button>
+          <button class="btn inv o" data-action="resetClock">Reset clock</button>
+        </div>
+      </div>
+      <div class="c team"><input id="awayName" class="tname" aria-label="Away team name"><span class="stt plan">Away</span><div class="big" id="awayScore">0</div></div>
+    </div>
+    <p class="hint" id="boardHint" role="status"></p>
+    <div class="wide cards two">
+      <div class="c"><header><h3 id="homeLbl"></h3><span class="mono" id="homeCount"></span></header><div id="homePlayers"></div></div>
+      <div class="c"><header><h3 id="awayLbl"></h3><span class="mono" id="awayCount"></span></header><div id="awayPlayers"></div></div>
+    </div>
+    <div class="btns">
+      <button class="btn o" data-action="fullscreen">Full screen</button>
+      <button class="btn" data-action="endGame">End game</button>
+    </div>
+    <p class="note" style="text-align:center">Space starts and pauses the clock.</p>
+  </div>
+</main>
+
+<script src="queue.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
