@@ -60,3 +60,27 @@ export async function passcodeOk(header, secret) {
   for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
   return diff === 0;
 }
+
+// Sign-in session: a cookie holding its expiry and an HMAC of it, keyed with the passcode,
+// so changing the passcode signs every device out. Nothing is stored on the server.
+export const SESSION_DAYS = 30;
+const enc = s => new TextEncoder().encode(s);
+const hmacKey = (secret, use) => crypto.subtle.importKey('raw', enc(secret), { name: 'HMAC', hash: 'SHA-256' }, false, [use]);
+const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64url = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+
+export async function signSession(secret, now) {
+  const exp = String(now + SESSION_DAYS * 864e5);
+  return `${exp}.${b64url(await crypto.subtle.sign('HMAC', await hmacKey(secret, 'sign'), enc(`session:${exp}`)))}`;
+}
+
+// True only for an unexpired cookie signed with this secret. crypto.subtle.verify is constant-time.
+export async function sessionOk(cookieHeader, secret, now) {
+  if (!secret || !cookieHeader) return false;
+  const value = cookieHeader.split(/;\s*/).find(c => c.startsWith('session='))?.slice(8) ?? '';
+  const [exp, sig] = value.split('.');
+  if (!/^\d+$/.test(exp ?? '') || Number(exp) <= now || !sig) return false;
+  let bytes;
+  try { bytes = unb64url(sig); } catch { return false; }
+  return crypto.subtle.verify('HMAC', await hmacKey(secret, 'verify'), bytes, enc(`session:${exp}`));
+}

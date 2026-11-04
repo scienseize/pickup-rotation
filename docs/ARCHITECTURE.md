@@ -1,4 +1,4 @@
-# Pick-up Rotation and Scoreboard: Architecture and Design
+# Hexagames: Architecture and Design
 
 Status: draft for review. No code is written until this document is approved.
 Scope: basketball now. Volleyball is designed for (section 8) but not built.
@@ -383,19 +383,22 @@ the scoreboard code.
 
 ```
 public/index.html   markup and styles
+public/login.html   the organizer sign-in page, with the logo as the backdrop
+public/logo.png     the ISO logo (from iso.jpg, white background made transparent)
 public/app.js       state, saving, rendering, scoreboard, clock, buzzer, sync, passcode
 public/queue.js     fairness rules, no DOM: waitingOrder, nextInLine, fill, pick, remove,
                     sitOut, passedOver, endGame
 public/names.js     name matching, no DOM: suggest (ranked prefix match), resolve
 public/sw.js        service worker: opens the page offline once it has loaded
-worker/index.js     Cloudflare Worker: the API on D1
-worker/rules.js     API input rules and the passcode check, no I/O
+worker/index.js     Cloudflare Worker: the sign-in gate, files and the API on D1
+worker/rules.js     API input rules, the passcode check and the session cookie, no I/O
 schema.sql          the D1 tables
-wrangler.toml       Worker, assets folder and D1 binding
+wrangler.toml       Worker, assets (Worker first), D1 and the sign-in rate limit
 package.json        pins wrangler; `npm test`, `npm run dev`, `npm run deploy`
 queue.test.js       node queue.test.js
 names.test.js       node names.test.js
 worker/rules.test.mjs  node worker/rules.test.mjs
+worker/index.test.mjs  node worker/index.test.mjs (the sign-in gate end to end)
 .dev.vars           local test passcode for `npm run dev`; not in git
 README.md           how to run, deploy and back up
 docs/ARCHITECTURE.md
@@ -445,9 +448,13 @@ results (session INTEGER, played_on TEXT, game INTEGER, name TEXT,
 
 API (JSON):
 
+Every call except sign-in needs the session cookie (section 13).
+
 | Call | Does | Passcode |
 |------|------|----------|
-| `GET /api/profiles` | Every player with games, points and average | No |
+| `POST /api/login {passcode}` | Signs this device in for 30 days (cookie), returns the profiles | The passcode itself |
+| `POST /api/logout` | Clears this device's session cookie | No |
+| `GET /api/profiles` | Every player with games, points and average | No (session only) |
 | `POST /api/players {names}` | Adds new names from tonight's list | Yes |
 | `POST /api/results {session, date, game, rows}` | Saves one finished game | Yes |
 
@@ -473,11 +480,23 @@ waiting.
   on a laptop. The Worker compares it in constant time with the
   `ORGANIZER_PASSCODE` secret, set with `npx wrangler secret put` and never
   stored in the repository. A missing or wrong passcode gets 401; the app opens
-  the passcode dialog and keeps the games until it is right. Viewing needs no
-  passcode, so anyone with the link can see names and averages.
+  the passcode dialog and keeps the games until it is right. Entering it there also
+  renews the device's sign-in.
+- **Organizers only:** the link opens `/login`, a sign-in page with the ISO
+  logo as the backdrop. The Worker runs before any file is served
+  (`run_worker_first`) and lets through only the sign-in page, the logo and
+  `POST /api/login` without a session. Everything else, the app's own files
+  and `GET /api/profiles` included, redirects to `/login` (pages) or gets 401
+  (API). A right passcode sets a `session` cookie: its expiry plus an
+  HMAC-SHA256 of it keyed with `ORGANIZER_PASSCODE`, `HttpOnly; Secure;
+  SameSite=Strict`, 30 days. Nothing is stored on the server, and changing the
+  passcode signs every device out. Sign-in is limited to 5 tries a minute per
+  address (`LOGIN_LIMIT`). *Sign out* on the Check in tab clears the cookie,
+  the saved passcode and the offline copy on that device.
 - **Offline loading:** `public/sw.js` serves the last copy of the page when
-  there is no connection. A laptop must load the page online once (a phone
-  hotspot is enough) before it can open it offline.
+  there is no connection. A laptop must sign in online once (a phone hotspot is
+  enough) before it can open the app offline. The offline copy never stores the
+  sign-in redirect, so an expired session can't overwrite it.
 - **Backups:** a GitHub Actions job (`.github/workflows/backup.yml`) exports
   the live database every day and commits it to the `backups` branch of the
   private repo, but only when it changed, so each game night is kept in git

@@ -309,6 +309,11 @@ const actions = {
     go('queue');
   },
 
+  signOut() {
+    if (confirm('Sign out on this device? Opening the app again will need the organizer passcode.')) signOut();
+    return false;
+  },
+
   newSession() {
     if (!confirm('Start a new session? This clears tonight\'s players, list and points. The database keeps every result.')) return false;
     state = { ...newSession(), unsynced: state.unsynced };
@@ -611,12 +616,22 @@ setInterval(() => keepFocus(renderQueue), 15000); // keep wait times current
 $('dbDot').onclick = askPasscode;
 $('passDlg').addEventListener('close', () => {
   if ($('passDlg').returnValue !== 'save' || !$('passText').value) return;
-  try { localStorage.setItem(PASS_KEY, $('passText').value); } catch {}
+  const passcode = $('passText').value;
+  try { localStorage.setItem(PASS_KEY, passcode); } catch {}
   $('passText').value = '';
   db = 'connecting';
-  sync();
-  saveList();
+  // Also renews this device's sign-in, e.g. after the passcode was changed.
+  api('/api/login', { passcode }).catch(() => {}).finally(() => { sync(); saveList(); });
 });
+
+// Sign out: forget the passcode and the offline copy on this device, then back to the sign-in page.
+// Tonight's session stays saved in this browser for whoever signs in next.
+async function signOut() {
+  try { await fetch('/api/logout', { method: 'POST' }); } catch {}
+  try { localStorage.removeItem(PASS_KEY); } catch {}
+  try { await Promise.all((await caches.keys()).map(k => caches.delete(k))); } catch {}
+  location.replace('/login');
+}
 
 // Keeps the page opening with no connection once it has loaded here (sw.js).
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -1,4 +1,4 @@
-# Pick-up rotation
+# Hexagames
 
 Fair rotation, scoreboard and player stats for the organization's pick-up
 basketball sessions. Design and rules: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -6,13 +6,15 @@ basketball sessions. Design and rules: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.
 ## On game night (any laptop)
 
 1. Open https://pickup-rotation.pickup-rotation.workers.dev
-2. The first time on a laptop, click the dot next to the black mark in the top
-   bar and enter the organizer passcode. Viewing works without it.
+2. Sign in with the organizer passcode. Each laptop or phone stays signed in
+   for 30 days. The site is organizers only: without signing in, nothing but
+   the sign-in page opens.
 3. Green dot: saving to the database. Red dot: no connection or passcode needed.
    Hover over it for details. Finished games are kept and saved later.
 
-A laptop has to open the page online once (a phone hotspot is fine). After
-that it opens without a connection too.
+A laptop has to sign in online once (a phone hotspot is fine). After that it
+opens without a connection too. *Sign out* (Check in tab) removes the sign-in
+and the offline copy from that device, for a shared laptop.
 
 ## For whoever maintains it
 
@@ -29,7 +31,7 @@ npm install
 | Put changes online | `npm run deploy` |
 | Backups | Automatic: every day the live database is exported and, if it changed, committed to the `backups` branch (`.github/workflows/backup.yml`). Run one now: `gh workflow run backup.yml`. Manual copy: `npx wrangler d1 export pickup --remote --output backup-YYYY-MM-DD.sql` |
 | Restore a backup | `git show backups:pickup.sql > restore.sql`, then `npx wrangler d1 execute pickup --remote --file restore.sql` (into an empty database) |
-| Change the organizer passcode | `npx wrangler secret put ORGANIZER_PASSCODE` |
+| Change the organizer passcode | `npx wrangler secret put ORGANIZER_PASSCODE` (signs every device out; use a long passcode, it opens the whole site) |
 
 Local testing reads the passcode from `.dev.vars` (`ORGANIZER_PASSCODE=...`),
 which is not in git. Create the local tables once with

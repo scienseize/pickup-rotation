@@ -1,10 +1,19 @@
-# Cloudflare Worker: serves public/ and the API in worker/index.js on D1.
+# Cloudflare Worker: organizer sign-in, then public/ and the API in worker/index.js on D1.
 name = "pickup-rotation"
 main = "worker/index.js"
 compatibility_date = "2025-06-01"
 
 [assets]
 directory = "public"
+binding = "ASSETS"
+# Every request reaches the Worker first, which serves files only to signed-in organizers.
+run_worker_first = true
+
+# Slows passcode guessing on the sign-in page: 5 tries a minute per address.
+[[ratelimits]]
+name = "LOGIN_LIMIT"
+namespace_id = "1001"
+simple = { limit = 5, period = 60 }
 
 [[d1_databases]]
 binding = "DB"

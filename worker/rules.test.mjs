@@ -1,6 +1,6 @@
 // Run: node worker/rules.test.mjs
 import assert from 'node:assert';
-import { Invalid, cleanName, playersBody, gameBody, isJson, passcodeOk } from './rules.js';
+import { Invalid, cleanName, playersBody, gameBody, isJson, passcodeOk, signSession, sessionOk, SESSION_DAYS } from './rules.js';
 
 const rejects = (fn, why) => assert.throws(fn, Invalid, why);
 const req = type => ({ headers: new Headers(type ? { 'Content-Type': type } : {}) });
@@ -34,5 +34,20 @@ assert.equal(await passcodeOk('Bearer court-night-43', 'court-night-42'), false)
 assert.equal(await passcodeOk('court-night-42', 'court-night-42'), false);
 assert.equal(await passcodeOk(null, 'court-night-42'), false);
 assert.equal(await passcodeOk('Bearer ', ''), false);
+
+// Session cookie: good until it expires; a tampered one, a missing one, or one signed with
+// an old passcode never passes.
+const t0 = 1_800_000_000_000, day = 864e5;
+const token = await signSession('court-night-42', t0);
+const jar = `theme=dark; session=${token}; other=1`;
+assert.equal(await sessionOk(jar, 'court-night-42', t0 + day), true);
+assert.equal(await sessionOk(jar, 'court-night-42', t0 + SESSION_DAYS * day + 1), false);
+assert.equal(await sessionOk(jar, 'new-passcode-7', t0 + day), false);
+const [exp, sig] = token.split('.');
+assert.equal(await sessionOk(`session=${Number(exp) + day}.${sig}`, 'court-night-42', t0), false); // a longer expiry, same signature
+assert.equal(await sessionOk(`session=${exp}.${sig.slice(0, -2)}AA`, 'court-night-42', t0), false);
+assert.equal(await sessionOk(`session=${exp}.@@@`, 'court-night-42', t0), false);
+for (const bad of [null, '', 'theme=dark', 'session=', 'session=abc.def']) assert.equal(await sessionOk(bad, 'court-night-42', t0), false);
+assert.equal(await sessionOk(jar, '', t0), false);
 
 console.log('rules.test.mjs: all checks passed');
