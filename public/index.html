@@ -137,6 +137,14 @@ button.btn:disabled{opacity:.4;cursor:not-allowed}
 .island-db.on::before{background:var(--ok)}
 .island-db.off::before{background:var(--bad)}
 .island-db:focus-visible{outline:2px solid var(--ember);outline-offset:-2px}
+/* The island folds to a notch (mark and database dot) until it is hovered or keyboard-focused.
+   Only where a pointer can hover: touch screens keep the full bar. Folding waits a moment,
+   so brushing past it doesn't snap it shut; the invisible ::after pads the hover target. */
+@media (hover:hover){
+  .island::after{content:"";position:absolute;inset:-14px -32px -10px;z-index:-1}
+  .island-tabs,.island .clk{max-width:640px;transition:max-width .3s cubic-bezier(.34,1.2,.64,1),opacity .2s,padding .3s}
+  .island:not(:hover):not(:has(:focus-visible)) :is(.island-tabs,.clk){max-width:0;opacity:0;padding-inline:0;transition-delay:.35s}
+}
 #choices{display:flex;flex-direction:column;gap:12px;margin-top:12px}
 #choices:empty{display:none}
 .notice .btns{margin-top:12px;justify-content:flex-start}
@@ -167,15 +175,42 @@ td.empty{color:var(--mu)}
 #board{gap:28px}
 /* Full screen leaves nothing empty: the player lists keep their natural height,
    the score row takes the rest, and its numerals size to their own cards. */
+/* One screen, no page scroll, on laptop-width windows (narrower ones scroll as before:
+   the point buttons need the width). Like full screen: the player lists keep their height,
+   the score row takes what is left, and the numerals size to their own cards. On a very
+   short window only the player lists scroll. */
+@media (min-width:901px){
+  html:has(#board:not([hidden])){overflow:hidden}
+  .page:has(> #board:not([hidden])){padding-block:calc(env(safe-area-inset-top,0px) + 76px) 16px}
+  #board:not([hidden]){height:calc(100dvh - env(safe-area-inset-top,0px) - 92px);gap:14px}
+  #board > .wide{max-width:1600px}
+  #board .scorebar{flex:1 1 0;min-height:220px;grid-template-columns:1fr 1.25fr 1fr}
+  #board .team,#board .clockt{container-type:size;justify-content:center;padding-block:12px}
+  #board .team .big{font-size:min(68cqh,50cqw)}
+  #board .team .stt{display:none}
+  #board .clockt .big{font-size:min(44cqh,42cqw)}
+  #board .clockt .btns{margin-top:6px}
+  #board .clockt .btn{padding:7px 12px;font-size:14px}
+  #board .tname{font-size:clamp(20px,10cqh,32px)}
+  #board .hint:empty{display:none}
+  #board > .cards{flex:0 1 auto;min-height:0;overflow:auto}
+  #board .c{padding:14px 20px;gap:6px}
+  #board .c h3{font-size:22px}
+  #board .pl{padding:5px 0}
+  #board .pl small{display:inline;margin-left:8px}
+  #board .pl .pt .btn{min-height:38px;padding-block:4px}
+  #board > .hint{flex-shrink:0}
+}
 #board:fullscreen{background:var(--bg);padding:20px 24px;height:100vh;gap:16px;overflow:auto}
 #board:fullscreen > .wide{max-width:none}
 #board:fullscreen .scorebar{flex:1 1 0;min-height:260px}
 #board:fullscreen .team,#board:fullscreen .clockt{container-type:size;justify-content:center}
 #board:fullscreen .team .big{font-size:min(65cqh,50cqw)}
-#board:fullscreen .clockt .big{font-size:min(45cqh,30cqw)}
+/* "20:00" is 2.01em wide (tabular digits), so 42cqw fills about 84% of the tile's width. */
+#board:fullscreen .clockt .big{font-size:min(52cqh,42cqw)}
 #board:fullscreen .team .stt{display:none}
 #board:fullscreen .tname{font-size:clamp(22px,7cqh,48px)}
-#board:fullscreen .hint:empty,#board:fullscreen > .note{display:none}
+#board:fullscreen .hint:empty,#board:fullscreen .clockt .tip{display:none}
 @media (min-width:901px){#board:fullscreen .scorebar{grid-template-columns:1fr 1.25fr 1fr}}
 .scorebar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto) minmax(0,1fr);gap:16px;align-items:stretch}
 .team{text-align:center;align-items:center}
@@ -187,7 +222,8 @@ td.empty{color:var(--mu)}
 .clockt .big{font-size:clamp(72px,9vw,150px);color:var(--btn-tx)}
 .clockt .big.low{color:var(--ember)}
 .clockt .s{margin:0;padding:0;text-transform:uppercase;letter-spacing:.08em}
-.clockt .btns{margin-top:12px}
+.clockt .btns{margin-top:12px;gap:8px}
+.clockt .tip{font-size:13px;color:var(--btn-mu);margin-top:4px}
 .btn.inv{background:var(--btn-tx);color:var(--btn)}
 .btn.inv.o{background:transparent;color:var(--btn-tx);border:1px solid var(--btn-mu)}
 .hint{text-align:center;color:var(--mu);font-size:15px;min-height:1.6em}
@@ -259,7 +295,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
   .tname{font-size:22px}
 }
 @media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
-@media (prefers-reduced-motion:reduce){.island-thumb,.island-tabs button{transition:none}}
+@media (prefers-reduced-motion:reduce){.island-thumb,.island-tabs button,.island-tabs,.island .clk{transition:none}}
 </style>
 </head>
 <body>
@@ -380,9 +416,12 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
         <p class="s" id="boardGame"></p>
         <div class="big" id="clock">20:00</div>
         <div class="btns">
-          <button class="btn inv" data-action="startPause" id="startBtn">Start</button>
+          <button class="btn inv" data-action="startPause" id="startBtn" title="Space starts and pauses the clock">Start</button>
           <button class="btn inv o" data-action="resetClock">Reset clock</button>
+          <button class="btn inv o" data-action="endGame">End game</button>
+          <button class="btn inv o" data-action="fullscreen">Full screen</button>
         </div>
+        <p class="tip">Space starts and pauses the clock.</p>
       </div>
       <div class="c team"><input id="awayName" class="tname" aria-label="Away team name"><span class="stt plan">Away</span><div class="big" id="awayScore">0</div></div>
     </div>
@@ -391,11 +430,6 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
       <div class="c"><header><h3 id="homeLbl"></h3><span class="mono" id="homeCount"></span></header><div id="homePlayers"></div></div>
       <div class="c"><header><h3 id="awayLbl"></h3><span class="mono" id="awayCount"></span></header><div id="awayPlayers"></div></div>
     </div>
-    <div class="btns">
-      <button class="btn o" data-action="fullscreen">Full screen</button>
-      <button class="btn" data-action="endGame">End game</button>
-    </div>
-    <p class="note" style="text-align:center">Space starts and pauses the clock.</p>
   </div>
 </main>
 

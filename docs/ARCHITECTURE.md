@@ -208,7 +208,9 @@ Leaderboard. Each tab is a whole view, and its name is kept in the
 URL (`#checkin`, `#queue`, ...) so a refresh returns to it. A small dot beside
 the mark in the island shows the database: green when online, red when
 offline. Hovering over it (or a screen reader) gives the state and any games
-not saved yet. The layout targets a
+not saved yet. On a laptop the island folds to a small notch (the mark and
+the database dot) and opens when the pointer is over it or it has keyboard
+focus. Touch screens keep the full bar. The layout targets a
 laptop screen and still works at phone width.
 
 ### Check in tab (for the attendant)
@@ -263,8 +265,7 @@ laptop screen and still works at phone width.
 ```
 ┌──────────────────────────────────────────────────────────┐
 │     HOME              19:42               AWAY           │
-│      24            [Start/Pause]            18           │
-│                       [Reset]                            │
+│      24     [Start] [Reset] [End game] [Full]     18     │
 ├───────────────────────────┬──────────────────────────────┤
 │ Alex     6  +1 +2 +3 -1   │ Sam      8  +1 +2 +3 -1      │
 │ Jordan   9  +1 +2 +3 -1   │ Riley    4  +1 +2 +3 -1      │
@@ -275,8 +276,13 @@ laptop screen and still works at phone width.
 - Team totals and the clock use the largest type on the page. The size scales
   with the viewport width (`vw`) and uses tabular numerals, so digits don't
   shift as they change.
-- Score buttons are large tap targets (at least 48 px) for fast entry with a
-  mouse or touchscreen.
+- Score buttons are large tap targets for fast entry with a mouse or
+  touchscreen. They are 50 px tall, or 38 px on the one-screen laptop layout.
+- **One screen.** In a window at least 901 px wide the page does not scroll:
+  the player lists keep their height, and the score row takes the rest of the
+  window, the same way full screen does. End game, Full screen and the Space
+  hint sit in the clock tile. If the window is very short, only the player
+  lists scroll. Narrower windows and phones scroll as usual.
 - Team names are editable inline. The default is Home / Away.
 - In the last minute the clock changes color. At 0:00 the buzzer sounds.
 - **Full screen** uses the browser's Fullscreen API. Esc exits.
