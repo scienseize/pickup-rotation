@@ -8,9 +8,9 @@ basketball sessions. Design and rules: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.
 1. Open https://pickup-rotation.pickup-rotation.workers.dev
 2. The home page shows the ISO logo. Press *Enter as organizer*: a device
    that is already signed in goes straight to the app (`/app`); otherwise the
-   passcode box appears. Signing in opens the app's *Home* tab: tonight at a
-   glance, one button for the next step of the night, and the TV choices
-   (standby logo with who is up next, the queue diagram, the scoreboard). A
+   passcode box appears. Signing in opens the app's *Home* tab: one button for
+   the next step of the night (it starts as *Check in players*), and *Standby
+   on TV* (the logo and "Hexagames", full screen). A
    signed-in device that opens the link goes straight to Home. Each laptop or phone stays signed in for 30
    days. The site is organizers only: without signing in, nothing but the
    home page opens.

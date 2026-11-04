@@ -297,30 +297,17 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .c .empty{color:var(--mu);font-size:15px;border-top:1px solid var(--line);padding-top:12px}
 
 /* Home: where signing in lands. The logo behind the title, one button that adapts to the
-   night, the four steps in order (the current one inverted) and the TV choices. */
+   night, and Standby on TV. */
 #home{gap:56px}
 .home-hero{position:relative;isolation:isolate;padding-block:48px 8px}
 .home-logo{position:absolute;inset:0;margin:auto;width:min(46vmin,420px);height:auto;opacity:.13;z-index:-1;pointer-events:none}
-.flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
-.flow .fs{border:0;font:inherit;text-align:left;cursor:pointer;color:inherit}
-.flow .fs:hover{outline:1px solid var(--faint);outline-offset:-1px}
-.fs .i{font-family:var(--serif);font-size:28px;line-height:1;color:var(--mu)}
-.fs b{color:var(--ink);font-weight:600}
-.fs p{color:var(--mu);font-size:15px;margin:0}
-.tvrow{display:flex;gap:24px;align-items:center;flex-wrap:wrap}
-.tvbtns{display:flex;flex-direction:column;gap:10px;min-width:200px}
-/* Standby: a live preview on Home; full screen it fills the TV with the logo and who is up next. */
-.standby{flex:1 1 320px;max-width:460px;background:var(--panel);background-image:radial-gradient(var(--dot) 1px,transparent 1.3px);background-size:18px 18px;border-radius:14px;padding:24px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;cursor:pointer}
+/* Standby for the TV, full screen only: the logo and Hexagames. Out of full screen it stays
+   rendered but out of sight, so the Standby on TV button can put it in full screen. */
+.standby{position:fixed;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.standby:fullscreen{overflow:visible;clip-path:none;background-color:var(--bg);background-image:radial-gradient(var(--dot) 1px,transparent 1.3px);background-size:18px 18px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:2.2vh;padding:5vh 6vw;cursor:pointer}
 .standby p{margin:0}
-.sb-logo{width:120px;height:auto}
-.sb-name{font-family:var(--serif);font-size:26px;line-height:1.1;color:var(--ink)}
-.sb-label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mu)}
-.sb-names{font-family:var(--serif);font-size:17px;line-height:1.35;color:var(--ink);text-wrap:balance}
-.standby:fullscreen{max-width:none;border-radius:0;background-color:var(--bg);justify-content:center;gap:2.2vh;padding:5vh 6vw}
-.standby:fullscreen .sb-logo{width:min(48vh,56vw)}
-.standby:fullscreen .sb-name{font-size:clamp(36px,7vh,96px)}
-.standby:fullscreen .sb-label{font-size:clamp(13px,2vh,26px);margin-top:1vh}
-.standby:fullscreen .sb-names{font-size:clamp(22px,4.4vh,64px);max-width:86vw}
+.sb-logo{width:min(48vh,56vw);height:auto}
+.sb-name{font-family:var(--serif);font-size:clamp(44px,10vh,140px);line-height:1.05;letter-spacing:-.02em;color:var(--ink)}
 
 /* Queue diagram: on court, up next, waiting, on the reference's dotted canvas.
    On-court players are inverted pills (the reference's person node), the rest are cards.
@@ -385,7 +372,6 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 #qmap:fullscreen .empty{font-size:clamp(15px,1.3cqw,32px)}
 
 @media (max-width:900px){
-  .flow{grid-template-columns:repeat(2,minmax(0,1fr))}
   .qmap{flex-direction:column}
   .qarrow{transform:rotate(90deg)}
   .scorebar{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
@@ -399,8 +385,6 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
   .pl .pt .btn{flex:1}
 }
 @media (max-width:600px){
-  .flow{grid-template-columns:minmax(0,1fr)}
-  .tvbtns{flex-direction:row;flex-wrap:wrap;min-width:0}
   .page{padding-inline:16px}
   .island-mark{display:none}
   .island-db{margin:0 0 0 6px}
@@ -440,33 +424,16 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
     <div class="hero home-hero">
       <img class="home-logo" src="logo.png" alt="" aria-hidden="true">
       <h1>Hexagames</h1>
-      <p class="date"><span id="homeLine"></span><span id="homeClock"></span></p>
-      <div class="btns"><button class="btn" id="homeNext" data-action="goTab" data-arg="checkin">Check in players</button></div>
+      <div class="btns">
+        <button class="btn" id="homeNext" data-action="goTab" data-arg="checkin">Check in players</button>
+        <button class="btn o" data-action="standby">Standby on TV</button>
+      </div>
     </div>
 
-    <section>
-      <div class="wide flow" id="homeSteps"></div>
-    </section>
-
-    <section>
-      <div class="sh">
-        <h2>Show on the TV.</h2>
-        <p>Full screen on this laptop, mirrored to the TV. Esc comes back.</p>
-      </div>
-      <div class="wide tvrow">
-        <div class="standby" id="standby" data-action="tv" data-arg="standby" title="Standby on the TV">
-          <img class="sb-logo" src="logo.png" alt="">
-          <p class="sb-name">Hexagames</p>
-          <p class="sb-label" id="standbyLabel"></p>
-          <p class="sb-names" id="standbyNames"></p>
-        </div>
-        <div class="tvbtns">
-          <button class="btn" data-action="tv" data-arg="standby">Standby</button>
-          <button class="btn o" data-action="tv" data-arg="queue">Queue diagram</button>
-          <button class="btn o" data-action="tv" data-arg="board">Scoreboard</button>
-        </div>
-      </div>
-    </section>
+    <div class="standby" id="standby" data-action="standby" aria-hidden="true">
+      <img class="sb-logo" src="logo.png" alt="">
+      <p class="sb-name">Hexagames</p>
+    </div>
 
     <div class="btns"><button class="btn o s" data-action="signOut">Sign out</button></div>
   </div>

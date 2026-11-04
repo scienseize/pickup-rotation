@@ -216,8 +216,7 @@ laptop screen and still works at phone width.
 
 ### Home tab (where signing in lands)
 
-- The logo behind the title, tonight at a glance (checked in, game number,
-  live clock, games not saved yet), and one button for the next step:
+- The logo behind the title and one button for the next step:
 
   | Situation | Button |
   |---|---|
@@ -226,11 +225,9 @@ laptop screen and still works at phone width.
   | Court and teams set, not started | Start game N (Scoreboard) |
   | Game started | Back to game N (Scoreboard) |
 
-- The four steps as tiles (Check in, Queue, Scoreboard, Leaderboard) with a
-  one-line status each; the current step is inverted.
-- **Show on the TV:** *Standby* puts a live card in full screen: the logo and
-  who is up next (`upNext`, the same as the queue diagram). *Queue diagram*
-  and *Scoreboard* open that tab and put it in full screen. Esc comes back.
+- **Standby on TV** fills the screen with the logo and "Hexagames", nothing
+  else. It only exists in full screen; a click or Esc comes back. The queue diagram and the scoreboard keep their own
+  *Full screen* buttons.
 - *Sign out* lives here.
 
 ### Check in tab (for the attendant)
