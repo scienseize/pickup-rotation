@@ -40,4 +40,14 @@ const anas = [{ name: 'Ana', games: 1 }, { name: 'Ana Reyes', games: 3 }, { name
 assert.deepEqual(Names.resolve('ana', anas), { choices: ['Ana', 'Ana Reyes', 'Ana Cruz'] });
 assert.deepEqual(Names.resolve('Ana Reyes', anas), { name: 'Ana Reyes' });
 
+// Clean fixes capitalization typed the wrong way, but keeps deliberate mixed case.
+assert.equal(Names.clean('  juan   dela cruz '), 'Juan Dela Cruz');
+assert.equal(Names.clean('JUAN SANTOS'), 'Juan Santos');
+assert.equal(Names.clean('jUAN sANTOS'), 'Juan Santos');
+assert.equal(Names.clean("o'neil anne-marie"), "O'Neil Anne-Marie");
+assert.equal(Names.clean('ñino peña'), 'Ñino Peña');
+assert.equal(Names.clean('McDonald DeShawn'), 'McDonald DeShawn');
+assert.deepEqual(Names.resolve('zed PARK', people), { fresh: 'Zed Park' });
+assert.deepEqual(Names.resolve('BEN', people), { name: 'Ben Torres' }); // known players keep the database's spelling
+
 console.log('names.test.js: all checks passed');

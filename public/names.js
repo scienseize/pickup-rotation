@@ -4,7 +4,13 @@
 
 const Names = {
   norm: s => String(s).trim().replace(/\s+/g, ' ').toLowerCase(),
-  clean: s => String(s).trim().replace(/\s+/g, ' ').slice(0, 60),
+  clean: s => Names.proper(String(s).trim().replace(/\s+/g, ' ').slice(0, 60)),
+
+  // Proper case for words typed in the wrong case: "juan", "JUAN" and "jUAN" become "Juan",
+  // "o'neil" becomes "O'Neil", each part of "anne-marie" is fixed. A word that starts with a
+  // capital and has lowercase letters is kept as typed, so "McDonald" and "DeShawn" survive.
+  proper: s => s.replace(/[^\s-]+/g, w => (/^\p{Lu}.*\p{Ll}/u.test(w) ? w
+    : w.toLowerCase().replace(/(^|')(\p{L})/gu, (_, a, b) => a + b.toUpperCase()))),
 
   // 0 exact name, 1 exact first name, 2 name starts with the query
   // (first-name prefix or "ana r"), 3 a later word starts with it, 4 no match.
