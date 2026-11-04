@@ -151,6 +151,12 @@ td.act{text-align:right}
 td.act > span{display:inline-flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 td.tags > span{display:inline-flex;gap:6px;flex-wrap:wrap}
 td.empty{color:var(--mu)}
+/* Leaderboard: prose width so the numbers sit beside the names; points are the big figure. */
+.lb{max-width:760px}
+.lb th.r,.lb td.r{width:1%;white-space:nowrap;padding-left:24px}
+.lb td{vertical-align:middle}
+.lb td.pts{font-family:var(--serif);font-size:26px;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums}
+.lb tr.un b,.lb tr.un td.pts{color:var(--mu);font-weight:500}
 .seg{display:inline-flex}
 .seg .btn{border-radius:0}
 .seg .btn:first-child{border-radius:8px 0 0 8px}
@@ -244,6 +250,8 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
   .island-tabs button{padding:11px 10px;letter-spacing:.05em;font-size:11px}
   .island .clk{display:none}
   .qmap{padding:16px}
+  .lb th.r,.lb td.r{padding-left:10px}
+  .lb th,.lb td{padding-right:8px}
   .hero{padding-block:40px 40px}
   .c{padding:22px 20px}
   .hide-sm{display:none}
@@ -350,13 +358,14 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
   <div class="tabpanel" id="leaders" role="tabpanel" aria-labelledby="tab-leaders" hidden>
     <div class="hero sm">
       <h1>Leaderboard</h1>
-      <p class="date">Games and points from tonight, with each player's average across every week.</p>
+      <p class="date" id="leaderIntro"></p>
+      <div class="seg" role="group" aria-label="Rank by" id="leaderMode"></div>
     </div>
 
     <section>
-      <div class="wide tw">
+      <div class="wide tw lb">
         <table>
-          <thead><tr><th>Player</th><th class="r">Games</th><th class="r">Points</th><th class="r">Avg</th></tr></thead>
+          <thead><tr><th>#</th><th>Player</th><th class="r">Games</th><th class="r">Points</th><th class="r">Per game</th><th class="r hide-sm">Avg</th></tr></thead>
           <tbody id="leaderRows"></tbody>
         </table>
       </div>

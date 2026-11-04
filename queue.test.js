@@ -67,4 +67,17 @@ assert.ok(flagged.every(n => players.find(p => p.name === n).games < most.games)
 Queue.pick(game, most.name, 10); // picking twice does nothing
 assert.equal(game.onCourt.length, 1);
 
+// Leaderboard: totals rank everyone who played; per game needs 2 games and puts the rest last.
+const lbPlayers = [
+  { name: 'Ana', games: 3, totalPoints: 24 }, // 8.0 a game
+  { name: 'Ben', games: 2, totalPoints: 20 }, // 10.0
+  { name: 'Cy', games: 1, totalPoints: 12 }, // 12.0, but only one game
+  { name: 'Dee', games: 2, totalPoints: 16 }, // 8.0, ties Ana per game
+  { name: 'Eli', games: 0, totalPoints: 0 },
+];
+const board = mode => Queue.leaderboard(lbPlayers, mode, 2).map(r => `${r.rank ?? '-'}${r.player.name}`).join(' ');
+assert.equal(board('total'), '1Ana 2Ben 3Dee 4Cy -Eli');
+assert.equal(board('perGame'), '1Ben 2Ana 2Dee -Cy -Eli');
+assert.equal(Queue.leaderboard(lbPlayers, 'perGame', 2).find(r => r.player.name === 'Cy').perGame, 12);
+
 console.log('queue.test.js: all checks passed');

@@ -6,6 +6,7 @@ const TEAM_SIZE = 5; // volleyball will be 6
 const SPOTS = TEAM_SIZE * 2;
 const GAME_MS = GAME_MINUTES * 60000;
 const KEY = 'pickup-rotation-v1';
+const MIN_RANKED_GAMES = 2; // per-game ranking: one lucky game shouldn't top the board
 
 const $ = id => document.getElementById(id);
 const newGame = number => ({
@@ -21,6 +22,7 @@ const PASS_KEY = 'pickup-passcode', PROFILES_KEY = 'pickup-profiles';
 const stored = key => { try { return localStorage.getItem(key); } catch { return null; } };
 // lowercase name -> { name, games, points, avg }; the last copy is kept so profiles still show offline
 let profiles = new Map((JSON.parse(stored(PROFILES_KEY)) || []).map(p => [p.name.toLowerCase(), p]));
+let leaderMode = 'total'; // 'total' | 'perGame', the leaderboard toggle
 let db = 'connecting'; // 'online' | 'offline' | 'locked' (needs the organizer passcode)
 
 function load() {
@@ -270,6 +272,7 @@ const actions = {
     player(name).present = false;
   },
   undoDone: name => { player(name).present = true; },
+  leaderMode(_, mode) { leaderMode = mode; keepFocus(renderQueue); return false; }, // a view choice, not saved
   checkIn: name => { checkIn(name); return false; },
   removeName: name => { state.expected = state.expected.filter(n => n !== name); },
   choose: (name, query) => { needsChoice = needsChoice.filter(c => c.query !== query); addToList(name); saveList(); },
@@ -433,10 +436,19 @@ function renderQueue() {
       <td class="act">${btn('undoDone', p.name, 'Undo')}</td>
     </tr>`).join('');
 
-  $('leaderRows').innerHTML = [...state.players]
-    .sort((a, b) => b.totalPoints - a.totalPoints || a.name.localeCompare(b.name))
-    .map(p => `<tr><td><b>${esc(p.name)}</b></td><td class="r mono">${p.games}</td><td class="r mono">${p.totalPoints}</td><td class="r mono">${avgText(p.name)}</td></tr>`)
-    .join('') || '<tr><td colspan="4" class="empty">No players yet.</td></tr>';
+  // The ranked figure is the big one; per game needs MIN_RANKED_GAMES to get a rank.
+  const perGame = leaderMode === 'perGame';
+  $('leaderIntro').textContent = perGame
+    ? `Tonight's points per game. Players need ${MIN_RANKED_GAMES} games to be ranked. Avg is their average across every week.`
+    : 'Tonight\'s total points. Avg is each player\'s average across every week.';
+  $('leaderMode').innerHTML = [['total', 'Total points'], ['perGame', 'Per game']]
+    .map(([m, label]) => btn('leaderMode', '', label, { arg: m, pressed: leaderMode === m, cls: leaderMode === m ? 's' : 'o s' })).join('');
+  const big = on => `r ${on ? 'pts' : 'mono'}`;
+  $('leaderRows').innerHTML = Queue.leaderboard(state.players, leaderMode, MIN_RANKED_GAMES)
+    .map(({ player: p, perGame: pg, rank }) => `<tr${rank ? '' : ' class="un"'}><td class="n">${rank ?? ''}</td><td><b>${esc(p.name)}</b></td>
+      <td class="r mono">${p.games}</td><td class="${big(!perGame)}">${p.totalPoints}</td>
+      <td class="${big(perGame)}">${pg === null ? '' : pg.toFixed(1)}</td><td class="r mono hide-sm">${avgText(p.name)}</td></tr>`)
+    .join('') || '<tr><td colspan="6" class="empty">No players yet.</td></tr>';
 
   renderMap(order, now);
 }

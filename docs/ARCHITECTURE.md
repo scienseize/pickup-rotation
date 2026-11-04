@@ -250,8 +250,13 @@ laptop screen and still works at phone width.
 
 ### Leaderboard tab
 
-- Tonight's name, games played and total points, sorted by points, plus each
-  player's all-time average from the database.
+- Tonight's name, games played, total points and points per game, plus each
+  player's all-time average from the database. Rows are numbered, and ties
+  share a rank.
+- A toggle ranks by *Total points* (everyone who has played) or *Per game*.
+  Per game only ranks players with at least 2 games (`MIN_RANKED_GAMES`), so
+  one lucky game can't top the board. The rest are listed after them with no
+  number. The ranking lives in `Queue.leaderboard`.
 
 ### Scoreboard view (for the court; full screen)
 

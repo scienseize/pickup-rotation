@@ -73,6 +73,19 @@ const Queue = {
     return Queue.nextInLine(copy, { onCourt: [], satOut: [] }, spots);
   },
 
+  // Tonight's leaderboard, by total points or by points per game. Rows are
+  // { player, perGame, rank }. Ties share a rank (1, 2, 2, 4). Players who haven't
+  // played get no rank, and in per-game mode neither does anyone under minGames:
+  // one lucky game shouldn't top the board. Unranked players are listed last.
+  leaderboard(players, mode, minGames) {
+    const rows = players.map(p => ({ player: p, perGame: p.games ? Math.round((p.totalPoints / p.games) * 10) / 10 : null }));
+    const ranked = r => r.player.games >= (mode === 'perGame' ? minGames : 1);
+    const key = r => (mode === 'perGame' ? r.perGame ?? -1 : r.player.totalPoints);
+    rows.sort((a, b) => ranked(b) - ranked(a) || key(b) - key(a)
+      || b.player.totalPoints - a.player.totalPoints || a.player.name.localeCompare(b.player.name));
+    return rows.map(r => ({ ...r, rank: ranked(r) ? rows.findIndex(q => key(q) === key(r)) + 1 : null }));
+  },
+
   seat: name => ({ name, team: null, points: 0 }),
 };
 
