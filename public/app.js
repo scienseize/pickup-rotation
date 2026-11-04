@@ -47,7 +47,8 @@ const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const seatOf = name => state.game.onCourt.find(c => c.name === name);
 const player = name => state.players.find(p => p.name === name);
-const score = team => state.game.onCourt.filter(c => c.team === team).reduce((t, c) => t + c.points, 0);
+const teamFull = team => state.game.onCourt.filter(c => c.team === team).length >= TEAM_SIZE;
+const score = team =>state.game.onCourt.filter(c => c.team === team).reduce((t, c) => t + c.points, 0);
 const remaining = () => (state.game.endsAt ? Math.max(0, state.game.endsAt - Date.now()) : state.game.remainingMs);
 const clockText = ms => {
   const s = Math.ceil(ms / 1000);
@@ -68,9 +69,9 @@ const avgText = name => {
   return p?.games ? `AVG ${p.avg.toFixed(1)}` : 'NEW';
 };
 const localDate = ms => new Date(ms).toLocaleDateString('en-CA'); // YYYY-MM-DD
-const btn = (action, name, label, { arg = '', pressed, cls = 'o s' } = {}) =>
+const btn = (action, name, label, { arg = '', pressed, cls = 'o s', disabled } = {}) =>
   `<button class="btn ${cls}" data-action="${action}" data-name="${esc(name)}" data-arg="${arg}"` +
-  `${pressed === undefined ? '' : ` aria-pressed="${pressed}"`}>${label}</button>`;
+  `${pressed === undefined ? '' : ` aria-pressed="${pressed}"`}${disabled ? ' disabled' : ''}>${label}</button>`;
 
 // ---- tabs: the island. A tab hides every panel but its own and scrolls to the top ----
 
@@ -259,7 +260,11 @@ const actions = {
   pick(name) { if (locked()) return false; Queue.pick(state.game, name, SPOTS); },
   sitOut(name) { if (locked()) return false; Queue.sitOut(state.game, name); },
   remove(name) { if (locked()) return false; Queue.remove(state.game, name); },
-  team: (name, team) => { const c = seatOf(name); c.team = c.team === team ? null : team; },
+  team(name, team) {
+    const c = seatOf(name);
+    if (c.team !== team && teamFull(team)) return false;
+    c.team = c.team === team ? null : team;
+  },
   done(name) {
     if (!confirm(`Mark ${name} done for the night? They won't be called again.`)) return false;
     player(name).present = false;
@@ -403,7 +408,7 @@ function renderQueue() {
       <td class="n">${i + 1}</td>
       <td><b>${esc(c.name)}</b><small>${plural(player(c.name).games, 'game')} tonight${tag(c.name)}</small></td>
       <td class="act"><span>
-        <span class="seg">${['home', 'away'].map(t => btn('team', c.name, esc(g[t + 'Name']), { arg: t, pressed: c.team === t, cls: c.team === t ? 's' : 'o s' })).join('')}</span>
+        <span class="seg">${['home', 'away'].map(t => btn('team', c.name, esc(g[t + 'Name']), { arg: t, pressed: c.team === t, cls: c.team === t ? 's' : 'o s', disabled: c.team !== t && teamFull(t) })).join('')}</span>
         ${lock ? '' : btn('sitOut', c.name, 'Sit out') + `<button type="button" class="xbtn" data-action="remove"
           data-name="${esc(c.name)}" data-arg="" aria-label="Remove ${esc(c.name)} from up next">&times;</button>`}
       </span></td>
@@ -439,10 +444,16 @@ function renderQueue() {
 // The queue as a diagram for the TV: on court, then up next, then everyone else by games played.
 function renderMap(order, now) {
   const g = state.game, open = g.onCourt.length < SPOTS;
+  // First names read from across the gym; a last initial only when tonight has two of that first name.
+  const first = name => name.split(' ')[0];
+  const short = name => {
+    const twin = state.players.some(p => p.name !== name && first(p.name).toLowerCase() === first(name).toLowerCase());
+    return twin && name.includes(' ') ? `${first(name)} ${name.split(' ').at(-1)[0]}.` : first(name);
+  };
   const node = (name, on) => {
     const p = player(name);
     const wait = seatOf(name) ? '' : ` · ${Math.floor((now - p.readyAt) / 60000)} min`; // on court: not waiting
-    return `<div class="qn${on ? ' on' : ''}"><b>${esc(name)}</b><small>${plural(p.games, 'game')}${wait}</small></div>`;
+    return `<div class="qn${on ? ' on' : ''}" title="${esc(name)}"><b>${esc(short(name))}</b><small>${plural(p.games, 'game')}${wait}</small></div>`;
   };
   const group = (label, names, on) => names.length
     ? `<div class="qgrp"><p class="grp">${esc(label)}</p><div class="qnodes">${names.map(n => node(n, on)).join('')}</div></div>` : '';
