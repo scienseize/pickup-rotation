@@ -12,6 +12,7 @@
 :root{
   --bg:#faf8f5; --panel:#f1ede8; --card:#ffffff; --line:#e6e1dc; --ink:#1c1a19; --tx:#3d3936; --mu:#77706a; --faint:#d6d0ca;
   --btn:#1c1a19; --btn-tx:#faf8f5; --btn-mu:rgba(250,248,245,.6); --tag:#dfe4ef; --tag-tx:#273044; --ember:#de4a26;
+  --home:#b8461a; --away:#2f6db3; --on-team:#ffffff; /* team colors: orange and blue, colorblind-safe pair */
   --shadow:0 12px 32px rgba(28,26,25,.18); --dot:rgba(28,26,25,.13); --ok:#5fc27a; --bad:#f0625a;
   --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
   --sans:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
@@ -21,10 +22,12 @@
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#1b1a19; --panel:#252321; --card:#2b2927; --line:#36332f; --ink:#f3efea; --tx:#d9d3cd; --mu:#a39c95; --faint:#4a4642;
   --btn:#f3efea; --btn-tx:#1b1a19; --btn-mu:rgba(27,26,25,.62); --tag:#323a4d; --tag-tx:#dfe4ef; --ember:#ef6a47;
+  --home:#f0803c; --away:#5b9be0; --on-team:#1b1a19;
   --shadow:0 12px 32px rgba(0,0,0,.45); --dot:rgba(243,239,234,.1); --ok:#2f8a4c; --bad:#c8372d; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#1b1a19; --panel:#252321; --card:#2b2927; --line:#36332f; --ink:#f3efea; --tx:#d9d3cd; --mu:#a39c95; --faint:#4a4642;
   --btn:#f3efea; --btn-tx:#1b1a19; --btn-mu:rgba(27,26,25,.62); --tag:#323a4d; --tag-tx:#dfe4ef; --ember:#ef6a47;
+  --home:#f0803c; --away:#5b9be0; --on-team:#1b1a19;
   --shadow:0 12px 32px rgba(0,0,0,.45); --dot:rgba(243,239,234,.1); --ok:#2f8a4c; --bad:#c8372d; color-scheme:dark}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -160,11 +163,37 @@ td.act > span{display:inline-flex;gap:8px;flex-wrap:wrap;justify-content:flex-en
 td.tags > span{display:inline-flex;gap:6px;flex-wrap:wrap}
 td.empty{color:var(--mu)}
 /* Leaderboard: prose width so the numbers sit beside the names; points are the big figure. */
-.lb{max-width:760px}
+.lb{max-width:760px;display:grid;gap:0 40px}
+.lb th,.lb td{padding-block:4px;vertical-align:middle;line-height:1.25}
+/* A tighter head and foot on this tab so about 30 players fit on one laptop screen. */
+#leaders .hero.sm{padding-block:4px 0;gap:10px}
+#leaders .hero.sm h1{font-size:clamp(30px,3.4vw,42px)}
+#leaders > .hero.sm + section{margin-top:-72px}
+.page:has(> #leaders:not([hidden])){padding-bottom:24px}
 .lb th.r,.lb td.r{width:1%;white-space:nowrap;padding-left:24px}
-.lb td{vertical-align:middle}
-.lb td.pts{font-family:var(--serif);font-size:26px;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums}
-.lb tr.un b,.lb tr.un td.pts{color:var(--mu);font-weight:500}
+.lb td.who{width:100%;max-width:0}
+.lb td.who b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lb td.n{color:var(--ink);font-size:18px;line-height:1.2}
+.lb td.pts{font-family:var(--serif);font-size:22px;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums}
+.lb tr.un b,.lb tr.un td.pts,.lb tr.un td.n{color:var(--mu);font-weight:500}
+/* Podium: ranks 1 to 3 larger, and the leader on a subtle tile. Neutral on purpose: team colors
+   would mislead here, since players change teams between games. */
+.lb tr.top td{padding-block:8px}
+.lb tr.top td.n{font-size:26px;line-height:1}
+.lb tr.top td.who b{font-size:17px}
+.lb tr.p1 td{background:var(--panel);border-bottom-color:transparent}
+.lb tr.p1 td:first-child{border-radius:10px 0 0 10px;padding-left:12px}
+.lb tr.p1 td:last-child{border-radius:0 10px 10px 0;padding-right:12px}
+@media (min-width:1100px){
+  .lb.split{grid-template-columns:repeat(2,minmax(0,1fr));max-width:1080px}
+  .lb.split th.r,.lb.split td.r{padding-left:14px}
+}
+@media (max-width:1099px){.lb.split > .tw + .tw thead{display:none}}
+.lb.noavg .avg{display:none}
+.lb.noavg tr.p1 td:nth-last-child(2){border-radius:0 10px 10px 0;padding-right:12px}
+.lb > :is(.rest,.empty){grid-column:1 / -1}
+.lb > .rest{color:var(--mu);font-size:15px;margin-top:12px}
+.lb > .empty{color:var(--mu)}
 .seg{display:inline-flex}
 .seg .btn{border-radius:0}
 .seg .btn:first-child{border-radius:8px 0 0 8px}
@@ -186,7 +215,10 @@ td.empty{color:var(--mu)}
   #board > .wide{max-width:1600px}
   #board .scorebar{flex:1 1 0;min-height:220px;grid-template-columns:1fr 1.25fr 1fr}
   #board .team,#board .clockt{container-type:size;justify-content:center;padding-block:12px}
-  #board .team .big{font-size:min(68cqh,50cqw)}
+  /* The score tiles are size containers here, so the band is 9% of the tile's own height
+     (about 60px on a 1080p TV). The name and score are centered and leave room above them. */
+  #board .team::before{height:9cqh}
+  #board .team .big{font-size:min(64cqh,50cqw)}
   #board .team .stt{display:none}
   #board .clockt .big{font-size:min(44cqh,42cqw)}
   #board .clockt .btns{margin-top:6px}
@@ -195,6 +227,7 @@ td.empty{color:var(--mu)}
   #board .hint:empty{display:none}
   #board > .cards{flex:0 1 auto;min-height:0;overflow:auto}
   #board .c{padding:14px 20px;gap:6px}
+  #board .cards.two > .c{padding-top:calc(14px + var(--band))}
   #board .c h3{font-size:22px}
   #board .pl{padding:5px 0}
   #board .pl small{display:inline;margin-left:8px}
@@ -218,6 +251,30 @@ td.empty{color:var(--mu)}
 .tname:focus{border-color:var(--faint);outline:none}
 .big{font-family:var(--serif);font-weight:400;line-height:1;letter-spacing:-.025em;font-variant-numeric:tabular-nums;color:var(--ink)}
 .team .big{font-size:clamp(96px,13vw,220px)}
+/* Team colors: Home is orange, Away is blue (--home / --away, set per theme above).
+   A band across the top of the score tiles and player cards with the team name in its color,
+   the .mk square in labels, filled pills on the TV diagram, and a left edge on Up next boxes. */
+.c.team,.cards.two > .c{position:relative;overflow:hidden}
+.cards.two > .c{padding-top:calc(28px + var(--band))}
+.c.team{--band:14px}
+.cards.two > .c{--band:12px}
+:is(.c.team,.cards.two > .c)::before{content:"";position:absolute;inset:0 0 auto;height:var(--band);pointer-events:none}
+.t-home{--team:var(--home)}
+.t-away{--team:var(--away)}
+:is(.t-home,.t-away)::before{background:var(--team)}
+:is(.t-home,.t-away) :is(.tname,h3){color:var(--team)}
+.mk{display:inline-block;width:.95em;height:.95em;border-radius:2px;margin-right:.55em;vertical-align:-.12em}
+.mk.home{background:var(--home)}
+.mk.away{background:var(--away)}
+.qn.on.home{background:var(--home);border-color:var(--home)}
+.qn.on.away{background:var(--away);border-color:var(--away)}
+.qn.on:is(.home,.away) b{color:var(--on-team)}
+.qn.on:is(.home,.away) small{color:var(--on-team);opacity:.75}
+.qn.on.none{background:transparent;border:2px dashed var(--faint)}
+.qn.on.none b{color:var(--ink)}
+.qn.on.none small{color:var(--mu)}
+#upnext > .home .qn{border-left:4px solid var(--home)}
+#upnext > .away .qn{border-left:4px solid var(--away)}
 .clockt{align-items:center;justify-content:center;text-align:center;padding:22px 28px}
 .clockt .big{font-size:clamp(72px,9vw,150px);color:var(--btn-tx)}
 .clockt .big.low{color:var(--ember)}
@@ -244,8 +301,39 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .qcol{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:18px}
 .qcol.wait{flex-grow:1.4}
 .qarrow{align-self:center;color:var(--mu);font-family:var(--mono);font-size:20px;line-height:1}
-.qmap .col,.qmap .grp{margin:0;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--mu);font-size:11px}
+:is(.qmap,.here,.qbox) :is(.col,.grp){margin:0;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--mu);font-size:11px}
 .qmap .grp{font-size:10.5px}
+/* Check in: the same boxes, grouped, so 30 people fit in a few short rows. */
+.here{display:flex;flex-direction:column;gap:14px}
+.here .qnodes{grid-template-columns:repeat(auto-fill,minmax(165px,1fr))}
+.here .qn{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:9px 12px}
+.here .qn.on{padding-inline:16px}
+.here .qn b{font-family:var(--sans);font-weight:600;font-size:15px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+.here .qn small{font-family:var(--mono);flex-shrink:0}
+.qn.out{background:transparent;border-style:dashed;border-color:var(--faint)}
+.qn.out b{color:var(--mu)}
+.here > .empty{color:var(--mu);font-size:15px}
+/* Queue: the same boxes with the organizer's buttons on their own line. */
+.qbox{display:flex;flex-direction:column;gap:14px}
+.qbox:empty{display:none}
+.qbox .qn{display:flex;flex-direction:column;gap:6px;padding:8px 12px}
+.qbox .qn.row{flex-direction:row;align-items:center;gap:6px}
+.qbox :is(.top,.acts){display:flex;align-items:center;gap:6px;min-width:0}
+.qbox .qn b{font-family:var(--sans);font-weight:600;font-size:15px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+.qbox .pos{font-family:var(--mono);font-size:12px;color:var(--mu);flex-shrink:0}
+.qbox .top .stt{flex-shrink:0;font-size:10px;padding:2px 6px}
+.qbox .acts small{font-size:12px;margin-right:auto;white-space:nowrap}
+.qbox .qn :is(.seg,.btn,.xbtn){flex-shrink:0}
+.qbox .btn.s{padding:5px 10px;font-size:13px}
+/* Up next: the two teams side by side like the scoreboard's team cards; "No team yet" spans both. */
+#upnext{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px;align-items:start}
+#upnext > .side .qnodes{grid-template-columns:minmax(0,1fr)}
+#upnext > :is(.none,.empty){grid-column:1 / -1}
+#upnext > .none .qnodes{grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+#waiting .qnodes{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+#out .qnodes{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+.qbox .qn.sat{opacity:.6}
+.qbox > .empty{color:var(--mu);font-size:15px}
 .qgrp{display:flex;flex-direction:column;gap:8px}
 .qnodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
 .qn{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:0}
@@ -275,6 +363,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 }
 @media (max-width:700px){
   .cards.two{grid-template-columns:minmax(0,1fr)}
+  #upnext{grid-template-columns:minmax(0,1fr)}
   .pl{grid-template-columns:minmax(0,1fr) auto}
   .pl .pt{grid-column:1 / -1}
   .pl .pt .btn{flex:1}
@@ -288,6 +377,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
   .qmap{padding:16px}
   .lb th.r,.lb td.r{padding-left:10px}
   .lb th,.lb td{padding-right:8px}
+  .lb tr.p1 td:nth-last-child(2){border-radius:0 10px 10px 0;padding-right:12px}
   .hero{padding-block:40px 40px}
   .c{padding:22px 20px}
   .hide-sm{display:none}
@@ -340,6 +430,14 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
       </div>
     </section>
 
+    <section>
+      <div class="sh">
+        <h2>Checked in.</h2>
+        <p id="hereIntro"></p>
+      </div>
+      <div class="wide here" id="here"></div>
+    </section>
+
   </div>
 
   <div class="tabpanel" id="queue" role="tabpanel" aria-labelledby="tab-queue">
@@ -362,12 +460,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
         <h2>Up next.</h2>
         <p id="upnextIntro"></p>
       </div>
-      <div class="wide tw">
-        <table>
-          <thead><tr><th>#</th><th>Player</th><th class="r">Team</th></tr></thead>
-          <tbody id="upnext"></tbody>
-        </table>
-      </div>
+      <div class="wide qbox" id="upnext"></div>
     </section>
 
     <section>
@@ -375,18 +468,8 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
         <h2>Waiting.</h2>
         <p>In fairness order: fewest games first, then longest wait. Pick calls a specific player into an open spot.</p>
       </div>
-      <div class="wide tw">
-        <table>
-          <thead><tr><th>#</th><th>Player</th><th class="hide-sm">Status</th><th></th></tr></thead>
-          <tbody id="waiting"></tbody>
-        </table>
-      </div>
-      <div class="wide tw" id="outBox">
-        <h3>Done for the night</h3>
-        <table>
-          <tbody id="out"></tbody>
-        </table>
-      </div>
+      <div class="wide qbox" id="waiting"></div>
+      <div class="wide qbox" id="out"></div>
     </section>
 
   </div>
@@ -399,19 +482,14 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
     </div>
 
     <section>
-      <div class="wide tw lb">
-        <table>
-          <thead><tr><th>#</th><th>Player</th><th class="r">Games</th><th class="r">Points</th><th class="r">Per game</th><th class="r hide-sm">Avg</th></tr></thead>
-          <tbody id="leaderRows"></tbody>
-        </table>
-      </div>
+      <div class="wide lb" id="leaderBoard"></div>
     </section>
 
   </div>
 
   <div class="tabpanel" id="board" role="tabpanel" aria-labelledby="tab-board" hidden>
     <div class="wide scorebar">
-      <div class="c team"><input id="homeName" class="tname" aria-label="Home team name"><span class="stt plan">Home</span><div class="big" id="homeScore">0</div></div>
+      <div class="c team t-home"><input id="homeName" class="tname" aria-label="Home team name"><span class="stt plan">Home</span><div class="big" id="homeScore">0</div></div>
       <div class="fs k clockt">
         <p class="s" id="boardGame"></p>
         <div class="big" id="clock">20:00</div>
@@ -423,12 +501,12 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
         </div>
         <p class="tip">Space starts and pauses the clock.</p>
       </div>
-      <div class="c team"><input id="awayName" class="tname" aria-label="Away team name"><span class="stt plan">Away</span><div class="big" id="awayScore">0</div></div>
+      <div class="c team t-away"><input id="awayName" class="tname" aria-label="Away team name"><span class="stt plan">Away</span><div class="big" id="awayScore">0</div></div>
     </div>
     <p class="hint" id="boardHint" role="status"></p>
     <div class="wide cards two">
-      <div class="c"><header><h3 id="homeLbl"></h3><span class="mono" id="homeCount"></span></header><div id="homePlayers"></div></div>
-      <div class="c"><header><h3 id="awayLbl"></h3><span class="mono" id="awayCount"></span></header><div id="awayPlayers"></div></div>
+      <div class="c t-home"><header><h3 id="homeLbl"></h3><span class="mono" id="homeCount"></span></header><div id="homePlayers"></div></div>
+      <div class="c t-away"><header><h3 id="awayLbl"></h3><span class="mono" id="awayCount"></span></header><div id="awayPlayers"></div></div>
     </div>
   </div>
 </main>

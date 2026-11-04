@@ -407,34 +407,33 @@ function renderQueue() {
     ? `Game ${g.number} is on. Spots unlock when it ends.`
     : `Game ${g.number}. ${g.onCourt.length} of ${SPOTS} spots filled. Players choose sides, then set each one's team here.`;
 
-  $('upnext').innerHTML = g.onCourt.map((c, i) => `<tr>
-      <td class="n">${i + 1}</td>
-      <td><b>${esc(c.name)}</b><small>${plural(player(c.name).games, 'game')} tonight${tag(c.name)}</small></td>
-      <td class="act"><span>
-        <span class="seg">${['home', 'away'].map(t => btn('team', c.name, esc(g[t + 'Name']), { arg: t, pressed: c.team === t, cls: c.team === t ? 's' : 'o s', disabled: c.team !== t && teamFull(t) })).join('')}</span>
-        ${lock ? '' : btn('sitOut', c.name, 'Sit out') + `<button type="button" class="xbtn" data-action="remove"
-          data-name="${esc(c.name)}" data-arg="" aria-label="Remove ${esc(c.name)} from up next">&times;</button>`}
-      </span></td>
-    </tr>`).join('') || '<tr><td colspan="3" class="empty">Nobody called yet. Press Fill open spots.</td></tr>';
+  // Up next: one group per team, so the 5-a-side cap is visible, then anyone without a team.
+  // One line per player: name, team toggle, Sit out, remove. Games and average are in the hover text.
+  const seat = c => `<div class="qn row" title="${esc(c.name)} · ${plural(player(c.name).games, 'game')} tonight${tag(c.name)}">
+      <b>${esc(c.name)}</b><span class="seg">${['home', 'away'].map(t => btn('team', c.name, esc(g[t + 'Name']),
+        { arg: t, pressed: c.team === t, cls: c.team === t ? 's' : 'o s', disabled: c.team !== t && teamFull(t) })).join('')}</span>
+      ${lock ? '' : btn('sitOut', c.name, 'Sit out') + `<button type="button" class="xbtn" data-action="remove"
+        data-name="${esc(c.name)}" data-arg="" aria-label="Remove ${esc(c.name)} from up next">&times;</button>`}</div>`;
+  const onTeam = t => g.onCourt.filter(c => c.team === t);
+  $('upnext').innerHTML = (boxGroup(`${g.homeName} · ${onTeam('home').length} of ${TEAM_SIZE}`, onTeam('home').map(seat), 'side home', mk('home'))
+    + boxGroup(`${g.awayName} · ${onTeam('away').length} of ${TEAM_SIZE}`, onTeam('away').map(seat), 'side away', mk('away'))
+    + boxGroup(`No team yet · ${onTeam(null).length}`, onTeam(null).map(seat), 'none'))
+    || '<p class="empty">Nobody called yet. Press Fill open spots.</p>';
 
-  $('waiting').innerHTML = order.map((p, i) => {
-    const tags = (next.has(p.name) ? '<span class="stt live">Next in line</span>' : '')
-      + (g.satOut.includes(p.name) ? '<span class="stt plan">Sitting out</span>' : '')
+  // Waiting: fairness order, numbered by place in line. Line 1: place, name, tags; line 2: games, wait, buttons.
+  $('waiting').innerHTML = boxGroup(`Waiting · ${order.length}`, order.map((p, i) => {
+    const sat = g.satOut.includes(p.name);
+    const tags = (next.has(p.name) ? '<span class="stt live">Next</span>' : '')
+      + (sat ? '<span class="stt plan">Sitting out</span>' : '')
       + (passed.has(p.name) ? '<span class="stt build">Passed over</span>' : '');
-    return `<tr>
-      <td class="n">${i + 1}</td>
-      <td><b>${esc(p.name)}</b><small>${plural(p.games, 'game')} tonight · waiting ${Math.floor((now - p.readyAt) / 60000)} min${tag(p.name)}</small></td>
-      <td class="tags hide-sm"><span>${tags}</span></td>
-      <td class="act"><span>${open ? btn('pick', p.name, 'Pick') : ''}${btn('done', p.name, 'Done')}</span></td>
-    </tr>`;
-  }).join('') || `<tr><td colspan="4" class="empty">Nobody waiting.${state.players.length ? '' : ' Check people in on the Check in tab.'}</td></tr>`;
+    return `<div class="qn${sat ? ' sat' : ''}" title="${esc(p.name)}${tag(p.name)}">
+      <div class="top"><span class="pos">#${i + 1}</span><b>${esc(p.name)}</b>${tags}</div>
+      <div class="acts"><small>${plural(p.games, 'game')} · ${Math.floor((now - p.readyAt) / 60000)} min</small>${open ? btn('pick', p.name, 'Pick') : ''}${btn('done', p.name, 'Done')}</div></div>`;
+  })) || `<p class="empty">Nobody waiting.${state.players.length ? '' : ' Check people in on the Check in tab.'}</p>`;
 
   const out = state.players.filter(p => !p.present);
-  $('outBox').hidden = !out.length;
-  $('out').innerHTML = out.map(p => `<tr>
-      <td><b>${esc(p.name)}</b><small>${plural(p.games, 'game')}</small></td>
-      <td class="act">${btn('undoDone', p.name, 'Undo')}</td>
-    </tr>`).join('');
+  $('out').innerHTML = boxGroup(`Done for the night · ${out.length}`, out.map(p =>
+    `<div class="qn out row" title="${esc(p.name)} · ${plural(p.games, 'game')}"><b>${esc(p.name)}</b>${btn('undoDone', p.name, 'Undo')}</div>`));
 
   // The ranked figure is the big one; per game needs MIN_RANKED_GAMES to get a rank.
   const perGame = leaderMode === 'perGame';
@@ -444,11 +443,23 @@ function renderQueue() {
   $('leaderMode').innerHTML = [['total', 'Total points'], ['perGame', 'Per game']]
     .map(([m, label]) => btn('leaderMode', '', label, { arg: m, pressed: leaderMode === m, cls: leaderMode === m ? 's' : 'o s' })).join('');
   const big = on => `r ${on ? 'pts' : 'mono'}`;
-  $('leaderRows').innerHTML = Queue.leaderboard(state.players, leaderMode, MIN_RANKED_GAMES)
-    .map(({ player: p, perGame: pg, rank }) => `<tr${rank ? '' : ' class="un"'}><td class="n">${rank ?? ''}</td><td><b>${esc(p.name)}</b></td>
+  // Podium for ranks 1 to 3 (ties share it); two tables side by side past 12 rows so about 30
+  // fit on one screen; players with no games yet collapse into one line under the tables.
+  const rows = Queue.leaderboard(state.players, leaderMode, MIN_RANKED_GAMES);
+  const played = rows.filter(r => r.player.games), notYet = rows.filter(r => !r.player.games);
+  const avgNum = name => (profileOf(name)?.games ? profileOf(name).avg.toFixed(1) : 'New');
+  const row = ({ player: p, perGame: pg, rank }) => `<tr class="${!rank ? 'un' : rank <= 3 ? `top p${rank}` : ''}">
+      <td class="n">${rank ?? ''}</td><td class="who"><b title="${esc(p.name)}">${esc(p.name)}</b></td>
       <td class="r mono">${p.games}</td><td class="${big(!perGame)}">${p.totalPoints}</td>
-      <td class="${big(perGame)}">${pg === null ? '' : pg.toFixed(1)}</td><td class="r mono hide-sm">${avgText(p.name)}</td></tr>`)
-    .join('') || '<tr><td colspan="6" class="empty">No players yet.</td></tr>';
+      <td class="${big(perGame)}">${pg === null ? '' : pg.toFixed(1)}</td><td class="r mono avg hide-sm">${avgNum(p.name)}</td></tr>`;
+  const table = list => `<div class="tw"><table><thead><tr><th>#</th><th>Player</th><th class="r">Games</th><th class="r">Points</th>
+      <th class="r">Per game</th><th class="r avg hide-sm">Avg</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>`;
+  const split = played.length > 12, half = Math.ceil(played.length / 2);
+  $('leaderBoard').className = `wide lb${split ? ' split' : ''}${profiles.size ? '' : ' noavg'}`;
+  $('leaderBoard').innerHTML = !rows.length ? '<p class="empty">No players yet.</p>'
+    : (!played.length ? '<p class="empty">No games played yet.</p>'
+      : split ? table(played.slice(0, half)) + table(played.slice(half)) : table(played))
+      + (notYet.length ? `<p class="rest">Not played yet: ${notYet.map(r => esc(r.player.name)).join(', ')}</p>` : '');
 
   renderMap(order, now);
 }
@@ -462,18 +473,19 @@ function renderMap(order, now) {
     const twin = state.players.some(p => p.name !== name && first(p.name).toLowerCase() === first(name).toLowerCase());
     return twin && name.includes(' ') ? `${first(name)} ${name.split(' ').at(-1)[0]}.` : first(name);
   };
-  const node = (name, on) => {
+  const node = (name, cls) => {
     const p = player(name);
     const wait = seatOf(name) ? '' : ` · ${Math.floor((now - p.readyAt) / 60000)} min`; // on court: not waiting
-    return `<div class="qn${on ? ' on' : ''}" title="${esc(name)}"><b>${esc(short(name))}</b><small>${plural(p.games, 'game')}${wait}</small></div>`;
+    return `<div class="qn${cls ? ` ${cls}` : ''}" title="${esc(name)}"><b>${esc(short(name))}</b><small>${plural(p.games, 'game')}${wait}</small></div>`;
   };
-  const group = (label, names, on) => names.length
-    ? `<div class="qgrp"><p class="grp">${esc(label)}</p><div class="qnodes">${names.map(n => node(n, on)).join('')}</div></div>` : '';
+  const group = (label, names, cls = '', mark = '') => names.length
+    ? `<div class="qgrp"><p class="grp">${mark}${esc(label)}</p><div class="qnodes">${names.map(n => node(n, cls)).join('')}</div></div>` : '';
   const col = (cls, label, body, empty) => `<div class="qcol ${cls}"><p class="col">${label}</p>${body || `<p class="empty">${empty}</p>`}</div>`;
   const arrow = '<span class="qarrow" aria-hidden="true">&rarr;</span>';
 
   const team = t => g.onCourt.filter(c => c.team === t).map(c => c.name);
-  const court = group(g.homeName, team('home'), true) + group(g.awayName, team('away'), true) + group('No team yet', team(null), true);
+  const court = group(g.homeName, team('home'), 'on home', mk('home')) + group(g.awayName, team('away'), 'on away', mk('away'))
+    + group('No team yet', team(null), 'on none');
 
   // Before the game fills: who Fill calls now. Once it is full: who the following game will call.
   const next = (open ? Queue.nextInLine(state.players, g, SPOTS) : Queue.nextGame(state.players, g, SPOTS, now)).map(p => p.name);
@@ -488,6 +500,11 @@ function renderMap(order, now) {
 }
 
 const tag = name => (avgText(name) ? ` · ${avgText(name)}` : '');
+// A labeled group of player boxes (Check in and Queue); nothing when there are no boxes.
+const boxGroup = (label, boxes, cls = '', mark = '') => (boxes.length
+  ? `<div class="qgrp ${cls}"><p class="grp">${mark}${esc(label)}</p><div class="qnodes">${boxes.join('')}</div></div>` : '');
+// Team marker for labels: a filled square for Home, an outlined one for Away.
+const mk = team => `<i class="mk ${team}" aria-hidden="true"></i>`;
 
 function renderTonight() {
   const here = new Set(state.players.map(p => p.name.toLowerCase()));
@@ -507,6 +524,23 @@ function renderTonight() {
     </tr>`;
   }).join('') || `<tr><td colspan="2" class="empty">${state.expected.length
     ? 'Everyone on the list has checked in.' : 'Nobody on the list yet. Add players above, or paste this week\'s list.'}</td></tr>`;
+
+  // Everyone checked in tonight as small boxes (the queue diagram's), grouped by where they
+  // are now, newest first in each group. #n is their arrival order.
+  const present = state.players.filter(p => p.present).length;
+  $('hereIntro').textContent = state.players.length
+    ? `${plural(present, 'player')} here. Newest first in each group; # is arrival order.`
+    : 'Players show up here as they check in.';
+  const newest = state.players.map((p, i) => ({ p, n: i + 1 })).reverse();
+  $('here').innerHTML = [
+    ['Waiting', x => x.p.present && !seatOf(x.p.name), ''],
+    ['On court', x => x.p.present && seatOf(x.p.name), ' on'],
+    ['Done for the night', x => !x.p.present, ' out'],
+  ].map(([label, test, cls]) => {
+    const list = newest.filter(test);
+    return boxGroup(`${label} · ${list.length}`, list.map(({ p, n }) =>
+      `<div class="qn${cls}" title="${esc(p.name)} · ${plural(p.games, 'game')} tonight"><b>${esc(p.name)}</b><small>#${n}</small></div>`));
+  }).join('') || '<p class="empty">Nobody checked in yet.</p>';
 
   $('choices').innerHTML = needsChoice.map(c => `<div class="notice">
       <b>${esc(c.query)} matches ${c.choices.length} players. Which one is coming?</b>

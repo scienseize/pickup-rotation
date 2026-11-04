@@ -226,6 +226,12 @@ laptop screen and still works at phone width.
 - **List rows:** everyone on the list who hasn't checked in yet, with games,
   points and average from the database, a *Check in* button and a × to take
   them off the list. The header counts how many are still to arrive.
+- **Checked in:** everyone who has checked in tonight, as small boxes (the
+  queue diagram's style) grouped into Waiting, On court and Done for the
+  night, each with a count. Each box is one line, the name and the arrival
+  number, newest first in each group. Hovering over a box shows the full name
+  and games tonight. About 30 players fit on one laptop screen, so nobody has
+  to scroll to find a name.
 
 ### Queue tab (for the attendant)
 
@@ -235,18 +241,24 @@ laptop screen and still works at phone width.
   next is who Fill calls now. Once it's full, it's who the following game
   will call (`Queue.nextGame`, the same rule run on a copy). *Full screen*
   puts only the diagram on the TV, sized to the screen.
-- **Up next / On court:** 10 spots with a *Fill* button. Each called player's
-  row has their name, games played, a Home/Away toggle, a *Sit out* button and
-  a × button to remove them. Removing undoes a call: the player goes back in line where
+- **Player boxes, not tables.** Below the diagram the organizer sees the same
+  small boxes as Check in, each with its own buttons, so about 30 players fit
+  without losing track.
+- **Up next / On court:** 10 spots with a *Fill* button, grouped by team
+  ("Shirts · 4 of 5"), the two teams side by side like the scoreboard,
+  with "No team yet" below. Each called player's box is one line: their
+  name, a Home/Away toggle, a *Sit out* button and a × button to remove them.
+  Games and average show on hover. Removing undoes a call: the player goes back in line where
   they were, with no "Sitting out" mark, and Fill may call them again. Sit out
   is for someone who doesn't want this game: Fill skips them until the next
   game. Empty spots show as open. Fill, Pick, Sit out and Remove are hidden
   once the clock has started or anyone has scored.
 - **Waiting list,** in exact fairness order, so everyone can see where they
-  stand. Each row shows the player's name, games played, live wait time
-  ("waiting 34 min"), a *Pick* button (enabled when a spot is open) and a
+  stand. Each box shows the player's place in line (#1, #2, ...), name,
+  games played, live wait time ("34 min"), a *Pick* button (enabled when a spot is open) and a
   *Done* button for players leaving for the night. Below it, a "Done for the
-  night" list with *Undo* for mistaken taps. The rows that Fill would take are marked "next in line".
+  night" list with *Undo* for mistaken taps. The boxes that Fill would take are marked "next in line", and
+  sitting-out boxes are dimmed.
   A *Passed over* badge appears on anyone with fewer games than a player in
   Up next.
 
@@ -255,6 +267,14 @@ laptop screen and still works at phone width.
 - Tonight's name, games played, total points and points per game, plus each
   player's all-time average from the database. Rows are numbered, and ties
   share a rank.
+- **Podium:** ranks 1 to 3 (ties included) are larger, and the leader sits on
+  a subtle tile. No team colors here, because players change teams between
+  games.
+- **One screen for about 30 players:** compact rows, and past 12 players the
+  ranking splits into two columns side by side on laptop and TV widths.
+  Players who haven't played yet collapse into one "Not played yet" line.
+- **Avg** shows the all-time average as a number, or "New". The column is
+  hidden when the database isn't loaded.
 - A toggle ranks by *Total points* (everyone who has played) or *Per game*.
   Per game only ranks players with at least 2 games (`MIN_RANKED_GAMES`), so
   one lucky game can't top the board. The rest are listed after them with no
@@ -284,6 +304,13 @@ laptop screen and still works at phone width.
   hint sit in the clock tile. If the window is very short, only the player
   lists scroll. Narrower windows and phones scroll as usual.
 - Team names are editable inline. The default is Home / Away.
+- **Team colors:** Home is orange and Away is blue, an easy pair for most
+  color-blind people too. The colors are two tokens per theme (`--home`,
+  `--away`). The score tiles and player cards have a band across the top in
+  the team color, with the team name in that color and the score digits
+  unchanged. The Queue tab uses the same colors: a colored square before
+  each team's label, filled pills on the TV diagram, and a colored left edge
+  on the Up next boxes. Anyone without a team gets a dashed pill.
 - In the last minute the clock changes color. At 0:00 the buzzer sounds.
 - **Full screen** uses the browser's Fullscreen API. Esc exits.
   In full screen the board fills the whole display. The player lists keep
