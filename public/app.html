@@ -298,9 +298,12 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 
 /* Home: where signing in lands. The logo behind the title, one button that adapts to the
    night, and Standby on TV. */
-#home{gap:56px}
-.home-hero{position:relative;isolation:isolate;padding-block:48px 8px}
-.home-logo{position:absolute;inset:0;margin:auto;width:min(46vmin,420px);height:auto;opacity:.13;z-index:-1;pointer-events:none}
+/* One screen, centered on the screen's middle (the bottom padding offsets the top bar), with the
+   logo spanning the page behind it, as on the sign-in page. */
+.page:has(> #home:not([hidden])){padding-bottom:24px}
+#home{min-height:calc(100dvh - env(safe-area-inset-top,0px) - 112px);padding-bottom:64px;justify-content:center;gap:28px}
+#home > .home-hero{isolation:isolate;padding-block:0}
+.home-logo{position:fixed;inset:0;margin:auto;width:min(96vmin,1000px);height:auto;opacity:.14;z-index:-1;pointer-events:none}
 /* Standby for the TV, full screen only: the logo and Hexagames. Out of full screen it stays
    rendered but out of sight, so the Standby on TV button can put it in full screen. */
 .standby{position:fixed;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
