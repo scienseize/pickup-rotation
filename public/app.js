@@ -598,6 +598,10 @@ function renderClock() {
   $('startBtn').disabled = !g.endsAt && (!ready() || ms === 0);
   $('islandClock').textContent = `Game ${g.number} · ${g.endsAt || g.started ? clockText(ms) : 'Not started'}`;
   $('islandClock').classList.toggle('on', !!g.endsAt);
+  // The TV standby: the wall clock and today's date.
+  const now = new Date();
+  $('sbTime').textContent = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  $('sbDate').textContent = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
 // ponytail: plain oscillator tone; swap for a recorded horn if the gym needs louder

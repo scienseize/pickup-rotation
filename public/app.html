@@ -309,8 +309,10 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .standby{position:fixed;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 .standby:fullscreen{overflow:visible;clip-path:none;background-color:var(--bg);background-image:radial-gradient(var(--dot) 1px,transparent 1.3px);background-size:18px 18px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:2.2vh;padding:5vh 6vw;cursor:pointer}
 .standby p{margin:0}
-.sb-logo{width:min(48vh,56vw);height:auto}
+.sb-logo{width:min(40vh,50vw);height:auto}
 .sb-name{font-family:var(--serif);font-size:clamp(44px,10vh,140px);line-height:1.05;letter-spacing:-.02em;color:var(--ink)}
+.sb-time{font-family:var(--mono);font-size:clamp(48px,13vh,180px);line-height:1;font-variant-numeric:tabular-nums;color:var(--ink);margin-top:2vh!important}
+.sb-date{font-family:var(--mono);font-size:clamp(14px,2.6vh,36px);letter-spacing:.08em;text-transform:uppercase;color:var(--mu)}
 
 /* Queue diagram: on court, up next, waiting, on the reference's dotted canvas.
    On-court players are inverted pills (the reference's person node), the rest are cards.
@@ -436,6 +438,8 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
     <div class="standby" id="standby" data-action="standby" aria-hidden="true">
       <img class="sb-logo" src="logo.png" alt="">
       <p class="sb-name">Hexagames</p>
+      <p class="sb-time" id="sbTime"></p>
+      <p class="sb-date" id="sbDate"></p>
     </div>
 
     <div class="btns"><button class="btn o s" data-action="signOut">Sign out</button></div>
