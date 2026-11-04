@@ -214,6 +214,25 @@ the database dot) and opens when the pointer is over it or it has keyboard
 focus. Touch screens keep the full bar. The layout targets a
 laptop screen and still works at phone width.
 
+### Home tab (where signing in lands)
+
+- The logo behind the title, tonight at a glance (checked in, game number,
+  live clock, games not saved yet), and one button for the next step:
+
+  | Situation | Button |
+  |---|---|
+  | Nobody checked in | Check in players |
+  | Players here, court not set | Fill the court (Queue) |
+  | Court and teams set, not started | Start game N (Scoreboard) |
+  | Game started | Back to game N (Scoreboard) |
+
+- The four steps as tiles (Check in, Queue, Scoreboard, Leaderboard) with a
+  one-line status each; the current step is inverted.
+- **Show on the TV:** *Standby* puts a live card in full screen: the logo and
+  who is up next (`upNext`, the same as the queue diagram). *Queue diagram*
+  and *Scoreboard* open that tab and put it in full screen. Esc comes back.
+- *Sign out* lives here.
+
 ### Check in tab (for the attendant)
 
 - **Top of the tab:** the "Tonight's list" heading and *Start a new session*.
@@ -493,15 +512,14 @@ waiting.
   `POST /api/login` without a session. Everything else, the app's own files
   and `GET /api/profiles` included, redirects to `/?signin` (pages), which
   opens the passcode form on the home page, or gets 401 (API). A signed-in
-  device goes straight from the button to the app (the page asks
-  `GET /api/session`: 204 signed in, 401 not); any other device gets the
-  passcode box in place, without a reload. The home page stays the home page
-  either way, and the app's top bar has a *Home* tab back to it, for standby
-  on the TV. The old `/login` address redirects home. A right passcode sets a `session` cookie: its expiry plus an
+  device that opens `/` is redirected straight to `/app`, which opens on the
+  Home tab; on the sign-in page the button asks `GET /api/session` (204 signed
+  in, 401 not), and any other device gets the passcode box in place, without a
+  reload. The old `/login` address redirects home. A right passcode sets a `session` cookie: its expiry plus an
   HMAC-SHA256 of it keyed with `ORGANIZER_PASSCODE`, `HttpOnly; Secure;
   SameSite=Strict`, 30 days. Nothing is stored on the server, and changing the
   passcode signs every device out. Sign-in is limited to 5 tries a minute per
-  address (`LOGIN_LIMIT`). *Sign out* on the Check in tab clears the cookie,
+  address (`LOGIN_LIMIT`). *Sign out* on the Home tab clears the cookie,
   the saved passcode and the offline copy on that device.
 - **Offline loading:** `public/sw.js` serves the last copy of the page when
   there is no connection. A laptop must sign in online once (a phone hotspot is

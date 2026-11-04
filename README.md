@@ -8,15 +8,17 @@ basketball sessions. Design and rules: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.
 1. Open https://pickup-rotation.pickup-rotation.workers.dev
 2. The home page shows the ISO logo. Press *Enter as organizer*: a device
    that is already signed in goes straight to the app (`/app`); otherwise the
-   passcode box appears. *Home* in the app's top bar goes back to the logo
-   page, for standby on the TV. Each laptop or phone stays signed in for 30
+   passcode box appears. Signing in opens the app's *Home* tab: tonight at a
+   glance, one button for the next step of the night, and the TV choices
+   (standby logo with who is up next, the queue diagram, the scoreboard). A
+   signed-in device that opens the link goes straight to Home. Each laptop or phone stays signed in for 30
    days. The site is organizers only: without signing in, nothing but the
    home page opens.
 3. Green dot: saving to the database. Red dot: no connection or passcode needed.
    Hover over it for details. Finished games are kept and saved later.
 
 A laptop has to sign in online once (a phone hotspot is fine). After that it
-opens without a connection too. *Sign out* (Check in tab) removes the sign-in
+opens without a connection too. *Sign out* (Home tab) removes the sign-in
 and the offline copy from that device, for a shared laptop.
 
 ## For whoever maintains it

@@ -48,6 +48,11 @@ const session = setCookie.split(';')[0];
 
 // Signed in: pages and data flow; writes still need the passcode as well.
 assert.equal((await at('/app', { headers: { Cookie: session } })).status, 200);
+for (const path of ['/', '/index.html']) { // a signed-in device skips the sign-in page
+  const res = await at(path, { headers: { Cookie: session } });
+  assert.equal(res.status, 302, path);
+  assert.equal(res.headers.get('Location'), 'https://pickup.test/app', path);
+}
 assert.equal((await at('/app.js', { headers: { Cookie: session } })).status, 200);
 assert.equal((await at('/api/profiles', { headers: { Cookie: session } })).status, 200);
 assert.equal((await at('/api/session', { headers: { Cookie: session } })).status, 204); // the home page goes straight to /app

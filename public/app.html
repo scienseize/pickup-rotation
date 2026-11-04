@@ -50,10 +50,6 @@ ol,ul,dl{margin:0;padding:0;list-style:none}
 .island-thumb{position:absolute;top:0;bottom:0;left:0;width:0;border-radius:999px;background:var(--btn-tx);transition:transform .24s cubic-bezier(.34,1.2,.64,1),width .24s cubic-bezier(.34,1.2,.64,1)}
 .island-tabs button{position:relative;z-index:1;border:0;background:none;color:var(--btn-mu);font:600 12px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;padding:12px 16px;border-radius:999px;white-space:nowrap;cursor:pointer;transition:color .16s}
 .island-tabs button:hover{color:var(--btn-tx)}
-/* Home: back to the logo page, e.g. for standby on the TV. A link, styled like the tabs. */
-.island-home{color:var(--btn-mu);font:600 12px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;padding:12px 16px;border-radius:999px;white-space:nowrap;text-decoration:none;flex-shrink:0;transition:color .16s}
-.island-home:hover{color:var(--btn-tx)}
-.island-home:focus-visible{outline:2px solid var(--ember);outline-offset:-2px}
 .island-tabs button[aria-selected="true"]{color:var(--btn)}
 .island-tabs button:focus-visible{outline:2px solid var(--ember);outline-offset:-2px}
 
@@ -152,8 +148,8 @@ button.btn:disabled{opacity:.4;cursor:not-allowed}
    so brushing past it doesn't snap it shut; the invisible ::after pads the hover target. */
 @media (hover:hover){
   .island::after{content:"";position:absolute;inset:-14px -32px -10px;z-index:-1}
-  .island-tabs,.island .clk,.island-home{max-width:640px;transition:max-width .3s cubic-bezier(.34,1.2,.64,1),opacity .2s,padding .3s}
-  .island:not(:hover):not(:has(:focus-visible)) :is(.island-tabs,.clk,.island-home){max-width:0;opacity:0;padding-inline:0;overflow:hidden;transition-delay:.35s}
+  .island-tabs,.island .clk{max-width:640px;transition:max-width .3s cubic-bezier(.34,1.2,.64,1),opacity .2s,padding .3s}
+  .island:not(:hover):not(:has(:focus-visible)) :is(.island-tabs,.clk){max-width:0;opacity:0;padding-inline:0;transition-delay:.35s}
 }
 #choices{display:flex;flex-direction:column;gap:12px;margin-top:12px}
 #choices:empty{display:none}
@@ -300,6 +296,32 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .pl .pt .btn{min-width:54px;min-height:50px;padding:8px 10px;font-size:17px;font-variant-numeric:tabular-nums}
 .c .empty{color:var(--mu);font-size:15px;border-top:1px solid var(--line);padding-top:12px}
 
+/* Home: where signing in lands. The logo behind the title, one button that adapts to the
+   night, the four steps in order (the current one inverted) and the TV choices. */
+#home{gap:56px}
+.home-hero{position:relative;isolation:isolate;padding-block:48px 8px}
+.home-logo{position:absolute;inset:0;margin:auto;width:min(46vmin,420px);height:auto;opacity:.13;z-index:-1;pointer-events:none}
+.flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.flow .fs{border:0;font:inherit;text-align:left;cursor:pointer;color:inherit}
+.flow .fs:hover{outline:1px solid var(--faint);outline-offset:-1px}
+.fs .i{font-family:var(--serif);font-size:28px;line-height:1;color:var(--mu)}
+.fs b{color:var(--ink);font-weight:600}
+.fs p{color:var(--mu);font-size:15px;margin:0}
+.tvrow{display:flex;gap:24px;align-items:center;flex-wrap:wrap}
+.tvbtns{display:flex;flex-direction:column;gap:10px;min-width:200px}
+/* Standby: a live preview on Home; full screen it fills the TV with the logo and who is up next. */
+.standby{flex:1 1 320px;max-width:460px;background:var(--panel);background-image:radial-gradient(var(--dot) 1px,transparent 1.3px);background-size:18px 18px;border-radius:14px;padding:24px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;cursor:pointer}
+.standby p{margin:0}
+.sb-logo{width:120px;height:auto}
+.sb-name{font-family:var(--serif);font-size:26px;line-height:1.1;color:var(--ink)}
+.sb-label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mu)}
+.sb-names{font-family:var(--serif);font-size:17px;line-height:1.35;color:var(--ink);text-wrap:balance}
+.standby:fullscreen{max-width:none;border-radius:0;background-color:var(--bg);justify-content:center;gap:2.2vh;padding:5vh 6vw}
+.standby:fullscreen .sb-logo{width:min(48vh,56vw)}
+.standby:fullscreen .sb-name{font-size:clamp(36px,7vh,96px)}
+.standby:fullscreen .sb-label{font-size:clamp(13px,2vh,26px);margin-top:1vh}
+.standby:fullscreen .sb-names{font-size:clamp(22px,4.4vh,64px);max-width:86vw}
+
 /* Queue diagram: on court, up next, waiting, on the reference's dotted canvas.
    On-court players are inverted pills (the reference's person node), the rest are cards.
    Full screen is for the TV: everything sizes to the screen width. */
@@ -363,6 +385,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 #qmap:fullscreen .empty{font-size:clamp(15px,1.3cqw,32px)}
 
 @media (max-width:900px){
+  .flow{grid-template-columns:repeat(2,minmax(0,1fr))}
   .qmap{flex-direction:column}
   .qarrow{transform:rotate(90deg)}
   .scorebar{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
@@ -376,10 +399,12 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
   .pl .pt .btn{flex:1}
 }
 @media (max-width:600px){
+  .flow{grid-template-columns:minmax(0,1fr)}
+  .tvbtns{flex-direction:row;flex-wrap:wrap;min-width:0}
   .page{padding-inline:16px}
   .island-mark{display:none}
   .island-db{margin:0 0 0 6px}
-  .island-tabs button,.island-home{padding:11px 10px;letter-spacing:.05em;font-size:11px}
+  .island-tabs button{padding:11px 10px;letter-spacing:.05em;font-size:11px}
   .island .clk{display:none}
   .qmap{padding:16px}
   .lb th.r,.lb td.r{padding-left:10px}
@@ -399,11 +424,11 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 <nav class="island" id="island" aria-label="Hexagames">
   <span class="island-mark" aria-hidden="true"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="7"/></svg></span>
   <button type="button" class="island-db" id="dbDot" aria-label="Database connecting"></button>
-  <a class="island-home" href="/">Home</a>
   <div class="island-tabs" role="tablist" aria-label="Views">
     <span class="island-thumb" aria-hidden="true"></span>
+    <button role="tab" id="tab-home" data-tab="home" aria-controls="home" aria-selected="true">Home</button>
     <button role="tab" id="tab-checkin" data-tab="checkin" aria-controls="checkin" aria-selected="false" tabindex="-1">Check in</button>
-    <button role="tab" id="tab-queue" data-tab="queue" aria-controls="queue" aria-selected="true">Queue</button>
+    <button role="tab" id="tab-queue" data-tab="queue" aria-controls="queue" aria-selected="false" tabindex="-1">Queue</button>
     <button role="tab" id="tab-board" data-tab="board" aria-controls="board" aria-selected="false" tabindex="-1">Scoreboard</button>
     <button role="tab" id="tab-leaders" data-tab="leaders" aria-controls="leaders" aria-selected="false" tabindex="-1">Leaderboard</button>
   </div>
@@ -411,12 +436,47 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 </nav>
 
 <main class="page">
+  <div class="tabpanel" id="home" role="tabpanel" aria-labelledby="tab-home">
+    <div class="hero home-hero">
+      <img class="home-logo" src="logo.png" alt="" aria-hidden="true">
+      <h1>Hexagames</h1>
+      <p class="date"><span id="homeLine"></span><span id="homeClock"></span></p>
+      <div class="btns"><button class="btn" id="homeNext" data-action="goTab" data-arg="checkin">Check in players</button></div>
+    </div>
+
+    <section>
+      <div class="wide flow" id="homeSteps"></div>
+    </section>
+
+    <section>
+      <div class="sh">
+        <h2>Show on the TV.</h2>
+        <p>Full screen on this laptop, mirrored to the TV. Esc comes back.</p>
+      </div>
+      <div class="wide tvrow">
+        <div class="standby" id="standby" data-action="tv" data-arg="standby" title="Standby on the TV">
+          <img class="sb-logo" src="logo.png" alt="">
+          <p class="sb-name">Hexagames</p>
+          <p class="sb-label" id="standbyLabel"></p>
+          <p class="sb-names" id="standbyNames"></p>
+        </div>
+        <div class="tvbtns">
+          <button class="btn" data-action="tv" data-arg="standby">Standby</button>
+          <button class="btn o" data-action="tv" data-arg="queue">Queue diagram</button>
+          <button class="btn o" data-action="tv" data-arg="board">Scoreboard</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="btns"><button class="btn o s" data-action="signOut">Sign out</button></div>
+  </div>
+
   <div class="tabpanel" id="checkin" role="tabpanel" aria-labelledby="tab-checkin" hidden>
     <section>
       <div class="sh">
         <h2>Tonight's list.</h2>
         <p id="expectedIntro"></p>
-        <div class="btns left"><button class="btn o s" data-action="newSession">Start a new session</button><button class="btn o s" data-action="signOut">Sign out</button></div>
+        <div><button class="btn o s" data-action="newSession">Start a new session</button></div>
       </div>
       <div class="wide">
         <div class="checkin">
@@ -448,7 +508,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 
   </div>
 
-  <div class="tabpanel" id="queue" role="tabpanel" aria-labelledby="tab-queue">
+  <div class="tabpanel" id="queue" role="tabpanel" aria-labelledby="tab-queue" hidden>
     <section>
       <div class="wide canvas qmap" id="qmap" role="group" aria-label="The line, from on court to waiting"></div>
       <div class="btns"><button class="btn o" data-action="fullscreen" data-arg="qmap">Full screen</button></div>

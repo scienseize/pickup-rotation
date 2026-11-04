@@ -77,10 +77,10 @@ const btn = (action, name, label, { arg = '', pressed, cls = 'o s', disabled } =
 
 // ---- tabs: the island. A tab hides every panel but its own and scrolls to the top ----
 
-const TABS = ['checkin', 'queue', 'board', 'leaders'];
+const TABS = ['home', 'checkin', 'queue', 'board', 'leaders'];
 const island = $('island'), thumb = island.querySelector('.island-thumb');
 const tabs = [...island.querySelectorAll('[role="tab"]')];
-let active = 'queue';
+let active = 'home';
 
 function place() {
   const b = island.querySelector('[aria-selected="true"]');
@@ -89,7 +89,7 @@ function place() {
   thumb.style.transform = `translateX(${b.offsetLeft}px)`;
 }
 function show(name) {
-  if (!TABS.includes(name)) name = 'queue';
+  if (!TABS.includes(name)) name = 'home';
   const changed = name !== active;
   active = name;
   tabs.forEach(t => { const on = t.dataset.tab === name; t.setAttribute('aria-selected', on); t.tabIndex = on ? 0 : -1; });
@@ -309,6 +309,15 @@ const actions = {
     go('queue');
   },
 
+  goTab(_, tab) { go(tab); return false; },
+  // Called inside the click, as full screen requires. The view must be showing first.
+  tv(_, which) {
+    if (document.fullscreenElement) { document.exitFullscreen(); return false; }
+    if (which === 'standby') $('standby').requestFullscreen?.();
+    else { go(which); $(which === 'queue' ? 'qmap' : 'board').requestFullscreen?.(); }
+    return false;
+  },
+
   signOut() {
     if (confirm('Sign out on this device? Opening the app again will need the organizer passcode.')) signOut();
     return false;
@@ -467,21 +476,54 @@ function renderQueue() {
       + (notYet.length ? `<p class="rest">Not played yet: ${notYet.map(r => esc(r.player.name)).join(', ')}</p>` : '');
 
   renderMap(order, now);
+  renderHome(order, now);
 }
 
 // The queue as a diagram for the TV: on court, then up next, then everyone else by games played.
+// First names read from across the gym; a last initial only when tonight has two of that first name.
+const firstName = name => name.split(' ')[0];
+function shortName(name) {
+  const twin = state.players.some(p => p.name !== name && firstName(p.name).toLowerCase() === firstName(name).toLowerCase());
+  return twin && name.includes(' ') ? `${firstName(name)} ${name.split(' ').at(-1)[0]}.` : firstName(name);
+}
+// Who is up next: before the game fills, who Fill calls now; once it is full, who the following
+// game will call. The queue diagram and the standby both use this, so they always agree.
+function upNext(now) {
+  const g = state.game;
+  return (g.onCourt.length < SPOTS ? Queue.nextInLine(state.players, g, SPOTS) : Queue.nextGame(state.players, g, SPOTS, now)).map(p => p.name);
+}
+
+// Home: tonight at a glance, one button for the next step of the night, the four steps, and the
+// standby preview for the TV.
+function renderHome(order, now) {
+  const g = state.game, present = state.players.filter(p => p.present).length;
+  const started = g.started || !!g.endsAt, pending = state.unsynced.length;
+  $('homeLine').textContent = (present ? `${present} checked in · ` : 'Nobody checked in yet · ') + `Game ${g.number}`
+    + (pending ? ` · ${plural(pending, 'game')} not saved yet` : '');
+  const step = !present ? 'checkin' : started || ready() ? 'board' : 'queue';
+  $('homeNext').textContent = !present ? 'Check in players'
+    : started ? `Back to game ${g.number}` : ready() ? `Start game ${g.number}` : 'Fill the court';
+  $('homeNext').dataset.arg = step;
+  const top = Queue.leaderboard(state.players, 'total', MIN_RANKED_GAMES)[0];
+  const tiles = [
+    ['checkin', 'Check in', present ? `${present} here` : 'Nobody yet'],
+    ['queue', 'Queue', g.onCourt.length < SPOTS ? `${g.onCourt.length} of ${SPOTS} called · ${order.length} waiting` : `Court full · ${order.length} waiting`],
+    ['board', 'Scoreboard', started ? `${g.homeName} ${score('home')} – ${score('away')} ${g.awayName}` : `Game ${g.number} · not started`],
+    ['leaders', 'Leaderboard', top?.player.games ? `Top: ${top.player.name} · ${top.player.totalPoints}` : 'No games yet'],
+  ];
+  $('homeSteps').innerHTML = tiles.map(([tab, name, line], i) => `<button class="fs${tab === step ? ' k' : ''}" data-action="goTab" data-arg="${tab}">
+      <span class="i">${i + 1}</span><b>${name}</b><p>${esc(line)}</p></button>`).join('');
+  const next = upNext(now);
+  $('standbyLabel').textContent = next.length ? `Up next · Game ${g.onCourt.length < SPOTS ? g.number : g.number + 1}` : `Game ${g.number}`;
+  $('standbyNames').textContent = next.length ? next.map(shortName).join(' · ') : 'Check in to see who plays next.';
+}
+
 function renderMap(order, now) {
   const g = state.game, open = g.onCourt.length < SPOTS;
-  // First names read from across the gym; a last initial only when tonight has two of that first name.
-  const first = name => name.split(' ')[0];
-  const short = name => {
-    const twin = state.players.some(p => p.name !== name && first(p.name).toLowerCase() === first(name).toLowerCase());
-    return twin && name.includes(' ') ? `${first(name)} ${name.split(' ').at(-1)[0]}.` : first(name);
-  };
   const node = (name, cls) => {
     const p = player(name);
     const wait = seatOf(name) ? '' : ` · ${Math.floor((now - p.readyAt) / 60000)} min`; // on court: not waiting
-    return `<div class="qn${cls ? ` ${cls}` : ''}" title="${esc(name)}"><b>${esc(short(name))}</b><small>${plural(p.games, 'game')}${wait}</small></div>`;
+    return `<div class="qn${cls ? ` ${cls}` : ''}" title="${esc(name)}"><b>${esc(shortName(name))}</b><small>${plural(p.games, 'game')}${wait}</small></div>`;
   };
   const group = (label, names, cls = '', mark = '') => names.length
     ? `<div class="qgrp"><p class="grp">${mark}${esc(label)}</p><div class="qnodes">${names.map(n => node(n, cls)).join('')}</div></div>` : '';
@@ -493,7 +535,7 @@ function renderMap(order, now) {
     + group('No team yet', team(null), 'on none');
 
   // Before the game fills: who Fill calls now. Once it is full: who the following game will call.
-  const next = (open ? Queue.nextInLine(state.players, g, SPOTS) : Queue.nextGame(state.players, g, SPOTS, now)).map(p => p.name);
+  const next = upNext(now);
   const nextSet = new Set(next);
   const tiers = new Map();
   for (const p of order) if (!nextSet.has(p.name)) tiers.set(p.games, [...(tiers.get(p.games) ?? []), p.name]);
@@ -587,6 +629,7 @@ function renderClock() {
   $('startBtn').disabled = !g.endsAt && (!ready() || ms === 0);
   $('islandClock').textContent = `Game ${g.number} · ${g.endsAt || g.started ? clockText(ms) : 'Not started'}`;
   $('islandClock').classList.toggle('on', !!g.endsAt);
+  $('homeClock').textContent = g.endsAt || g.started ? ` · ${clockText(ms)} left` : '';
 }
 
 // ponytail: plain oscillator tone; swap for a recorded horn if the gym needs louder

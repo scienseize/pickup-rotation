@@ -60,13 +60,18 @@ async function login(request, env, now) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url), path = url.pathname, now = Date.now();
+    const signedIn = () => sessionOk(request.headers.get('Cookie'), env.ORGANIZER_PASSCODE, now);
+    // A signed-in device skips the sign-in page and opens the app's Home tab.
+    if (request.method === 'GET' && (path === '/' || path === '/index.html') && await signedIn()) {
+      return Response.redirect(new URL('/app', url).href, 302);
+    }
     if (request.method === 'GET' && OPEN.has(path)) return env.ASSETS.fetch(request);
     if (path === '/login' || path === '/login.html') return Response.redirect(new URL('/', url).href, 302); // the old sign-in address
     if (request.method === 'POST' && path === '/api/login') return login(request, env, now);
     if (request.method === 'POST' && path === '/api/logout') {
       return new Response(null, { status: 204, headers: { 'Set-Cookie': cookie('', 0), 'Cache-Control': 'no-store' } });
     }
-    if (!(await sessionOk(request.headers.get('Cookie'), env.ORGANIZER_PASSCODE, now))) {
+    if (!(await signedIn())) {
       return path.startsWith('/api/') ? json(401, { error: 'sign in' }) : Response.redirect(new URL('/?signin', url).href, 302);
     }
     if (!path.startsWith('/api/')) return env.ASSETS.fetch(request);
