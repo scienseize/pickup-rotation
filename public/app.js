@@ -409,16 +409,10 @@ function renderQueue() {
   const order = Queue.waitingOrder(state.players, g);
   const next = new Set(Queue.nextInLine(state.players, g, SPOTS).map(p => p.name));
   const passed = new Set(lock ? [] : Queue.passedOver(state.players, g)); // nothing to fix once play starts
-  const present = state.players.filter(p => p.present).length;
   const now = Date.now();
-  const time = new Date(state.startedAt ?? now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
-  document.querySelectorAll('.session-line').forEach(el => { el.textContent = `Session started ${time} · ${present} checked in · ${order.length} waiting`; });
   $('fillBtn').hidden = lock;
   $('fillBtn').disabled = !open || !next.size;
-  $('upnextIntro').textContent = lock
-    ? `Game ${g.number} is on. Spots unlock when it ends.`
-    : `Game ${g.number}. ${g.onCourt.length} of ${SPOTS} spots filled. Players choose sides, then set each one's team here.`;
 
   // Up next: one group per team, so the 5-a-side cap is visible, then anyone without a team.
   // One line per player: name, team toggle, Sit out, remove. Games and average are in the hover text.
@@ -539,10 +533,6 @@ const mk = team => `<i class="mk ${team}" aria-hidden="true"></i>`;
 function renderTonight() {
   const here = new Set(state.players.map(p => p.name.toLowerCase()));
   const waiting = state.expected.filter(n => !here.has(n.toLowerCase()));
-  const offline = db === 'offline';
-  $('expectedIntro').textContent = offline
-    ? 'No connection. Showing saved profiles; finished games are kept and saved when it\'s back.'
-    : 'Add this week\'s players before they arrive, then check each one in as they show up. Walk-ins too: add, then check in.';
   $('expectedCount').textContent = state.expected.length ? `${waiting.length} OF ${state.expected.length} TO ARRIVE` : '';
   $('expected').innerHTML = waiting.map(n => {
     const p = profileOf(n), name = p?.name ?? n;
@@ -557,10 +547,6 @@ function renderTonight() {
 
   // Everyone checked in tonight as small boxes (the queue diagram's), grouped by where they
   // are now, newest first in each group. #n is their arrival order.
-  const present = state.players.filter(p => p.present).length;
-  $('hereIntro').textContent = state.players.length
-    ? `${plural(present, 'player')} here. Newest first in each group; # is arrival order.`
-    : 'Players show up here as they check in.';
   const newest = state.players.map((p, i) => ({ p, n: i + 1 })).reverse();
   $('here').innerHTML = [
     ['Waiting', x => x.p.present && !seatOf(x.p.name), ''],
