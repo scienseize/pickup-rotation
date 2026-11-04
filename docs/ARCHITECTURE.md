@@ -208,7 +208,8 @@ Leaderboard. Each tab is a whole view, and its name is kept in the
 URL (`#checkin`, `#queue`, ...) so a refresh returns to it. A small dot beside
 the mark in the island shows the database: green when online, red when
 offline. Hovering over it (or a screen reader) gives the state and any games
-not saved yet. On a laptop the island folds to a small notch (the mark and
+not saved yet. Clicking it asks for the passcode only when the database
+refused it, and retries when offline; when online it does nothing. On a laptop the island folds to a small notch (the mark and
 the database dot) and opens when the pointer is over it or it has keyboard
 focus. Touch screens keep the full bar. The layout targets a
 laptop screen and still works at phone width.
@@ -385,6 +386,7 @@ the scoreboard code.
 public/index.html   markup and styles
 public/login.html   the organizer sign-in page, with the logo as the backdrop
 public/logo.png     the ISO logo (from iso.jpg, white background made transparent)
+public/favicon.png  the tab icon, the same logo at 64px
 public/app.js       state, saving, rendering, scoreboard, clock, buzzer, sync, passcode
 public/queue.js     fairness rules, no DOM: waitingOrder, nextInLine, fill, pick, remove,
                     sitOut, passedOver, endGame
@@ -484,8 +486,8 @@ waiting.
   renews the device's sign-in.
 - **Organizers only:** the link opens `/login`, a sign-in page with the ISO
   logo as the backdrop. The Worker runs before any file is served
-  (`run_worker_first`) and lets through only the sign-in page, the logo and
-  `POST /api/login` without a session. Everything else, the app's own files
+  (`run_worker_first`) and lets through only the sign-in page, the logo, the tab icon
+  (`favicon.png`, from the same logo) and `POST /api/login` without a session. Everything else, the app's own files
   and `GET /api/profiles` included, redirects to `/login` (pages) or gets 401
   (API). A right passcode sets a `session` cookie: its expiry plus an
   HMAC-SHA256 of it keyed with `ORGANIZER_PASSCODE`, `HttpOnly; Secure;

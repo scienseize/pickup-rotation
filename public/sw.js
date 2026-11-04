@@ -3,7 +3,7 @@
 // A redirect (to the sign-in page, when this device's session has run out) is never
 // cached either, so it can't replace the stored app. Sign out deletes this cache.
 const CACHE = 'pickup-v2';
-const FILES = ['./', 'app.js', 'queue.js', 'names.js', 'login.html', 'logo.png']; // not index.html: Cloudflare redirects it to /
+const FILES = ['./', 'app.js', 'queue.js', 'names.js', 'login.html', 'logo.png', 'favicon.png']; // not index.html: Cloudflare redirects it to /
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));

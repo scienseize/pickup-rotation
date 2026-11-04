@@ -4,7 +4,7 @@
 import { Invalid, isJson, playersBody, gameBody, passcodeOk, signSession, sessionOk, SESSION_DAYS } from './rules.js';
 
 const MAX_BODY = 1_000_000;
-const OPEN = new Set(['/login', '/login.html', '/logo.png']);
+const OPEN = new Set(['/login', '/login.html', '/logo.png', '/favicon.png']);
 const cookie = (value, maxAge) => `session=${value}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
 
 const json = (status, body) => new Response(JSON.stringify(body), {

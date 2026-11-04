@@ -557,8 +557,8 @@ function renderTonight() {
   const dot = $('dbDot');
   const label = `Database ${db === 'locked' ? 'needs the organizer passcode' : db}${pending ? ` · ${plural(pending, 'game')} not saved yet` : ''}`;
   dot.className = `island-db ${{ online: 'on', offline: 'off', locked: 'off' }[db] ?? ''}`;
-  dot.setAttribute('aria-label', db === 'locked' ? `${label}. Enter passcode` : label);
-  dot.title = offline ? `${label}. Games are kept on this laptop until the connection is back.`
+  dot.setAttribute('aria-label', db === 'locked' ? `${label}. Enter passcode` : offline ? `${label}. Try again` : label);
+  dot.title = offline ? `${label}. Games are kept on this laptop until the connection is back. Click to try again.`
     : db === 'locked' ? `${label}. Click to enter it.` : `${label} · ${plural(profiles.size, 'player')} on file`;
 }
 
@@ -613,7 +613,9 @@ setInterval(() => {
 }, 250);
 setInterval(() => keepFocus(renderQueue), 15000); // keep wait times current
 
-$('dbDot').onclick = askPasscode;
+// The dot only acts when there is something to do: ask for the passcode when the database
+// refused it, retry when offline. Online it just shows its state (hover for details).
+$('dbDot').onclick = () => { if (db === 'locked') askPasscode(); else if (db !== 'online') { db = 'connecting'; renderTonight(); sync(); } };
 $('passDlg').addEventListener('close', () => {
   if ($('passDlg').returnValue !== 'save' || !$('passText').value) return;
   const passcode = $('passText').value;

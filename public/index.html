@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Hexagames</title>
+<link rel="icon" type="image/png" href="favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&display=swap">
@@ -134,10 +135,12 @@ button.btn:disabled{opacity:.4;cursor:not-allowed}
 .xbtn:hover{color:var(--ink);background:var(--panel)}
 #msg:empty{display:none}
 /* Database dot in the island: green when the database is online, red when it is not.
-   It is a button (opens the passcode dialog) with a 24px target around an 8px dot. */
+   A 24px button around an 8px dot: asks for the passcode only when the database refused it,
+   retries when offline, and does nothing when online. */
 .island-db{width:24px;height:24px;border:0;padding:0;background:none;display:grid;place-items:center;flex-shrink:0;margin:0 2px 0 -10px;cursor:pointer;border-radius:50%}
 .island-db::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--btn-mu)}
 .island-db.on::before{background:var(--ok)}
+.island-db.on{cursor:default}
 .island-db.off::before{background:var(--bad)}
 .island-db:focus-visible{outline:2px solid var(--ember);outline-offset:-2px}
 /* The island folds to a notch (mark and database dot) until it is hovered or keyboard-focused.

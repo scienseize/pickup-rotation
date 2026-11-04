@@ -26,10 +26,9 @@ assert.equal((await at('/api/profiles')).status, 401);
 assert.equal((await post('/api/players', { names: ['Ana'] }, { Authorization: `Bearer ${PASS}` })).status, 401); // the passcode alone is not a session
 assert.deepEqual(served, []);
 
-// The sign-in page and the logo are open.
-assert.equal((await at('/login')).status, 200);
-assert.equal((await at('/logo.png')).status, 200);
-assert.deepEqual(served, ['/login', '/logo.png']);
+// The sign-in page, the logo and the tab icon are open.
+for (const path of ['/login', '/logo.png', '/favicon.png']) assert.equal((await at(path)).status, 200, path);
+assert.deepEqual(served, ['/login', '/logo.png', '/favicon.png']);
 
 // Sign in: a wrong passcode gets nothing; the right one gets a 30-day, script-proof cookie.
 assert.equal((await post('/api/login', { passcode: 'guess' })).status, 401);
