@@ -24,6 +24,7 @@ for (const path of ['/app', '/app.html', '/app.js', '/sw.js', '/queue.js']) {
   assert.equal(res.headers.get('Location'), 'https://pickup.test/?signin', path);
 }
 assert.equal((await at('/api/profiles')).status, 401);
+assert.equal((await at('/api/session')).status, 401); // the home page shows the passcode box
 assert.equal((await post('/api/players', { names: ['Ana'] }, { Authorization: `Bearer ${PASS}` })).status, 401); // the passcode alone is not a session
 assert.deepEqual(served, []);
 
@@ -49,6 +50,7 @@ const session = setCookie.split(';')[0];
 assert.equal((await at('/app', { headers: { Cookie: session } })).status, 200);
 assert.equal((await at('/app.js', { headers: { Cookie: session } })).status, 200);
 assert.equal((await at('/api/profiles', { headers: { Cookie: session } })).status, 200);
+assert.equal((await at('/api/session', { headers: { Cookie: session } })).status, 204); // the home page goes straight to /app
 assert.equal((await post('/api/players', { names: ['Ana'] }, { Cookie: session })).status, 401);
 const db = [];
 env.DB = { prepare: sql => ({ bind: (...v) => ({ sql, v }), all: async () => ({ results: [] }) }), batch: async q => { db.push(...q); } };

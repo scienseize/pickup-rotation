@@ -457,6 +457,7 @@ Every call except sign-in needs the session cookie (section 13).
 |------|------|----------|
 | `POST /api/login {passcode}` | Signs this device in for 30 days (cookie), returns the profiles | The passcode itself |
 | `POST /api/logout` | Clears this device's session cookie | No |
+| `GET /api/session` | 204 when this device is signed in, else 401 | No (session only) |
 | `GET /api/profiles` | Every player with games, points and average | No (session only) |
 | `POST /api/players {names}` | Adds new names from tonight's list | Yes |
 | `POST /api/results {session, date, game, rows}` | Saves one finished game | Yes |
@@ -492,8 +493,11 @@ waiting.
   `POST /api/login` without a session. Everything else, the app's own files
   and `GET /api/profiles` included, redirects to `/?signin` (pages), which
   opens the passcode form on the home page, or gets 401 (API). A signed-in
-  device goes straight from the button to the app, and the home page stays
-  the home page either way. The old `/login` address redirects home. A right passcode sets a `session` cookie: its expiry plus an
+  device goes straight from the button to the app (the page asks
+  `GET /api/session`: 204 signed in, 401 not); any other device gets the
+  passcode box in place, without a reload. The home page stays the home page
+  either way, and the app's top bar has a *Home* tab back to it, for standby
+  on the TV. The old `/login` address redirects home. A right passcode sets a `session` cookie: its expiry plus an
   HMAC-SHA256 of it keyed with `ORGANIZER_PASSCODE`, `HttpOnly; Secure;
   SameSite=Strict`, 30 days. Nothing is stored on the server, and changing the
   passcode signs every device out. Sign-in is limited to 5 tries a minute per

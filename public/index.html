@@ -57,8 +57,8 @@ a.btn{text-align:center;text-decoration:none;margin-top:6px}
   <p class="kicker">ISO</p>
   <h1>Hexagames</h1>
   <p class="lead">Fair rotation, scoreboard and standings for game night.</p>
-  <!-- Signed-in devices go straight in; the Worker sends everyone else back here with ?signin. -->
-  <a class="btn" id="enter" href="/app">Enter as organizer</a>
+  <!-- Signed-in devices go straight in; anyone else gets the passcode box right here, no reload. -->
+  <a class="btn" id="enter" href="/app" aria-controls="signin">Enter as organizer</a>
   <form id="signin" hidden>
     <label for="pass">Organizer passcode</label>
     <input class="in" id="pass" type="password" autocomplete="current-password" required>
@@ -74,11 +74,23 @@ a.btn{text-align:center;text-decoration:none;margin-top:6px}
   const PASS_KEY = 'pickup-passcode'; // the app's key: writes keep using it, so no second prompt
   const $ = id => document.getElementById(id);
   const form = $('signin'), pass = $('pass'), go = $('go'), msg = $('msg');
-  // Only after "Enter as organizer" on a device that isn't signed in: show the passcode form.
+  const showForm = () => { $('enter').hidden = true; form.hidden = false; pass.focus(); };
+  // "Enter as organizer": a signed-in device goes straight into the app; any other device gets
+  // the passcode box in place. With no connection, try the app anyway: a device that signed in
+  // before has it saved for offline use.
+  $('enter').addEventListener('click', async e => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/session', { cache: 'no-store' });
+      if (res.ok) location.assign('/app');
+      else showForm();
+    } catch {
+      location.assign('/app');
+    }
+  });
+  // Someone opened /app directly without being signed in: the Worker sent them here with ?signin.
   if (new URLSearchParams(location.search).has('signin')) {
-    $('enter').hidden = true;
-    form.hidden = false;
-    pass.focus();
+    showForm();
     history.replaceState(null, '', '/'); // a refresh shows the plain home page again
   }
   form.addEventListener('submit', async e => {

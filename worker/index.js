@@ -70,6 +70,7 @@ export default {
       return path.startsWith('/api/') ? json(401, { error: 'sign in' }) : Response.redirect(new URL('/?signin', url).href, 302);
     }
     if (!path.startsWith('/api/')) return env.ASSETS.fetch(request);
+    if (request.method === 'GET' && path === '/api/session') return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } }); // the home page asks: signed in?
 
     if (request.method === 'GET' && path === '/api/profiles') return json(200, await profiles(env.DB));
     if (request.method !== 'POST' || !['/api/players', '/api/results'].includes(path)) {

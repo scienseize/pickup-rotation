@@ -50,6 +50,10 @@ ol,ul,dl{margin:0;padding:0;list-style:none}
 .island-thumb{position:absolute;top:0;bottom:0;left:0;width:0;border-radius:999px;background:var(--btn-tx);transition:transform .24s cubic-bezier(.34,1.2,.64,1),width .24s cubic-bezier(.34,1.2,.64,1)}
 .island-tabs button{position:relative;z-index:1;border:0;background:none;color:var(--btn-mu);font:600 12px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;padding:12px 16px;border-radius:999px;white-space:nowrap;cursor:pointer;transition:color .16s}
 .island-tabs button:hover{color:var(--btn-tx)}
+/* Home: back to the logo page, e.g. for standby on the TV. A link, styled like the tabs. */
+.island-home{color:var(--btn-mu);font:600 12px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;padding:12px 16px;border-radius:999px;white-space:nowrap;text-decoration:none;flex-shrink:0;transition:color .16s}
+.island-home:hover{color:var(--btn-tx)}
+.island-home:focus-visible{outline:2px solid var(--ember);outline-offset:-2px}
 .island-tabs button[aria-selected="true"]{color:var(--btn)}
 .island-tabs button:focus-visible{outline:2px solid var(--ember);outline-offset:-2px}
 
@@ -148,8 +152,8 @@ button.btn:disabled{opacity:.4;cursor:not-allowed}
    so brushing past it doesn't snap it shut; the invisible ::after pads the hover target. */
 @media (hover:hover){
   .island::after{content:"";position:absolute;inset:-14px -32px -10px;z-index:-1}
-  .island-tabs,.island .clk{max-width:640px;transition:max-width .3s cubic-bezier(.34,1.2,.64,1),opacity .2s,padding .3s}
-  .island:not(:hover):not(:has(:focus-visible)) :is(.island-tabs,.clk){max-width:0;opacity:0;padding-inline:0;transition-delay:.35s}
+  .island-tabs,.island .clk,.island-home{max-width:640px;transition:max-width .3s cubic-bezier(.34,1.2,.64,1),opacity .2s,padding .3s}
+  .island:not(:hover):not(:has(:focus-visible)) :is(.island-tabs,.clk,.island-home){max-width:0;opacity:0;padding-inline:0;overflow:hidden;transition-delay:.35s}
 }
 #choices{display:flex;flex-direction:column;gap:12px;margin-top:12px}
 #choices:empty{display:none}
@@ -375,7 +379,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
   .page{padding-inline:16px}
   .island-mark{display:none}
   .island-db{margin:0 0 0 6px}
-  .island-tabs button{padding:11px 10px;letter-spacing:.05em;font-size:11px}
+  .island-tabs button,.island-home{padding:11px 10px;letter-spacing:.05em;font-size:11px}
   .island .clk{display:none}
   .qmap{padding:16px}
   .lb th.r,.lb td.r{padding-left:10px}
@@ -395,6 +399,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 <nav class="island" id="island" aria-label="Hexagames">
   <span class="island-mark" aria-hidden="true"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="7"/></svg></span>
   <button type="button" class="island-db" id="dbDot" aria-label="Database connecting"></button>
+  <a class="island-home" href="/">Home</a>
   <div class="island-tabs" role="tablist" aria-label="Views">
     <span class="island-thumb" aria-hidden="true"></span>
     <button role="tab" id="tab-checkin" data-tab="checkin" aria-controls="checkin" aria-selected="false" tabindex="-1">Check in</button>
