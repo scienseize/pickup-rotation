@@ -227,6 +227,12 @@ laptop screen and still works at phone width.
 
 ### Queue tab (for the attendant)
 
+- **Queue diagram,** at the top, for the players: On court (by team), then
+  Up next, then everyone else waiting, grouped by games played tonight. Each
+  box shows the name, games played and wait time. Before the game fills, Up
+  next is who Fill calls now. Once it's full, it's who the following game
+  will call (`Queue.nextGame`, the same rule run on a copy). *Full screen*
+  puts only the diagram on the TV, sized to the screen.
 - **Up next / On court:** 10 spots with a *Fill* button. Each called player's
   row has their name, games played, a Home/Away toggle, a *Sit out* button and
   a × button to remove them. Removing undoes a call: the player goes back in line where

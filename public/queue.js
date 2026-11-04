@@ -65,6 +65,14 @@ const Queue = {
     }
   },
 
+  // Who Fill will call for the following game: end this game on a copy, then
+  // fill a fresh one. Same rule as Fill, so the queue diagram can't disagree.
+  nextGame(players, game, spots, now) {
+    const copy = players.map(p => ({ ...p }));
+    Queue.endGame(copy, game, now);
+    return Queue.nextInLine(copy, { onCourt: [], satOut: [] }, spots);
+  },
+
   seat: name => ({ name, team: null, points: 0 }),
 };
 

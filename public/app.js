@@ -307,9 +307,9 @@ const actions = {
     needsChoice = [];
   },
 
-  fullscreen() {
+  fullscreen(_, arg) {
     if (document.fullscreenElement) document.exitFullscreen();
-    else $('board').requestFullscreen?.();
+    else $(arg || 'board').requestFullscreen?.();
     return false;
   },
 };
@@ -433,6 +433,35 @@ function renderQueue() {
     .map(p => `<tr><td><b>${esc(p.name)}</b></td><td class="r mono">${p.games}</td><td class="r mono">${p.totalPoints}</td><td class="r mono">${avgText(p.name)}</td></tr>`)
     .join('') || '<tr><td colspan="4" class="empty">No players yet.</td></tr>';
 
+  renderMap(order, now);
+}
+
+// The queue as a diagram for the TV: on court, then up next, then everyone else by games played.
+function renderMap(order, now) {
+  const g = state.game, open = g.onCourt.length < SPOTS;
+  const node = (name, on) => {
+    const p = player(name);
+    const wait = seatOf(name) ? '' : ` · ${Math.floor((now - p.readyAt) / 60000)} min`; // on court: not waiting
+    return `<div class="qn${on ? ' on' : ''}"><b>${esc(name)}</b><small>${plural(p.games, 'game')}${wait}</small></div>`;
+  };
+  const group = (label, names, on) => names.length
+    ? `<div class="qgrp"><p class="grp">${esc(label)}</p><div class="qnodes">${names.map(n => node(n, on)).join('')}</div></div>` : '';
+  const col = (cls, label, body, empty) => `<div class="qcol ${cls}"><p class="col">${label}</p>${body || `<p class="empty">${empty}</p>`}</div>`;
+  const arrow = '<span class="qarrow" aria-hidden="true">&rarr;</span>';
+
+  const team = t => g.onCourt.filter(c => c.team === t).map(c => c.name);
+  const court = group(g.homeName, team('home'), true) + group(g.awayName, team('away'), true) + group('No team yet', team(null), true);
+
+  // Before the game fills: who Fill calls now. Once it is full: who the following game will call.
+  const next = (open ? Queue.nextInLine(state.players, g, SPOTS) : Queue.nextGame(state.players, g, SPOTS, now)).map(p => p.name);
+  const nextSet = new Set(next);
+  const tiers = new Map();
+  for (const p of order) if (!nextSet.has(p.name)) tiers.set(p.games, [...(tiers.get(p.games) ?? []), p.name]);
+  const waiting = [...tiers].sort((a, b) => a[0] - b[0]).map(([n, names]) => group(plural(n, 'game'), names)).join('');
+
+  $('qmap').innerHTML = col('court', `On court · Game ${g.number}`, court, 'Nobody called yet.') + arrow
+    + col('next', open ? 'Up next · fills open spots' : 'Up next · next game', group(plural(next.length, 'player'), next), 'Nobody to call.') + arrow
+    + col('wait', 'Waiting', waiting, 'Nobody waiting.');
 }
 
 const tag = name => (avgText(name) ? ` · ${avgText(name)}` : '');

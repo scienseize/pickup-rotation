@@ -13,6 +13,9 @@ let game = newGame(1);
 Queue.fill(players, game, 10);
 assert.equal(called(game), 'ABCDEFGHIJ');
 game.onCourt[0].points = 7;
+// nextGame predicts game 2 without touching the real players.
+assert.equal(Queue.nextGame(players, game, 10, 100).map(p => p.name).join(''), 'KLMABCDEFG');
+assert.equal(players[0].games, 0);
 Queue.endGame(players, game, 100);
 assert.equal(players[0].games, 1);
 assert.equal(players[0].totalPoints, 7);

@@ -194,7 +194,40 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .pl .pt .btn{min-width:54px;min-height:50px;padding:8px 10px;font-size:17px;font-variant-numeric:tabular-nums}
 .c .empty{color:var(--mu);font-size:15px;border-top:1px solid var(--line);padding-top:12px}
 
+/* Queue diagram: on court, up next, waiting, on the reference's dotted canvas.
+   On-court players are inverted pills (the reference's person node), the rest are cards.
+   Full screen is for the TV: everything sizes to the screen width. */
+.canvas{border-radius:14px;background-color:var(--panel);background-image:radial-gradient(var(--dot) 1px,transparent 1.3px);background-size:18px 18px;overflow-x:auto;padding:12px}
+.qmap{display:flex;gap:16px;padding:24px}
+.qcol{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:18px}
+.qcol.wait{flex-grow:1.4}
+.qarrow{align-self:center;color:var(--mu);font-family:var(--mono);font-size:20px;line-height:1}
+.qmap .col,.qmap .grp{margin:0;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--mu);font-size:11px}
+.qmap .grp{font-size:10.5px}
+.qgrp{display:flex;flex-direction:column;gap:8px}
+.qnodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+.qn{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:0}
+.qn b{display:block;font-family:var(--serif);font-weight:400;font-size:19px;line-height:1.2;color:var(--ink);overflow-wrap:anywhere}
+.qn small{display:block;font-size:12px;line-height:1.4;color:var(--mu)}
+.qn.on{background:var(--btn);border-color:var(--btn);border-radius:999px;padding:10px 20px}
+.qn.on b{color:var(--btn-tx)}
+.qn.on small{color:var(--btn-mu)}
+.qmap .empty{color:var(--mu);font-size:15px}
+#qmap:fullscreen{max-width:none;border-radius:0;background-color:var(--bg);height:100vh;overflow:auto;padding:3cqw 2.5vw;gap:2vw;container-type:inline-size}
+#qmap:fullscreen .qcol{gap:1.6cqw}
+#qmap:fullscreen .col{font-size:clamp(12px,1.1cqw,26px)}
+#qmap:fullscreen .grp{font-size:clamp(11px,.9cqw,22px)}
+#qmap:fullscreen .qarrow{font-size:clamp(20px,2cqw,48px)}
+#qmap:fullscreen .qnodes{grid-template-columns:repeat(auto-fill,minmax(clamp(150px,12cqw,340px),1fr));gap:.7cqw}
+#qmap:fullscreen .qn{padding:.8cqw 1.2cqw}
+#qmap:fullscreen .qn.on{padding:.8cqw 1.8cqw}
+#qmap:fullscreen .qn b{font-size:clamp(19px,1.9cqw,52px)}
+#qmap:fullscreen .qn small{font-size:clamp(12px,.95cqw,26px)}
+#qmap:fullscreen .empty{font-size:clamp(15px,1.3cqw,32px)}
+
 @media (max-width:900px){
+  .qmap{flex-direction:column}
+  .qarrow{transform:rotate(90deg)}
   .scorebar{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .clockt{grid-column:1 / -1;order:-1}
 }
@@ -210,6 +243,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
   .island-db{margin:0 0 0 6px}
   .island-tabs button{padding:11px 10px;letter-spacing:.05em;font-size:11px}
   .island .clk{display:none}
+  .qmap{padding:16px}
   .hero{padding-block:40px 40px}
   .c{padding:22px 20px}
   .hide-sm{display:none}
@@ -265,6 +299,11 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
   </div>
 
   <div class="tabpanel" id="queue" role="tabpanel" aria-labelledby="tab-queue">
+    <section>
+      <div class="wide canvas qmap" id="qmap" role="group" aria-label="The line, from on court to waiting"></div>
+      <div class="btns"><button class="btn o" data-action="fullscreen" data-arg="qmap">Full screen</button></div>
+    </section>
+
     <div class="hero sm">
       <h1>Who plays next</h1>
       <p class="date session-line"></p>
