@@ -626,13 +626,13 @@ $('passDlg').addEventListener('close', () => {
   api('/api/login', { passcode }).catch(() => {}).finally(() => { sync(); saveList(); });
 });
 
-// Sign out: forget the passcode and the offline copy on this device, then back to the sign-in page.
+// Sign out: forget the passcode and the offline copy on this device, then back to the home page.
 // Tonight's session stays saved in this browser for whoever signs in next.
 async function signOut() {
   try { await fetch('/api/logout', { method: 'POST' }); } catch {}
   try { localStorage.removeItem(PASS_KEY); } catch {}
   try { await Promise.all((await caches.keys()).map(k => caches.delete(k))); } catch {}
-  location.replace('/login');
+  location.replace('/');
 }
 
 // Keeps the page opening with no connection once it has loaded here (sw.js).

@@ -383,9 +383,10 @@ the scoreboard code.
 ## 10. Files
 
 ```
-public/index.html   markup and styles
-public/login.html   the organizer sign-in page, with the logo as the backdrop
-public/logo.png     the ISO logo (from iso.jpg, white background made transparent)
+public/index.html   the home page: logo backdrop, Enter as organizer, the passcode form
+public/app.html     the app (served at /app): markup and styles
+public/logo.png     the ISO logo from iso.jpg: transparent background, in the app's
+                    warm black and white (ink #1c1a19 to paper #faf8f5)
 public/favicon.png  the tab icon, the same logo at 64px
 public/app.js       state, saving, rendering, scoreboard, clock, buzzer, sync, passcode
 public/queue.js     fairness rules, no DOM: waitingOrder, nextInLine, fill, pick, remove,
@@ -484,12 +485,15 @@ waiting.
   stored in the repository. A missing or wrong passcode gets 401; the app opens
   the passcode dialog and keeps the games until it is right. Entering it there also
   renews the device's sign-in.
-- **Organizers only:** the link opens `/login`, a sign-in page with the ISO
-  logo as the backdrop. The Worker runs before any file is served
-  (`run_worker_first`) and lets through only the sign-in page, the logo, the tab icon
-  (`favicon.png`, from the same logo) and `POST /api/login` without a session. Everything else, the app's own files
-  and `GET /api/profiles` included, redirects to `/login` (pages) or gets 401
-  (API). A right passcode sets a `session` cookie: its expiry plus an
+- **Organizers only:** the link opens the home page (`/`), with the ISO logo
+  as the backdrop and an *Enter as organizer* button that links to the app at
+  `/app`. The Worker runs before any file is served (`run_worker_first`) and
+  lets through only the home page, the logo, the tab icon and
+  `POST /api/login` without a session. Everything else, the app's own files
+  and `GET /api/profiles` included, redirects to `/?signin` (pages), which
+  opens the passcode form on the home page, or gets 401 (API). A signed-in
+  device goes straight from the button to the app, and the home page stays
+  the home page either way. The old `/login` address redirects home. A right passcode sets a `session` cookie: its expiry plus an
   HMAC-SHA256 of it keyed with `ORGANIZER_PASSCODE`, `HttpOnly; Secure;
   SameSite=Strict`, 30 days. Nothing is stored on the server, and changing the
   passcode signs every device out. Sign-in is limited to 5 tries a minute per

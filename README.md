@@ -6,9 +6,11 @@ basketball sessions. Design and rules: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.
 ## On game night (any laptop)
 
 1. Open https://pickup-rotation.pickup-rotation.workers.dev
-2. Sign in with the organizer passcode. Each laptop or phone stays signed in
-   for 30 days. The site is organizers only: without signing in, nothing but
-   the sign-in page opens.
+2. The home page shows the ISO logo. Press *Enter as organizer*: a device
+   that is already signed in goes straight to the app (`/app`); otherwise
+   enter the organizer passcode. Each laptop or phone stays signed in for 30
+   days. The site is organizers only: without signing in, nothing but the
+   home page opens.
 3. Green dot: saving to the database. Red dot: no connection or passcode needed.
    Hover over it for details. Finished games are kept and saved later.
 

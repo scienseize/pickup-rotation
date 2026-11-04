@@ -1,10 +1,11 @@
 // Cloudflare Worker: organizer sign-in, the app's files and its API on D1.
-// Every request reaches this first (run_worker_first): only the sign-in page, the logo and
-// POST /api/login are open; everything else needs a valid session cookie.
+// Every request reaches this first (run_worker_first): only the home page (with the sign-in),
+// the logo, the tab icon and POST /api/login are open. Everything else, the app at /app
+// included, needs a valid session cookie.
 import { Invalid, isJson, playersBody, gameBody, passcodeOk, signSession, sessionOk, SESSION_DAYS } from './rules.js';
 
 const MAX_BODY = 1_000_000;
-const OPEN = new Set(['/login', '/login.html', '/logo.png', '/favicon.png']);
+const OPEN = new Set(['/', '/index.html', '/logo.png', '/favicon.png']);
 const cookie = (value, maxAge) => `session=${value}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
 
 const json = (status, body) => new Response(JSON.stringify(body), {
@@ -60,12 +61,13 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url), path = url.pathname, now = Date.now();
     if (request.method === 'GET' && OPEN.has(path)) return env.ASSETS.fetch(request);
+    if (path === '/login' || path === '/login.html') return Response.redirect(new URL('/', url).href, 302); // the old sign-in address
     if (request.method === 'POST' && path === '/api/login') return login(request, env, now);
     if (request.method === 'POST' && path === '/api/logout') {
       return new Response(null, { status: 204, headers: { 'Set-Cookie': cookie('', 0), 'Cache-Control': 'no-store' } });
     }
     if (!(await sessionOk(request.headers.get('Cookie'), env.ORGANIZER_PASSCODE, now))) {
-      return path.startsWith('/api/') ? json(401, { error: 'sign in' }) : Response.redirect(new URL('/login', url).href, 302);
+      return path.startsWith('/api/') ? json(401, { error: 'sign in' }) : Response.redirect(new URL('/?signin', url).href, 302);
     }
     if (!path.startsWith('/api/')) return env.ASSETS.fetch(request);
 

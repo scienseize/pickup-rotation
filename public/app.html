@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hexagames</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&display=swap">
+<style>
+/* Base and components: verbatim from ~/.claude/design/artifact-reference.html. */
+:root{
+  --bg:#faf8f5; --panel:#f1ede8; --card:#ffffff; --line:#e6e1dc; --ink:#1c1a19; --tx:#3d3936; --mu:#77706a; --faint:#d6d0ca;
+  --btn:#1c1a19; --btn-tx:#faf8f5; --btn-mu:rgba(250,248,245,.6); --tag:#dfe4ef; --tag-tx:#273044; --ember:#de4a26;
+  --home:#b8461a; --away:#2f6db3; --on-team:#ffffff; /* team colors: orange and blue, colorblind-safe pair */
+  --shadow:0 12px 32px rgba(28,26,25,.18); --dot:rgba(28,26,25,.13); --ok:#5fc27a; --bad:#f0625a;
+  --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --sans:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --island:72px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#1b1a19; --panel:#252321; --card:#2b2927; --line:#36332f; --ink:#f3efea; --tx:#d9d3cd; --mu:#a39c95; --faint:#4a4642;
+  --btn:#f3efea; --btn-tx:#1b1a19; --btn-mu:rgba(27,26,25,.62); --tag:#323a4d; --tag-tx:#dfe4ef; --ember:#ef6a47;
+  --home:#f0803c; --away:#5b9be0; --on-team:#1b1a19;
+  --shadow:0 12px 32px rgba(0,0,0,.45); --dot:rgba(243,239,234,.1); --ok:#2f8a4c; --bad:#c8372d; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#1b1a19; --panel:#252321; --card:#2b2927; --line:#36332f; --ink:#f3efea; --tx:#d9d3cd; --mu:#a39c95; --faint:#4a4642;
+  --btn:#f3efea; --btn-tx:#1b1a19; --btn-mu:rgba(27,26,25,.62); --tag:#323a4d; --tag-tx:#dfe4ef; --ember:#ef6a47;
+  --home:#f0803c; --away:#5b9be0; --on-team:#1b1a19;
+  --shadow:0 12px 32px rgba(0,0,0,.45); --dot:rgba(243,239,234,.1); --ok:#2f8a4c; --bad:#c8372d; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:var(--sans);font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--ink);text-underline-offset:3px}
+a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:6px}
+h1,h2,h3{color:var(--ink);font-weight:400;margin:0;text-wrap:balance}
+h1{font-family:var(--serif);font-size:clamp(40px,6.4vw,76px);line-height:1.05;letter-spacing:-.025em}
+h2{font-family:var(--serif);font-size:clamp(30px,4vw,42px);line-height:1.12;letter-spacing:-.015em}
+h3{font-size:18px;font-weight:600;line-height:1.3}
+p{margin:0}
+ol,ul,dl{margin:0;padding:0;list-style:none}
+
+.island{position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);left:50%;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:4px;padding:5px;border-radius:999px;background:var(--btn);color:var(--btn-tx);box-shadow:var(--shadow);max-width:calc(100vw - 24px)}
+.island-mark{width:34px;height:34px;display:grid;place-items:center;flex-shrink:0;color:var(--btn-tx)}
+.island-mark svg{width:15px;height:15px;fill:currentColor;display:block}
+.island-tabs{position:relative;display:flex;overflow-x:auto;scrollbar-width:none;border-radius:999px}
+.island-tabs::-webkit-scrollbar{display:none}
+.island-thumb{position:absolute;top:0;bottom:0;left:0;width:0;border-radius:999px;background:var(--btn-tx);transition:transform .24s cubic-bezier(.34,1.2,.64,1),width .24s cubic-bezier(.34,1.2,.64,1)}
+.island-tabs button{position:relative;z-index:1;border:0;background:none;color:var(--btn-mu);font:600 12px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;padding:12px 16px;border-radius:999px;white-space:nowrap;cursor:pointer;transition:color .16s}
+.island-tabs button:hover{color:var(--btn-tx)}
+.island-tabs button[aria-selected="true"]{color:var(--btn)}
+.island-tabs button:focus-visible{outline:2px solid var(--ember);outline-offset:-2px}
+
+.page{padding-inline:24px;padding-block:calc(env(safe-area-inset-top,0px) + 88px) 120px}
+.hero{max-width:900px;margin:0 auto;text-align:center;padding-block:56px 56px;display:flex;flex-direction:column;align-items:center;gap:28px}
+.hero.sm{padding-block:40px 8px;gap:18px}
+.hero.sm h1{font-size:clamp(36px,5.6vw,60px)}
+.hero.sm .date{max-width:680px}
+.tabpanel > .hero.sm + section{margin-top:-40px}
+.date{font-size:16px;color:var(--tx)}
+.btns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.btn{display:inline-flex;align-items:center;gap:8px;background:var(--btn);color:var(--btn-tx);padding:13px 22px;border-radius:8px;font-weight:500;font-size:16px;text-decoration:none}
+.btn.o{background:transparent;color:var(--ink);border:1px solid var(--faint)}
+.tabpanel{display:flex;flex-direction:column;gap:96px}
+section{display:flex;flex-direction:column;gap:28px}
+.wide{max-width:1080px;margin:0 auto;width:100%;min-width:0}
+.sh{max-width:760px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:14px;min-width:0}
+.sh > p{color:var(--mu);font-size:17px}
+.note{font-size:15px;color:var(--mu);max-width:760px;margin:0 auto;width:100%}
+.mono{font-family:var(--mono);font-size:13px;color:var(--mu);font-variant-numeric:tabular-nums}
+.tw{overflow-x:auto}
+
+.stt{display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.stt.live{background:var(--btn);color:var(--btn-tx)}
+.stt.shadow{background:var(--tag);color:var(--tag-tx)}
+.stt.build{border:1px solid var(--ember);color:var(--ink)}
+.stt.plan{border:1px solid var(--faint);color:var(--mu)}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--mu)}
+.st i{width:8px;height:8px;border-radius:50%;display:block}
+.st.doing i{background:var(--ember)}
+.st.waiting i{background:transparent;border:1.5px solid var(--ember)}
+.st.todo i{background:var(--faint)}
+.st.done i{background:var(--ink)}
+
+.fs{background:var(--panel);border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.fs .s{font-family:var(--mono);font-size:12px;color:var(--mu);margin-top:auto;padding-top:8px}
+.fs.k{background:var(--btn)}.fs.k b,.fs.k p,.fs.k .i,.fs.k .s{color:var(--btn-tx)}
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.cards.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.c{background:var(--panel);border-radius:14px;padding:28px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.c header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.c h3{font-family:var(--serif);font-weight:400;font-size:28px;line-height:1.1}
+.c .tl{color:var(--mu);font-size:15px;margin-top:-6px}
+.c p{font-size:16px;color:var(--ink)}
+.c.mute{background:transparent;border:1px dashed var(--faint)}
+.c.mute h3{font-size:22px}
+details.dd{border-top:1px solid var(--line);padding-top:12px;margin-top:auto}
+details.dd summary{cursor:pointer;font-weight:600;color:var(--ink);font-size:15px;list-style:none;display:flex;justify-content:space-between;gap:12px}
+details.dd summary::-webkit-details-marker{display:none}
+details.dd summary:after{content:"+";font-family:var(--mono);color:var(--mu)}
+details.dd[open] summary:after{content:"\2212"}
+
+table{border-collapse:collapse;width:100%;font-size:16px}
+th,td{text-align:left;padding:14px 16px 14px 0;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;font-weight:500;color:var(--mu);white-space:nowrap}
+td b{color:var(--ink);font-weight:600}
+td small{display:block;color:var(--mu);font-size:14px;margin-top:2px}
+.notice{border:1px dashed var(--faint);border-radius:14px;padding:22px 24px;color:var(--mu);font-size:15px}
+.notice b{color:var(--ink);font-weight:600;display:block;margin-bottom:4px;font-size:16px}
+
+
+/* App additions, in the same idiom. */
+button.btn{border:0;cursor:pointer;font-family:inherit;line-height:1.2;justify-content:center}
+button.btn.o{border:1px solid var(--faint)}
+button.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.s{padding:8px 14px;font-size:14px}
+.island .clk{color:var(--btn-mu);font:600 12px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;padding:12px 14px 12px 10px;white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
+.island .clk.on{color:var(--btn-tx)}
+.in{font:inherit;font-size:16px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0}
+.in::placeholder{color:var(--mu)}
+.in:focus{outline:2px solid var(--ink);outline-offset:3px}
+.checkin{display:flex;gap:12px;flex-wrap:wrap}
+.checkin .combo{flex:1 1 240px}
+.combo{position:relative;min-width:0}
+.combo .in{width:100%}
+.sug{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:30;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px}
+.sug li{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer}
+.sug li b{color:var(--ink);font-weight:600}
+.sug li .mono{font-size:12px;letter-spacing:.06em;text-align:right}
+.sug li[aria-selected="true"],.sug li:hover{background:var(--panel)}
+.btns.left{justify-content:flex-start}
+.xbtn{border:0;background:none;color:var(--mu);cursor:pointer;font:inherit;font-size:18px;line-height:1;width:30px;height:30px;border-radius:5px}
+.xbtn:hover{color:var(--ink);background:var(--panel)}
+#msg:empty{display:none}
+/* Database dot in the island: green when the database is online, red when it is not.
+   A 24px button around an 8px dot: asks for the passcode only when the database refused it,
+   retries when offline, and does nothing when online. */
+.island-db{width:24px;height:24px;border:0;padding:0;background:none;display:grid;place-items:center;flex-shrink:0;margin:0 2px 0 -10px;cursor:pointer;border-radius:50%}
+.island-db::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--btn-mu)}
+.island-db.on::before{background:var(--ok)}
+.island-db.on{cursor:default}
+.island-db.off::before{background:var(--bad)}
+.island-db:focus-visible{outline:2px solid var(--ember);outline-offset:-2px}
+/* The island folds to a notch (mark and database dot) until it is hovered or keyboard-focused.
+   Only where a pointer can hover: touch screens keep the full bar. Folding waits a moment,
+   so brushing past it doesn't snap it shut; the invisible ::after pads the hover target. */
+@media (hover:hover){
+  .island::after{content:"";position:absolute;inset:-14px -32px -10px;z-index:-1}
+  .island-tabs,.island .clk{max-width:640px;transition:max-width .3s cubic-bezier(.34,1.2,.64,1),opacity .2s,padding .3s}
+  .island:not(:hover):not(:has(:focus-visible)) :is(.island-tabs,.clk){max-width:0;opacity:0;padding-inline:0;transition-delay:.35s}
+}
+#choices{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+#choices:empty{display:none}
+.notice .btns{margin-top:12px;justify-content:flex-start}
+dialog{background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:14px;padding:28px;width:min(520px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+dialog h3{font-family:var(--serif);font-weight:400;font-size:28px;line-height:1.1}
+dialog form{display:flex;flex-direction:column;gap:12px}
+dialog textarea.in{width:100%;min-height:12em;resize:vertical}
+td.n{font-family:var(--serif);color:var(--mu);font-size:20px;width:44px;line-height:1.3}
+td.r,th.r{text-align:right}
+td.act{text-align:right}
+td.act > span{display:inline-flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+td.tags > span{display:inline-flex;gap:6px;flex-wrap:wrap}
+td.empty{color:var(--mu)}
+/* Leaderboard: prose width so the numbers sit beside the names; points are the big figure. */
+.lb{max-width:760px;display:grid;gap:0 40px}
+.lb th,.lb td{padding-block:4px;vertical-align:middle;line-height:1.25}
+/* A tighter head and foot on this tab so about 30 players fit on one laptop screen. */
+#leaders .hero.sm{padding-block:4px 0;gap:10px}
+#leaders .hero.sm h1{font-size:clamp(30px,3.4vw,42px)}
+#leaders > .hero.sm + section{margin-top:-72px}
+.page:has(> #leaders:not([hidden])){padding-bottom:24px}
+.lb th.r,.lb td.r{width:1%;white-space:nowrap;padding-left:24px}
+.lb td.who{width:100%;max-width:0}
+.lb td.who b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lb td.n{color:var(--ink);font-size:18px;line-height:1.2}
+.lb td.pts{font-family:var(--serif);font-size:22px;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums}
+.lb tr.un b,.lb tr.un td.pts,.lb tr.un td.n{color:var(--mu);font-weight:500}
+/* Podium: ranks 1 to 3 larger, and the leader on a subtle tile. Neutral on purpose: team colors
+   would mislead here, since players change teams between games. */
+.lb tr.top td{padding-block:8px}
+.lb tr.top td.n{font-size:26px;line-height:1}
+.lb tr.top td.who b{font-size:17px}
+.lb tr.p1 td{background:var(--panel);border-bottom-color:transparent}
+.lb tr.p1 td:first-child{border-radius:10px 0 0 10px;padding-left:12px}
+.lb tr.p1 td:last-child{border-radius:0 10px 10px 0;padding-right:12px}
+@media (min-width:1100px){
+  .lb.split{grid-template-columns:repeat(2,minmax(0,1fr));max-width:1080px}
+  .lb.split th.r,.lb.split td.r{padding-left:14px}
+}
+@media (max-width:1099px){.lb.split > .tw + .tw thead{display:none}}
+.lb.noavg .avg{display:none}
+.lb.noavg tr.p1 td:nth-last-child(2){border-radius:0 10px 10px 0;padding-right:12px}
+.lb > :is(.rest,.empty){grid-column:1 / -1}
+.lb > .rest{color:var(--mu);font-size:15px;margin-top:12px}
+.lb > .empty{color:var(--mu)}
+.seg{display:inline-flex}
+.seg .btn{border-radius:0}
+.seg .btn:first-child{border-radius:8px 0 0 8px}
+.seg .btn:last-child{border-radius:0 8px 8px 0}
+.seg .btn.o + .btn.o{border-left:0}
+
+/* Scoreboard: two score cards around an inverted clock tile, then the players. */
+#board{gap:28px}
+/* Full screen leaves nothing empty: the player lists keep their natural height,
+   the score row takes the rest, and its numerals size to their own cards. */
+/* One screen, no page scroll, on laptop-width windows (narrower ones scroll as before:
+   the point buttons need the width). Like full screen: the player lists keep their height,
+   the score row takes what is left, and the numerals size to their own cards. On a very
+   short window only the player lists scroll. */
+@media (min-width:901px){
+  html:has(#board:not([hidden])){overflow:hidden}
+  .page:has(> #board:not([hidden])){padding-block:calc(env(safe-area-inset-top,0px) + 76px) 16px}
+  #board:not([hidden]){height:calc(100dvh - env(safe-area-inset-top,0px) - 92px);gap:14px}
+  #board > .wide{max-width:1600px}
+  #board .scorebar{flex:1 1 0;min-height:220px;grid-template-columns:1fr 1.25fr 1fr}
+  #board .team,#board .clockt{container-type:size;justify-content:center;padding-block:12px}
+  /* The score tiles are size containers here, so the band is 9% of the tile's own height
+     (about 60px on a 1080p TV). The name and score are centered and leave room above them. */
+  #board .team::before{height:9cqh}
+  #board .team .big{font-size:min(64cqh,50cqw)}
+  #board .team .stt{display:none}
+  #board .clockt .big{font-size:min(44cqh,42cqw)}
+  #board .clockt .btns{margin-top:6px}
+  #board .clockt .btn{padding:7px 12px;font-size:14px}
+  #board .tname{font-size:clamp(20px,10cqh,32px)}
+  #board .hint:empty{display:none}
+  #board > .cards{flex:0 1 auto;min-height:0;overflow:auto}
+  #board .c{padding:14px 20px;gap:6px}
+  #board .cards.two > .c{padding-top:calc(14px + var(--band))}
+  #board .c h3{font-size:22px}
+  #board .pl{padding:5px 0}
+  #board .pl small{display:inline;margin-left:8px}
+  #board .pl .pt .btn{min-height:38px;padding-block:4px}
+  #board > .hint{flex-shrink:0}
+}
+#board:fullscreen{background:var(--bg);padding:20px 24px;height:100vh;gap:16px;overflow:auto}
+#board:fullscreen > .wide{max-width:none}
+#board:fullscreen .scorebar{flex:1 1 0;min-height:260px}
+#board:fullscreen .team,#board:fullscreen .clockt{container-type:size;justify-content:center}
+#board:fullscreen .team .big{font-size:min(65cqh,50cqw)}
+/* "20:00" is 2.01em wide (tabular digits), so 42cqw fills about 84% of the tile's width. */
+#board:fullscreen .clockt .big{font-size:min(52cqh,42cqw)}
+#board:fullscreen .team .stt{display:none}
+#board:fullscreen .tname{font-size:clamp(22px,7cqh,48px)}
+#board:fullscreen .hint:empty,#board:fullscreen .clockt .tip{display:none}
+@media (min-width:901px){#board:fullscreen .scorebar{grid-template-columns:1fr 1.25fr 1fr}}
+.scorebar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto) minmax(0,1fr);gap:16px;align-items:stretch}
+.team{text-align:center;align-items:center}
+.tname{width:100%;text-align:center;font-family:var(--serif);font-size:28px;line-height:1.1;color:var(--ink);background:transparent;border:1px solid transparent;border-radius:8px;padding:4px 8px}
+.tname:focus{border-color:var(--faint);outline:none}
+.big{font-family:var(--serif);font-weight:400;line-height:1;letter-spacing:-.025em;font-variant-numeric:tabular-nums;color:var(--ink)}
+.team .big{font-size:clamp(96px,13vw,220px)}
+/* Team colors: Home is orange, Away is blue (--home / --away, set per theme above).
+   A band across the top of the score tiles and player cards with the team name in its color,
+   the .mk square in labels, filled pills on the TV diagram, and a left edge on Up next boxes. */
+.c.team,.cards.two > .c{position:relative;overflow:hidden}
+.cards.two > .c{padding-top:calc(28px + var(--band))}
+.c.team{--band:14px}
+.cards.two > .c{--band:12px}
+:is(.c.team,.cards.two > .c)::before{content:"";position:absolute;inset:0 0 auto;height:var(--band);pointer-events:none}
+.t-home{--team:var(--home)}
+.t-away{--team:var(--away)}
+:is(.t-home,.t-away)::before{background:var(--team)}
+:is(.t-home,.t-away) :is(.tname,h3){color:var(--team)}
+.mk{display:inline-block;width:.95em;height:.95em;border-radius:2px;margin-right:.55em;vertical-align:-.12em}
+.mk.home{background:var(--home)}
+.mk.away{background:var(--away)}
+.qn.on.home{background:var(--home);border-color:var(--home)}
+.qn.on.away{background:var(--away);border-color:var(--away)}
+.qn.on:is(.home,.away) b{color:var(--on-team)}
+.qn.on:is(.home,.away) small{color:var(--on-team);opacity:.75}
+.qn.on.none{background:transparent;border:2px dashed var(--faint)}
+.qn.on.none b{color:var(--ink)}
+.qn.on.none small{color:var(--mu)}
+#upnext > .home .qn{border-left:4px solid var(--home)}
+#upnext > .away .qn{border-left:4px solid var(--away)}
+.clockt{align-items:center;justify-content:center;text-align:center;padding:22px 28px}
+.clockt .big{font-size:clamp(72px,9vw,150px);color:var(--btn-tx)}
+.clockt .big.low{color:var(--ember)}
+.clockt .s{margin:0;padding:0;text-transform:uppercase;letter-spacing:.08em}
+.clockt .btns{margin-top:12px;gap:8px}
+.clockt .tip{font-size:13px;color:var(--btn-mu);margin-top:4px}
+.btn.inv{background:var(--btn-tx);color:var(--btn)}
+.btn.inv.o{background:transparent;color:var(--btn-tx);border:1px solid var(--btn-mu)}
+.hint{text-align:center;color:var(--mu);font-size:15px;min-height:1.6em}
+.pl{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px 14px;padding:12px 0;border-top:1px solid var(--line)}
+.pl b{color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+.pl small{display:block;font-size:12px;letter-spacing:.06em}
+details.dd summary .mono{margin-left:auto;margin-right:8px}
+.pl .pts{font-family:var(--serif);font-size:32px;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums;min-width:2ch;text-align:right}
+.pl .pt{display:flex;gap:6px}
+.pl .pt .btn{min-width:54px;min-height:50px;padding:8px 10px;font-size:17px;font-variant-numeric:tabular-nums}
+.c .empty{color:var(--mu);font-size:15px;border-top:1px solid var(--line);padding-top:12px}
+
+/* Queue diagram: on court, up next, waiting, on the reference's dotted canvas.
+   On-court players are inverted pills (the reference's person node), the rest are cards.
+   Full screen is for the TV: everything sizes to the screen width. */
+.canvas{border-radius:14px;background-color:var(--panel);background-image:radial-gradient(var(--dot) 1px,transparent 1.3px);background-size:18px 18px;overflow-x:auto;padding:12px}
+.qmap{display:flex;gap:16px;padding:24px}
+.qcol{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:18px}
+.qcol.wait{flex-grow:1.4}
+.qarrow{align-self:center;color:var(--mu);font-family:var(--mono);font-size:20px;line-height:1}
+:is(.qmap,.here,.qbox) :is(.col,.grp){margin:0;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--mu);font-size:11px}
+.qmap .grp{font-size:10.5px}
+/* Check in: the same boxes, grouped, so 30 people fit in a few short rows. */
+.here{display:flex;flex-direction:column;gap:14px}
+.here .qnodes{grid-template-columns:repeat(auto-fill,minmax(165px,1fr))}
+.here .qn{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:9px 12px}
+.here .qn.on{padding-inline:16px}
+.here .qn b{font-family:var(--sans);font-weight:600;font-size:15px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+.here .qn small{font-family:var(--mono);flex-shrink:0}
+.qn.out{background:transparent;border-style:dashed;border-color:var(--faint)}
+.qn.out b{color:var(--mu)}
+.here > .empty{color:var(--mu);font-size:15px}
+/* Queue: the same boxes with the organizer's buttons on their own line. */
+.qbox{display:flex;flex-direction:column;gap:14px}
+.qbox:empty{display:none}
+.qbox .qn{display:flex;flex-direction:column;gap:6px;padding:8px 12px}
+.qbox .qn.row{flex-direction:row;align-items:center;gap:6px}
+.qbox :is(.top,.acts){display:flex;align-items:center;gap:6px;min-width:0}
+.qbox .qn b{font-family:var(--sans);font-weight:600;font-size:15px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+.qbox .pos{font-family:var(--mono);font-size:12px;color:var(--mu);flex-shrink:0}
+.qbox .top .stt{flex-shrink:0;font-size:10px;padding:2px 6px}
+.qbox .acts small{font-size:12px;margin-right:auto;white-space:nowrap}
+.qbox .qn :is(.seg,.btn,.xbtn){flex-shrink:0}
+.qbox .btn.s{padding:5px 10px;font-size:13px}
+/* Up next: the two teams side by side like the scoreboard's team cards; "No team yet" spans both. */
+#upnext{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px;align-items:start}
+#upnext > .side .qnodes{grid-template-columns:minmax(0,1fr)}
+#upnext > :is(.none,.empty){grid-column:1 / -1}
+#upnext > .none .qnodes{grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+#waiting .qnodes{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+#out .qnodes{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+.qbox .qn.sat{opacity:.6}
+.qbox > .empty{color:var(--mu);font-size:15px}
+.qgrp{display:flex;flex-direction:column;gap:8px}
+.qnodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+.qn{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:0}
+.qn b{display:block;font-family:var(--serif);font-weight:400;font-size:19px;line-height:1.2;color:var(--ink);overflow-wrap:anywhere}
+.qn small{display:block;font-size:12px;line-height:1.4;color:var(--mu)}
+.qn.on{background:var(--btn);border-color:var(--btn);border-radius:999px;padding:10px 20px}
+.qn.on b{color:var(--btn-tx)}
+.qn.on small{color:var(--btn-mu)}
+.qmap .empty{color:var(--mu);font-size:15px}
+#qmap:fullscreen{max-width:none;border-radius:0;background-color:var(--bg);height:100vh;overflow:auto;padding:3cqw 2.5vw;gap:2vw;container-type:inline-size}
+#qmap:fullscreen .qcol{gap:1.6cqw}
+#qmap:fullscreen .col{font-size:clamp(12px,1.1cqw,26px)}
+#qmap:fullscreen .grp{font-size:clamp(11px,.9cqw,22px)}
+#qmap:fullscreen .qarrow{font-size:clamp(20px,2cqw,48px)}
+#qmap:fullscreen .qnodes{grid-template-columns:repeat(auto-fill,minmax(clamp(150px,12cqw,340px),1fr));gap:.7cqw}
+#qmap:fullscreen .qn{padding:.8cqw 1.2cqw}
+#qmap:fullscreen .qn.on{padding:.8cqw 1.8cqw}
+#qmap:fullscreen .qn b{font-size:clamp(19px,1.9cqw,52px)}
+#qmap:fullscreen .qn small{font-size:clamp(12px,.95cqw,26px)}
+#qmap:fullscreen .empty{font-size:clamp(15px,1.3cqw,32px)}
+
+@media (max-width:900px){
+  .qmap{flex-direction:column}
+  .qarrow{transform:rotate(90deg)}
+  .scorebar{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .clockt{grid-column:1 / -1;order:-1}
+}
+@media (max-width:700px){
+  .cards.two{grid-template-columns:minmax(0,1fr)}
+  #upnext{grid-template-columns:minmax(0,1fr)}
+  .pl{grid-template-columns:minmax(0,1fr) auto}
+  .pl .pt{grid-column:1 / -1}
+  .pl .pt .btn{flex:1}
+}
+@media (max-width:600px){
+  .page{padding-inline:16px}
+  .island-mark{display:none}
+  .island-db{margin:0 0 0 6px}
+  .island-tabs button{padding:11px 10px;letter-spacing:.05em;font-size:11px}
+  .island .clk{display:none}
+  .qmap{padding:16px}
+  .lb th.r,.lb td.r{padding-left:10px}
+  .lb th,.lb td{padding-right:8px}
+  .lb tr.p1 td:nth-last-child(2){border-radius:0 10px 10px 0;padding-right:12px}
+  .hero{padding-block:40px 40px}
+  .c{padding:22px 20px}
+  .hide-sm{display:none}
+  .scorebar{gap:10px}
+  .tname{font-size:22px}
+}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+@media (prefers-reduced-motion:reduce){.island-thumb,.island-tabs button,.island-tabs,.island .clk{transition:none}}
+</style>
+</head>
+<body>
+<nav class="island" id="island" aria-label="Hexagames">
+  <span class="island-mark" aria-hidden="true"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="7"/></svg></span>
+  <button type="button" class="island-db" id="dbDot" aria-label="Database connecting"></button>
+  <div class="island-tabs" role="tablist" aria-label="Views">
+    <span class="island-thumb" aria-hidden="true"></span>
+    <button role="tab" id="tab-checkin" data-tab="checkin" aria-controls="checkin" aria-selected="false" tabindex="-1">Check in</button>
+    <button role="tab" id="tab-queue" data-tab="queue" aria-controls="queue" aria-selected="true">Queue</button>
+    <button role="tab" id="tab-board" data-tab="board" aria-controls="board" aria-selected="false" tabindex="-1">Scoreboard</button>
+    <button role="tab" id="tab-leaders" data-tab="leaders" aria-controls="leaders" aria-selected="false" tabindex="-1">Leaderboard</button>
+  </div>
+  <span class="clk" id="islandClock"></span>
+</nav>
+
+<main class="page">
+  <div class="tabpanel" id="checkin" role="tabpanel" aria-labelledby="tab-checkin" hidden>
+    <section>
+      <div class="sh">
+        <h2>Tonight's list.</h2>
+        <p id="expectedIntro"></p>
+        <div class="btns left"><button class="btn o s" data-action="newSession">Start a new session</button><button class="btn o s" data-action="signOut">Sign out</button></div>
+      </div>
+      <div class="wide">
+        <div class="checkin">
+          <div class="combo">
+            <input class="in" id="listAdd" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="listSug"
+              autocomplete="off" maxlength="60" placeholder="Add a player, first name is enough" aria-label="Add a player to tonight's list">
+            <ul class="sug" id="listSug" role="listbox" aria-label="Matching players" hidden></ul>
+          </div>
+          <button class="btn o" type="button" data-action="pasteList">Paste a list</button>
+        </div>
+        <p class="note" id="msg" role="status" style="margin-top:12px;max-width:none"></p>
+        <div id="choices"></div>
+      </div>
+      <div class="wide tw">
+        <table>
+          <thead><tr><th>Player</th><th class="r" id="expectedCount"></th></tr></thead>
+          <tbody id="expected"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="sh">
+        <h2>Checked in.</h2>
+        <p id="hereIntro"></p>
+      </div>
+      <div class="wide here" id="here"></div>
+    </section>
+
+  </div>
+
+  <div class="tabpanel" id="queue" role="tabpanel" aria-labelledby="tab-queue">
+    <section>
+      <div class="wide canvas qmap" id="qmap" role="group" aria-label="The line, from on court to waiting"></div>
+      <div class="btns"><button class="btn o" data-action="fullscreen" data-arg="qmap">Full screen</button></div>
+    </section>
+
+    <div class="hero sm">
+      <h1>Who plays next</h1>
+      <p class="date session-line"></p>
+      <div class="btns">
+        <button class="btn" data-action="fill" id="fillBtn">Fill open spots</button>
+        <a class="btn o" href="#board">Open scoreboard</a>
+      </div>
+    </div>
+
+    <section>
+      <div class="sh">
+        <h2>Up next.</h2>
+        <p id="upnextIntro"></p>
+      </div>
+      <div class="wide qbox" id="upnext"></div>
+    </section>
+
+    <section>
+      <div class="sh">
+        <h2>Waiting.</h2>
+        <p>In fairness order: fewest games first, then longest wait. Pick calls a specific player into an open spot.</p>
+      </div>
+      <div class="wide qbox" id="waiting"></div>
+      <div class="wide qbox" id="out"></div>
+    </section>
+
+  </div>
+
+  <div class="tabpanel" id="leaders" role="tabpanel" aria-labelledby="tab-leaders" hidden>
+    <div class="hero sm">
+      <h1>Leaderboard</h1>
+      <p class="date" id="leaderIntro"></p>
+      <div class="seg" role="group" aria-label="Rank by" id="leaderMode"></div>
+    </div>
+
+    <section>
+      <div class="wide lb" id="leaderBoard"></div>
+    </section>
+
+  </div>
+
+  <div class="tabpanel" id="board" role="tabpanel" aria-labelledby="tab-board" hidden>
+    <div class="wide scorebar">
+      <div class="c team t-home"><input id="homeName" class="tname" aria-label="Home team name"><span class="stt plan">Home</span><div class="big" id="homeScore">0</div></div>
+      <div class="fs k clockt">
+        <p class="s" id="boardGame"></p>
+        <div class="big" id="clock">20:00</div>
+        <div class="btns">
+          <button class="btn inv" data-action="startPause" id="startBtn" title="Space starts and pauses the clock">Start</button>
+          <button class="btn inv o" data-action="resetClock">Reset clock</button>
+          <button class="btn inv o" data-action="endGame">End game</button>
+          <button class="btn inv o" data-action="fullscreen">Full screen</button>
+        </div>
+        <p class="tip">Space starts and pauses the clock.</p>
+      </div>
+      <div class="c team t-away"><input id="awayName" class="tname" aria-label="Away team name"><span class="stt plan">Away</span><div class="big" id="awayScore">0</div></div>
+    </div>
+    <p class="hint" id="boardHint" role="status"></p>
+    <div class="wide cards two">
+      <div class="c t-home"><header><h3 id="homeLbl"></h3><span class="mono" id="homeCount"></span></header><div id="homePlayers"></div></div>
+      <div class="c t-away"><header><h3 id="awayLbl"></h3><span class="mono" id="awayCount"></span></header><div id="awayPlayers"></div></div>
+    </div>
+  </div>
+</main>
+
+<dialog id="pasteDlg" aria-labelledby="pasteTitle">
+  <form method="dialog">
+    <h3 id="pasteTitle">Paste a list</h3>
+    <p class="tl">One name per line. A first name is enough for anyone already in the database.</p>
+    <textarea class="in" id="pasteText" aria-label="Names, one per line"></textarea>
+    <div class="btns left">
+      <button class="btn o s" value="cancel">Cancel</button>
+      <button class="btn s" value="add">Add names</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="passDlg" aria-labelledby="passTitle">
+  <form method="dialog">
+    <h3 id="passTitle">Organizer passcode</h3>
+    <p class="tl">Needed once on each laptop to save players and results. Viewing works without it.</p>
+    <input class="in" id="passText" type="password" autocomplete="current-password" aria-label="Organizer passcode">
+    <div class="btns left">
+      <button class="btn o s" value="cancel">Cancel</button>
+      <button class="btn s" value="save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="queue.js"></script>
+<script src="names.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

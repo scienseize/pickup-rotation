@@ -2,8 +2,9 @@
 // page still opens with no connection. API calls are never cached.
 // A redirect (to the sign-in page, when this device's session has run out) is never
 // cached either, so it can't replace the stored app. Sign out deletes this cache.
-const CACHE = 'pickup-v2';
-const FILES = ['./', 'app.js', 'queue.js', 'names.js', 'login.html', 'logo.png', 'favicon.png']; // not index.html: Cloudflare redirects it to /
+const CACHE = 'pickup-v3';
+// './' is the home page (index.html; Cloudflare serves it at /) and 'app' the app (app.html, at /app).
+const FILES = ['./', 'app', 'app.js', 'queue.js', 'names.js', 'logo.png', 'favicon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));

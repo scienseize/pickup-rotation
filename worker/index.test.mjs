@@ -16,19 +16,23 @@ const post = (path, body, headers = {}) => at(path, {
   method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json', ...headers },
 });
 
-// Signed out: pages go to the sign-in page, the API refuses, and no file is handed out.
-for (const path of ['/', '/index.html', '/app.js', '/sw.js']) {
+// Signed out: the app and its files send you home with the passcode form open, the API
+// refuses, and no file is handed out.
+for (const path of ['/app', '/app.html', '/app.js', '/sw.js', '/queue.js']) {
   const res = await at(path);
   assert.equal(res.status, 302, path);
-  assert.equal(res.headers.get('Location'), 'https://pickup.test/login', path);
+  assert.equal(res.headers.get('Location'), 'https://pickup.test/?signin', path);
 }
 assert.equal((await at('/api/profiles')).status, 401);
 assert.equal((await post('/api/players', { names: ['Ana'] }, { Authorization: `Bearer ${PASS}` })).status, 401); // the passcode alone is not a session
 assert.deepEqual(served, []);
 
-// The sign-in page, the logo and the tab icon are open.
-for (const path of ['/login', '/logo.png', '/favicon.png']) assert.equal((await at(path)).status, 200, path);
-assert.deepEqual(served, ['/login', '/logo.png', '/favicon.png']);
+// The old sign-in address goes to the home page.
+for (const path of ['/login', '/login.html']) assert.equal((await at(path)).headers.get('Location'), 'https://pickup.test/', path);
+
+// The home page (it holds the sign-in), the logo and the tab icon are open.
+for (const path of ['/', '/index.html', '/logo.png', '/favicon.png']) assert.equal((await at(path)).status, 200, path);
+assert.deepEqual(served, ['/', '/index.html', '/logo.png', '/favicon.png']);
 
 // Sign in: a wrong passcode gets nothing; the right one gets a 30-day, script-proof cookie.
 assert.equal((await post('/api/login', { passcode: 'guess' })).status, 401);
@@ -42,7 +46,7 @@ for (const part of ['HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/', 'Max-Age=
 const session = setCookie.split(';')[0];
 
 // Signed in: pages and data flow; writes still need the passcode as well.
-assert.equal((await at('/', { headers: { Cookie: session } })).status, 200);
+assert.equal((await at('/app', { headers: { Cookie: session } })).status, 200);
 assert.equal((await at('/app.js', { headers: { Cookie: session } })).status, 200);
 assert.equal((await at('/api/profiles', { headers: { Cookie: session } })).status, 200);
 assert.equal((await post('/api/players', { names: ['Ana'] }, { Cookie: session })).status, 401);
@@ -53,7 +57,7 @@ assert.equal(db.length, 1);
 
 // A cookie from before a passcode change no longer works.
 env.ORGANIZER_PASSCODE = 'new-passcode-7';
-assert.equal((await at('/', { headers: { Cookie: session } })).status, 302);
+assert.equal((await at('/app', { headers: { Cookie: session } })).status, 302);
 env.ORGANIZER_PASSCODE = PASS;
 
 // Sign out clears the cookie.
