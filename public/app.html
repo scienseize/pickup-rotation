@@ -276,8 +276,6 @@ td.empty{color:var(--mu)}
 .qn.on.none{background:transparent;border:2px dashed var(--faint)}
 .qn.on.none b{color:var(--ink)}
 .qn.on.none small{color:var(--mu)}
-#upnext > .home .qn{border-left:4px solid var(--home)}
-#upnext > .away .qn{border-left:4px solid var(--away)}
 .clockt{align-items:center;justify-content:center;text-align:center;padding:22px 28px}
 .clockt .big{font-size:clamp(72px,9vw,150px);color:var(--btn-tx)}
 .clockt .big.low{color:var(--ember)}
@@ -322,7 +320,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .qcol{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:18px}
 .qcol.wait{flex-grow:1.4}
 .qarrow{align-self:center;color:var(--mu);font-family:var(--mono);font-size:20px;line-height:1}
-:is(.qmap,.here,.qbox) :is(.col,.grp){margin:0;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--mu);font-size:11px}
+:is(.qmap,.here) :is(.col,.grp){margin:0;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--mu);font-size:11px}
 .qmap .grp{font-size:10.5px}
 /* Check in: the same boxes, grouped, so 30 people fit in a few short rows. */
 .here{display:flex;flex-direction:column;gap:14px}
@@ -369,26 +367,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 #rosterCount .sep{display:inline-block;width:18px}
 .roster > .empty{color:var(--mu);font-size:15px;text-align:center}
 /* Queue: the same boxes with the organizer's buttons on their own line. */
-.qbox{display:flex;flex-direction:column;gap:14px}
-.qbox:empty{display:none}
-.qbox .qn{display:flex;flex-direction:column;gap:6px;padding:8px 12px}
-.qbox .qn.row{flex-direction:row;align-items:center;gap:6px}
-.qbox :is(.top,.acts){display:flex;align-items:center;gap:6px;min-width:0}
-.qbox .qn b{font-family:var(--sans);font-weight:600;font-size:15px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
-.qbox .pos{font-family:var(--mono);font-size:12px;color:var(--mu);flex-shrink:0}
-.qbox .top .stt{flex-shrink:0;font-size:10px;padding:2px 6px}
-.qbox .acts small{font-size:12px;margin-right:auto;white-space:nowrap}
-.qbox .qn :is(.seg,.btn,.xbtn){flex-shrink:0}
-.qbox .btn.s{padding:5px 10px;font-size:13px}
 /* Up next: the two teams side by side like the scoreboard's team cards; "No team yet" spans both. */
-#upnext{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px;align-items:start}
-#upnext > .side .qnodes{grid-template-columns:minmax(0,1fr)}
-#upnext > :is(.none,.empty){grid-column:1 / -1}
-#upnext > .none .qnodes{grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
-#waiting .qnodes{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
-#out .qnodes{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
-.qbox .qn.sat{opacity:.6}
-.qbox > .empty{color:var(--mu);font-size:15px}
 .qgrp{display:flex;flex-direction:column;gap:8px}
 .qnodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
 .qn{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:0}
@@ -398,24 +377,44 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .qn.on b{color:var(--btn-tx)}
 .qn.on small{color:var(--btn-mu)}
 .qmap .empty{color:var(--mu);font-size:15px}
-/* Substitutions: waiting players drag (or click, then click) onto someone on court. */
-.qmap [data-sub]{cursor:grab}
-.qmap [data-sub]:active{cursor:grabbing}
-.qmap .qn.picked{outline:3px solid var(--ink);outline-offset:2px}
-.qmap:has(.picked) [data-seat]{cursor:pointer}
-.qmap [data-seat].drop{outline:3px dashed var(--ink);outline-offset:3px}
+/* The interactive diagram: a click selects a box and shows its buttons inside it; boxes drag
+   onto teams, other players and back to the line. Areas light up as drop targets. */
+.qmap .colhead{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:30px}
+.qmap .colhead .btn{padding:5px 10px;font-size:13px;flex-shrink:0}
+.qmap [data-p]{cursor:pointer}
+.qmap [draggable="true"]{cursor:grab}
+.qmap [draggable="true"]:active{cursor:grabbing}
+.qmap .qn.picked{outline:3px solid var(--ink);outline-offset:2px;grid-column:span 2}
+.qmap .qn.on.picked{border-radius:16px}
+.qmap .qacts{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+.qmap .qacts .btn{padding:5px 10px;font-size:13px}
+.qmap .qacts .hint{flex-basis:100%;font-size:12px}
+.qmap .qn.out{opacity:.6}
+/* Up next's lineup: each box carries its team's color on the left edge. */
+.qmap .qn.nx.home{box-shadow:inset 4px 0 0 var(--home)}
+.qmap .qn.nx.away{box-shadow:inset 4px 0 0 var(--away)}
+.qmap .zone{border:1px dashed var(--faint);border-radius:10px;padding:10px 14px;color:var(--mu);font-size:13px}
+.qmap :is([data-zone],.qn).drop{outline:3px dashed var(--ink);outline-offset:3px;border-radius:12px}
 .qmap [role="button"]:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
 #qmap:fullscreen{max-width:none;border-radius:0;background-color:var(--bg);height:100vh;overflow:auto;padding:3cqw 2.5vw;gap:2vw;container-type:inline-size}
-#qmap:fullscreen .qcol{gap:1.6cqw}
-#qmap:fullscreen .col{font-size:clamp(12px,1.1cqw,26px)}
-#qmap:fullscreen .grp{font-size:clamp(11px,.9cqw,22px)}
-#qmap:fullscreen .qarrow{font-size:clamp(20px,2cqw,48px)}
-#qmap:fullscreen .qnodes{grid-template-columns:repeat(auto-fill,minmax(clamp(150px,12cqw,340px),1fr));gap:.7cqw}
-#qmap:fullscreen .qn{padding:.8cqw 1.2cqw}
-#qmap:fullscreen .qn.on{padding:.8cqw 1.8cqw}
-#qmap:fullscreen .qn b{font-size:clamp(19px,1.9cqw,52px)}
-#qmap:fullscreen .qn small{font-size:clamp(12px,.95cqw,26px)}
-#qmap:fullscreen .empty{font-size:clamp(15px,1.3cqw,32px)}
+/* The diagram's type and boxes scale with its width, in the page and in full screen alike, so it
+   reads from across the gym. On laptop screens and up it also spans the page and reaches the
+   bottom of the screen; phones keep the stacked layout. */
+#qmap{container-type:inline-size}
+#qmap .qcol{gap:1.6cqw}
+#qmap .col{font-size:clamp(12px,1.1cqw,26px)}
+#qmap .grp{font-size:clamp(11px,.9cqw,22px)}
+#qmap .qarrow{font-size:clamp(20px,2cqw,48px)}
+#qmap .qnodes{grid-template-columns:repeat(auto-fill,minmax(clamp(150px,12cqw,340px),1fr));gap:.7cqw}
+#qmap .qn{padding:.8cqw 1.2cqw}
+#qmap .qn.on{padding:.8cqw 1.8cqw}
+#qmap .qn b{font-size:clamp(19px,1.9cqw,52px)}
+#qmap .qn small{font-size:clamp(12px,.95cqw,26px)}
+#qmap .empty{font-size:clamp(15px,1.3cqw,32px)}
+@media (min-width:901px){
+  .page:has(> #queue:not([hidden])){padding-bottom:24px}
+  #queue .qmap{max-width:none;min-height:calc(100dvh - env(safe-area-inset-top,0px) - 112px)}
+}
 
 @media (max-width:900px){
   .qmap{flex-direction:column}
@@ -425,7 +424,6 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 }
 @media (max-width:700px){
   .cards.two{grid-template-columns:minmax(0,1fr)}
-  #upnext{grid-template-columns:minmax(0,1fr)}
   .pl{grid-template-columns:minmax(0,1fr) auto}
   .pl .pt{grid-column:1 / -1}
   .pl .pt .btn{flex:1}
@@ -514,31 +512,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 
   <div class="tabpanel" id="queue" role="tabpanel" aria-labelledby="tab-queue" hidden>
     <section>
-      <div class="wide canvas qmap" id="qmap" role="group" aria-label="The line, from on court to waiting"></div>
-      <div class="btns"><button class="btn o" data-action="fullscreen" data-arg="qmap">Full screen</button></div>
-    </section>
-
-    <div class="hero sm">
-      <h1>Who plays next</h1>
-      <div class="btns">
-        <button class="btn" data-action="fill" id="fillBtn">Fill open spots</button>
-        <a class="btn o" href="#board">Open scoreboard</a>
-      </div>
-    </div>
-
-    <section>
-      <div class="sh">
-        <h2>Up next.</h2>
-      </div>
-      <div class="wide qbox" id="upnext"></div>
-    </section>
-
-    <section>
-      <div class="sh">
-        <h2>Waiting.</h2>
-      </div>
-      <div class="wide qbox" id="waiting"></div>
-      <div class="wide qbox" id="out"></div>
+      <div class="wide canvas qmap" id="qmap" role="group" aria-label="The line, from on court to waiting. Select a player for their actions."></div>
     </section>
 
   </div>

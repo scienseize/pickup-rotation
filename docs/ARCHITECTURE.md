@@ -117,8 +117,9 @@ state = {
   ],
   game: {                           // the current or next game; never empty
     number,                         // 1, 2, 3 ... within the session
-    onCourt: [ { name, team: 'home' | 'away' | null, points } ],
+    onCourt: [ { name, team: 'home' | 'away', points, sub? } ], // sub: came on as a substitute
     subbedOut: [ { name, team, points } ], // came off after play started; still count
+    plan: [ { name, team } ] | null, // Up next's lineup once the organizer edits it
     satOut: [ names ],              // sat out this game; Fill skips them
     homeName, awayName,             // editable labels, default "Home" / "Away"
     endsAt,                         // timestamp while the clock runs, else null
@@ -166,21 +167,24 @@ Design choices:
 3. **Pick.** Hand-picks a specific waiting player into an open spot, for
    friends who want to play together (section 3). Same timing rule as Fill.
 4. **Sit out.** For a called player who refuses or isn't there: it frees their
-   spot, and they keep their place (section 3). Same timing rule. The × button
+   spot, and they keep their place (section 3). Same timing rule. *Remove*
    frees a spot the same way but without the sit-out mark, to undo a call made
    by mistake. Sit out, Remove, Fill and Pick all lock once the clock has
    started or anyone has scored, so a clock reset cannot drop a scorer's
    points.
    **Substitution** still works then: on the queue diagram, drag a waiting
-   player onto someone on court (or click one, then the other) and confirm.
-   The sub takes that seat and team. Once play has started, the player coming
-   off moves to `subbedOut` with their points, so the team score holds and the
-   game counts for both (`Queue.played`). Before that it is a plain swap. A
-   player who comes back on gets their points back, so each player is one
-   results row.
-5. **Assign teams.** The players choose their own sides. The attendant taps
-   each called player to set Home or Away. The scoreboard is enabled once all
-   called players have a team, with at least one per side. That is normally 10;
+   player onto someone on court (or click one, then the other). There is no
+   confirm. The sub takes that seat and team. Once play has started, the
+   player coming off moves to `subbedOut` with their points, so the team score
+   holds and the game counts for both (`Queue.played`). Before that it is a
+   plain swap. A player who comes back on gets their points back, so each
+   player is one results row. A sub who comes back off without scoring is
+   treated as an undo (a sub made by mistake): they leave no results row.
+5. **Assign teams.** Every called player is on a team: Fill and Pick put each
+   one on the side with fewer players (Home on a tie). The players choose
+   their own sides, and the attendant drags anyone who wants the other team
+   across on the queue diagram. The scoreboard is enabled once there is at
+   least one player per side. That is normally 10;
    it can be fewer early in a session, before 10 people have arrived.
 6. **Play.** Start, pause, and reset the clock. Tap a player's +1, +2 or +3
    when they score, or -1 to fix a mistake. A player's points never go below 0.
@@ -189,8 +193,9 @@ Design choices:
    let a tie play on.
 8. **End game.** Asks for confirmation. Every on-court player gets
    `games + 1` and `readyAt = now`, their game points go into `totalPoints`,
-   and the game is queued in `unsynced` for the database. The court is then
-   empty, ready for *Fill*.
+   and the game is queued in `unsynced` for the database. Up next's lineup
+   (below) then takes the court in its teams, so the next game is ready to
+   start; *Fill* is only needed if spots are open.
 9. **Done for the night.** *Done* on the waiting list clears a player's
    `present` flag for the rest of the session. *Undo* reverses a mistaken tap.
 10. **New session.** Asks for confirmation and clears players, game and
@@ -268,33 +273,40 @@ laptop screen and still works at phone width.
 
 ### Queue tab (for the attendant)
 
-- **Queue diagram,** at the top, for the players: On court (by team), then
-  Up next, then everyone else waiting, grouped by games played tonight. Each
-  box shows the name, games played and wait time. Before the game fills, Up
-  next is who Fill calls now. Once it's full, it's who the following game
-  will call (`Queue.nextGame`, the same rule run on a copy). *Full screen*
-  puts only the diagram on the TV, sized to the screen. Waiting boxes drag
-  onto on-court boxes to make a substitution.
-- **Player boxes, not tables.** Below the diagram the organizer sees the same
-  small boxes as Check in, each with its own buttons, so about 30 players fit
-  without losing track.
-- **Up next / On court:** 10 spots with a *Fill* button, grouped by team
-  ("Shirts · 4 of 5"), the two teams side by side like the scoreboard,
-  with "No team yet" below. Each called player's box is one line: their
-  name, a Home/Away toggle, a *Sit out* button and a × button to remove them.
-  Games and average show on hover. Removing undoes a call: the player goes back in line where
-  they were, with no "Sitting out" mark, and Fill may call them again. Sit out
-  is for someone who doesn't want this game: Fill skips them until the next
-  game. Empty spots show as open. Fill, Pick, Sit out and Remove are hidden
-  once the clock has started or anyone has scored.
-- **Waiting list,** in exact fairness order, so everyone can see where they
-  stand. Each box shows the player's place in line (#1, #2, ...), name,
-  games played, live wait time ("34 min"), a *Pick* button (enabled when a spot is open) and a
-  *Done* button for players leaving for the night. Below it, a "Done for the
-  night" list with *Undo* for mistaken taps. The boxes that Fill would take are marked "next in line", and
-  sitting-out boxes are dimmed.
-  A *Passed over* badge appears on anyone with fewer games than a player in
-  Up next.
+The tab is one diagram, shown on the TV and used by the organizer. Every
+queue action happens on it, and none asks to confirm: each has a way back.
+On laptop screens and up the diagram spans the page and reaches the bottom of
+the screen, and its type and boxes scale with its width (as in full screen),
+so it reads from across the gym. Phones keep a stacked layout.
+
+- **Layout:** On court (Home and Away, "Home · 4 of 5"), then Up next, then everyone else waiting, grouped by games played
+  tonight, then Done for the night. Each box shows the first name, games
+  played and wait time, plus "sitting out" or "passed over" when they apply.
+  Before the game fills, Up next is who Fill calls now. Once it's full, Up
+  next is the following game's lineup, already split into Home and Away (5
+  and 5, with a team-colored edge): the fairness order for that game
+  (`Queue.nextGame`, the same rule run on a copy), balanced between the
+  teams. Edits to it are kept in `game.plan`; a planned player who leaves is
+  replaced by the next in fairness order. End game seats this lineup. *Fill open spots* sits at the top of On court while spots are open;
+  *Full screen* sits at the top of Waiting and puts only the diagram on the TV.
+- **Click a box** to select it; its buttons appear inside it. On court:
+  *Sit out*, *Remove* (no team buttons: teams change by dragging). Waiting: *Pick* (while a spot is open)
+  and *Done*. Done for the night: *Undo*. Clicking a second box pairs the
+  two: a waiting player and someone on court is a substitution; a waiting
+  player and someone in Up next swaps the waiting player into the lineup;
+  two players on opposite teams (both on court, or both in Up next) swap
+  sides. Clicking
+  the box again, clicking empty space or pressing Esc clears the selection.
+  Boxes work with the keyboard too (Tab, then Enter).
+- **Drag a box:** a waiting player onto Home or Away calls them onto that
+  team; onto a player on court subs them in. A player on court onto the other
+  team switches sides, and onto a player on the other team swaps the two
+  (for when both teams are full); onto Up next or Waiting undoes the call.
+  In Up next, a waiting player onto a lineup player replaces them; a lineup
+  player onto the other team (or onto someone on it) switches or swaps them.
+  The area under the pointer lights up as a drop target.
+- Fill, Pick, Sit out and Remove are hidden once the clock has started or
+  anyone has scored; dragging between teams and substitutions still work.
 
 ### Leaderboard tab
 

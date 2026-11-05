@@ -31,7 +31,9 @@ function load() {
     if (s) {
       delete s.roster; // replaced by the database
       delete s.log; // never read
-      return { expected: [], unsynced: [], startedAt: Date.now(), ...s };
+      const st = { expected: [], unsynced: [], startedAt: Date.now(), ...s };
+      seatTeams(st.game); // saved before every called player had a team
+      return st;
     }
   } catch {}
   return newSession();
@@ -62,6 +64,12 @@ const ready = () => {
   const court = state.game.onCourt;
   return court.length > 0 && court.every(c => c.team) && ['home', 'away'].every(t => court.some(c => c.team === t));
 };
+// Every called player is on a team: a new one joins the side with fewer players (Home on a tie).
+// On the queue diagram, drag them onto the other team to switch.
+function seatTeams(g = state.game) {
+  const n = t => g.onCourt.filter(c => c.team === t).length;
+  for (const c of g.onCourt) if (!c.team) c.team = n('away') < n('home') ? 'away' : 'home';
+}
 const cleanName = Names.clean;
 const profileOf = name => profiles.get(name.toLowerCase());
 const playerNamed = name => state.players.find(p => p.name.toLowerCase() === name.toLowerCase());
@@ -259,15 +267,10 @@ function autosuggest(input, list, pick, say) {
 // ---- actions (each click handler; return false to skip saving) ----
 
 const actions = {
-  fill() { if (locked()) return false; Queue.fill(state.players, state.game, SPOTS); },
-  pick(name) { if (locked()) return false; Queue.pick(state.game, name, SPOTS); },
+  fill() { if (locked()) return false; Queue.fill(state.players, state.game, SPOTS); seatTeams(); },
+  pick(name) { if (locked()) return false; Queue.pick(state.game, name, SPOTS); seatTeams(); },
   sitOut(name) { if (locked()) return false; Queue.sitOut(state.game, name); },
   remove(name) { if (locked()) return false; Queue.remove(state.game, name); },
-  team(name, team) {
-    const c = seatOf(name);
-    if (c.team !== team && teamFull(team)) return false;
-    c.team = c.team === team ? null : team;
-  },
   done: name => { player(name).present = false; }, // no confirm: Undo puts them back
   undoDone: name => { player(name).present = true; },
   leaderMode(_, mode) { leaderMode = mode; keepFocus(renderQueue); return false; }, // a view choice, not saved
@@ -296,12 +299,14 @@ const actions = {
     const g = state.game;
     if (!g.onCourt.length) return false;
     if (!confirm(`End game ${g.number}? ${g.homeName} ${score('home')}, ${g.awayName} ${score('away')}.`)) return false;
+    const lineup = nextLineup(Date.now()); // before the game is counted, as Up next showed it
     Queue.endGame(state.players, g, Date.now());
     state.unsynced.push({
       session: state.startedAt, date: localDate(state.startedAt), game: g.number,
       rows: Queue.played(g).map(c => ({ name: c.name, points: c.points })),
     });
     state.game = newGame(g.number + 1);
+    state.game.onCourt = lineup.map(x => ({ ...Queue.seat(x.name), team: x.team })); // Up next takes the court
     setTimeout(sync);
     if (document.fullscreenElement) document.exitFullscreen();
     go('queue');
@@ -326,12 +331,8 @@ const actions = {
     needsChoice = [];
   },
 
-  // From the queue diagram: drag a waiting player onto someone on court (or click one, then the other).
-  sub(outName, inName) {
-    subPick = null;
-    if (!confirm(`Sub ${inName} in for ${outName}?`)) return false;
-    Queue.sub(state.game, outName, inName, locked());
-  },
+  // From the queue diagram: a waiting player in for someone on court. No confirm: swapping back undoes it.
+  sub: (outName, inName) => { Queue.sub(state.game, outName, inName, locked()); },
 
   fullscreen(_, arg) {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -408,44 +409,8 @@ function render() {
 }
 
 function renderQueue() {
-  const g = state.game;
-  const lock = locked();
-  const open = !lock && g.onCourt.length < SPOTS;
-  const order = Queue.waitingOrder(state.players, g);
-  const next = new Set(Queue.nextInLine(state.players, g, SPOTS).map(p => p.name));
-  const passed = new Set(lock ? [] : Queue.passedOver(state.players, g)); // nothing to fix once play starts
+  const order = Queue.waitingOrder(state.players, state.game);
   const now = Date.now();
-
-  $('fillBtn').hidden = lock;
-  $('fillBtn').disabled = !open || !next.size;
-
-  // Up next: one group per team, so the 5-a-side cap is visible, then anyone without a team.
-  // One line per player: name, team toggle, Sit out, remove. Games and average are in the hover text.
-  const seat = c => `<div class="qn row" title="${esc(c.name)} · ${plural(player(c.name).games, 'game')} tonight${tag(c.name)}">
-      <b>${esc(c.name)}</b><span class="seg">${['home', 'away'].map(t => btn('team', c.name, esc(g[t + 'Name']),
-        { arg: t, pressed: c.team === t, cls: c.team === t ? 's' : 'o s', disabled: c.team !== t && teamFull(t) })).join('')}</span>
-      ${lock ? '' : btn('sitOut', c.name, 'Sit out') + `<button type="button" class="xbtn" data-action="remove"
-        data-name="${esc(c.name)}" data-arg="" aria-label="Remove ${esc(c.name)} from up next">&times;</button>`}</div>`;
-  const onTeam = t => g.onCourt.filter(c => c.team === t);
-  $('upnext').innerHTML = (boxGroup(`${g.homeName} · ${onTeam('home').length} of ${TEAM_SIZE}`, onTeam('home').map(seat), 'side home', mk('home'))
-    + boxGroup(`${g.awayName} · ${onTeam('away').length} of ${TEAM_SIZE}`, onTeam('away').map(seat), 'side away', mk('away'))
-    + boxGroup(`No team yet · ${onTeam(null).length}`, onTeam(null).map(seat), 'none'))
-    || '<p class="empty">Nobody called yet. Press Fill open spots.</p>';
-
-  // Waiting: fairness order, numbered by place in line. Line 1: place, name, tags; line 2: games, wait, buttons.
-  $('waiting').innerHTML = boxGroup(`Waiting · ${order.length}`, order.map((p, i) => {
-    const sat = g.satOut.includes(p.name);
-    const tags = (next.has(p.name) ? '<span class="stt live">Next</span>' : '')
-      + (sat ? '<span class="stt plan">Sitting out</span>' : '')
-      + (passed.has(p.name) ? '<span class="stt build">Passed over</span>' : '');
-    return `<div class="qn${sat ? ' sat' : ''}" title="${esc(p.name)}${tag(p.name)}">
-      <div class="top"><span class="pos">#${i + 1}</span><b>${esc(p.name)}</b>${tags}</div>
-      <div class="acts"><small>${plural(p.games, 'game')} · ${Math.floor((now - p.readyAt) / 60000)} min</small>${open ? btn('pick', p.name, 'Pick') : ''}${btn('done', p.name, 'Done')}</div></div>`;
-  })) || `<p class="empty">Nobody waiting.${state.players.length ? '' : ' Check people in on the Check in tab.'}</p>`;
-
-  const out = state.players.filter(p => !p.present);
-  $('out').innerHTML = boxGroup(`Done for the night · ${out.length}`, out.map(p =>
-    `<div class="qn out row" title="${esc(p.name)} · ${plural(p.games, 'game')}"><b>${esc(p.name)}</b>${btn('undoDone', p.name, 'Undo')}</div>`));
 
   // The ranked figure is the big one; per game needs MIN_RANKED_GAMES to get a rank.
   const perGame = leaderMode === 'perGame';
@@ -484,12 +449,23 @@ function shortName(name) {
   const twin = state.players.some(p => p.name !== name && firstName(p.name).toLowerCase() === firstName(name).toLowerCase());
   return twin && name.includes(' ') ? `${firstName(name)} ${name.split(' ').at(-1)[0]}.` : firstName(name);
 }
-// Who is up next: before the game fills, who Fill calls now; once it is full, who the following
-// game will call (the queue diagram's Up next column).
-function upNext(now) {
-  const g = state.game;
-  return (g.onCourt.length < SPOTS ? Queue.nextInLine(state.players, g, SPOTS) : Queue.nextGame(state.players, g, SPOTS, now)).map(p => p.name);
+// The next game's lineup, already in teams: the fairness order for the following game
+// (Queue.nextGame), split Home/Away, with the organizer's edits from the diagram kept in
+// game.plan. Players who left are dropped and the next in fairness order take their spots.
+// End game seats this lineup on court.
+function nextLineup(now) {
+  const g = state.game, fair = Queue.nextGame(state.players, g, SPOTS, now).map(p => p.name);
+  const list = (g.plan ?? []).filter(x => player(x.name)?.present).map(x => ({ ...x }));
+  for (const name of fair) if (list.length < SPOTS && !list.some(x => x.name === name)) list.push({ name, team: null });
+  const n = t => list.filter(x => x.team === t).length;
+  for (const x of list) if (!x.team) x.team = n('away') < n('home') ? 'away' : 'home';
+  return list;
 }
+// An edit to Up next freezes the lineup as shown, then changes it.
+function editPlan(fn) { const g = state.game; g.plan = nextLineup(Date.now()); fn(g.plan); commit(); }
+const planSwap = (out, inn) => editPlan(l => { l.find(x => x.name === out).name = inn; }); // a waiting player in
+const planTeams = (a, b) => editPlan(l => { const x = l.find(y => y.name === a), y = l.find(z => z.name === b); [x.team, y.team] = [y.team, x.team]; });
+const planMove = (name, team) => editPlan(l => { if (l.filter(x => x.team === team).length < TEAM_SIZE) l.find(x => x.name === name).team = team; });
 
 // Home: one button for the next step of the night (Check in players, Fill the court,
 // Start game N, Back to game N), next to Standby on TV.
@@ -500,69 +476,142 @@ function renderHome() {
   $('homeNext').dataset.arg = !present ? 'checkin' : started || ready() ? 'board' : 'queue';
 }
 
+// The Queue tab is this diagram, for the TV and the organizer alike: On court (Home, Away), then
+// Up next, then everyone else waiting by games played, then done for the night. While the court
+// has open spots, Up next is who Fill calls now; once it is full, it is the next game's lineup in
+// its own Home and Away (nextLineup).
+// Click a box to select it and its buttons appear inside it: on court, Sit out and Remove;
+// waiting, Pick and Done; done, Undo. Clicking a second box pairs them: a waiting player and
+// someone on court (a sub), a waiting player and someone in the lineup (a replacement), or two
+// players on opposite teams (they swap). Or drag one box onto the other. Dragging onto a team's
+// area moves a player there (calling them, if waiting); onto the waiting side undoes a call.
+// Teams change only this way. Nothing asks to confirm: each action has a way back.
+let sel = null; // the selected box: { name, src }, src being court, next, wait or done
 function renderMap(order, now) {
-  const g = state.game, open = g.onCourt.length < SPOTS;
-  const node = (name, cls) => {
-    const p = player(name);
-    const wait = seatOf(name) ? '' : ` · ${Math.floor((now - p.readyAt) / 60000)} min`; // on court: not waiting
-    const drag = seatOf(name) ? ` data-seat="${esc(name)}"${subPick ? ' tabindex="0" role="button"' : ''}`
-      : ` draggable="true" tabindex="0" role="button" data-sub="${esc(name)}" aria-pressed="${subPick === name}"`;
-    return `<div class="qn${cls ? ` ${cls}` : ''}${subPick === name ? ' picked' : ''}"${drag} title="${esc(name)}${seatOf(name) ? '' : ' · drag onto a player on court to sub in'}"><b>${esc(shortName(name))}</b><small>${plural(p.games, 'game')}${wait}</small></div>`;
+  const g = state.game, lock = locked(), open = !lock && g.onCourt.length < SPOTS, full = g.onCourt.length >= SPOTS;
+  const passed = new Set(lock ? [] : Queue.passedOver(state.players, g));
+  if (sel && !player(sel.name)) sel = null;
+  const acts = (name, src) => {
+    const p = player(name), seat = seatOf(name);
+    if (!p.present) return btn('undoDone', name, 'Undo');
+    if (src === 'next') return (seat ? '' : btn('done', name, 'Done')) + '<small class="hint">click or drag a waiting player here to swap them in</small>';
+    if (seat) return (lock ? '' : btn('sitOut', name, 'Sit out') + btn('remove', name, 'Remove')) + '<small class="hint">drag onto the other team to switch</small>';
+    return (open ? btn('pick', name, 'Pick', { cls: 's' }) : '') + btn('done', name, 'Done')
+      + (g.onCourt.length ? `<small class="hint">or click someone on court${full ? ' or up next' : ''} to swap in</small>` : '');
   };
-  const group = (label, names, cls = '', mark = '') => names.length
-    ? `<div class="qgrp"><p class="grp">${mark}${esc(label)}</p><div class="qnodes">${names.map(n => node(n, cls)).join('')}</div></div>` : '';
-  const col = (cls, label, body, empty) => `<div class="qcol ${cls}"><p class="col">${label}</p>${body || `<p class="empty">${empty}</p>`}</div>`;
+  const node = (name, src, cls = '') => {
+    const p = player(name), on = !!seatOf(name), picked = sel?.name === name && sel.src === src;
+    const notes = [plural(p.games, 'game')];
+    if (!on && p.present) notes.push(`${Math.floor((now - p.readyAt) / 60000)} min`); // on court: not waiting
+    if (g.satOut.includes(name)) notes.push('sitting out');
+    if (passed.has(name)) notes.push('passed over');
+    return `<div class="qn${cls}${picked ? ' picked' : ''}" data-p="${esc(name)}" data-src="${src}"${p.present ? ' draggable="true"' : ''}
+      tabindex="0" role="button" aria-pressed="${picked}" title="${esc(name)}"><b>${esc(shortName(name))}</b><small>${notes.join(' · ')}</small>${
+      picked ? `<span class="qacts">${acts(name, src)}</span>` : ''}</div>`;
+  };
+  const group = (label, names, src, cls = '', mark = '', zone = '') => names.length || zone
+    ? `<div class="qgrp"${zone ? ` data-zone="${zone}"` : ''}><p class="grp">${mark}${esc(label)}</p>${names.length
+      ? `<div class="qnodes">${names.map(n => node(n, src, cls)).join('')}</div>` : '<p class="zone">Drag players here</p>'}</div>` : '';
+  const col = (cls, head, body, empty, zone = '') => `<div class="qcol ${cls}"${zone ? ` data-zone="${zone}"` : ''}>
+      <div class="colhead">${head}</div>${body || `<p class="empty">${empty}</p>`}</div>`;
   const arrow = '<span class="qarrow" aria-hidden="true">&rarr;</span>';
+  const teamLabel = (t, n) => `${g[t + 'Name']} · ${n} of ${TEAM_SIZE}`;
 
   const team = t => g.onCourt.filter(c => c.team === t).map(c => c.name);
-  const court = group(g.homeName, team('home'), 'on home', mk('home')) + group(g.awayName, team('away'), 'on away', mk('away'))
-    + group('No team yet', team(null), 'on none');
+  const court = ['home', 'away'].map(t => group(teamLabel(t, team(t).length), team(t), 'court', ` on ${t}`, mk(t), t)).join('');
+  const fill = open && Queue.nextInLine(state.players, g, SPOTS).length ? btn('fill', '', 'Fill open spots', { cls: 's' }) : '';
 
-  // Before the game fills: who Fill calls now. Once it is full: who the following game will call.
-  const next = upNext(now);
-  const nextSet = new Set(next);
+  // Up next: who Fill calls now (open spots), or the next game's lineup in teams (court full).
+  const lineup = full ? nextLineup(now) : [];
+  const nextNames = full ? lineup.map(x => x.name) : Queue.nextInLine(state.players, g, SPOTS).map(p => p.name);
+  const upnext = full
+    ? ['home', 'away'].map(t => { const names = lineup.filter(x => x.team === t).map(x => x.name);
+      return group(teamLabel(t, names.length), names, 'next', ` nx ${t}`, mk(t), 'next-' + t); }).join('')
+    : group(plural(nextNames.length, 'player'), nextNames, 'wait');
+  const nextSet = new Set(nextNames);
   const tiers = new Map();
   for (const p of order) if (!nextSet.has(p.name)) tiers.set(p.games, [...(tiers.get(p.games) ?? []), p.name]);
-  const waiting = [...tiers].sort((a, b) => a[0] - b[0]).map(([n, names]) => group(plural(n, 'game'), names)).join('');
+  const waiting = [...tiers].sort((a, b) => a[0] - b[0]).map(([n, names]) => group(plural(n, 'game'), names, 'wait')).join('')
+    + group('Done for the night', state.players.filter(p => !p.present).map(p => p.name), 'done', ' out');
 
-  $('qmap').innerHTML = col('court', `On court · Game ${g.number}`, court, 'Nobody called yet.') + arrow
-    + col('next', open ? 'Up next · fills open spots' : 'Up next · next game', group(plural(next.length, 'player'), next), 'Nobody to call.') + arrow
-    + col('wait', 'Waiting', waiting, 'Nobody waiting.');
+  $('qmap').innerHTML = col('court', `<p class="col">On court · Game ${g.number}</p>${fill}`, court, '') + arrow
+    + col('next', `<p class="col">${full ? `Up next · Game ${g.number + 1}` : 'Up next · fills open spots'}</p>`, upnext, 'Nobody to call.', full ? '' : 'line') + arrow
+    + col('wait', `<p class="col">Waiting</p>${btn('fullscreen', '', 'Full screen', { arg: 'qmap' })}`, waiting, 'Nobody waiting.', 'line');
 }
 
-// Substitutions on the diagram. Native drag and drop, plus click-then-click (or Enter) for touch
-// and keyboard: subPick is the waiting player chosen first.
-let subPick = null;
 const qmap = $('qmap');
 // Drag events can target the text inside a box (Firefox), so look up from its element.
-const hit = (e, sel) => (e.target.nodeType === 1 ? e.target : e.target.parentElement)?.closest(sel);
-const doSub = (outName, inName) => { if (actions.sub(outName, inName) !== false) commit(); else renderQueue(); };
+const hit = (e, s) => (e.target.nodeType === 1 ? e.target : e.target.parentElement)?.closest(s);
+const run = fn => { fn(); commit(); };
+const teamIn = (src, name) => (src === 'court' ? seatOf(name)?.team : nextLineup(Date.now()).find(x => x.name === name)?.team);
+// Two boxes, one after the other (drag one onto the other, or click both): sub, replace or swap.
+// Returns false when the pair means nothing, so a drop can fall back to the area underneath.
+function pair(a, aSrc, b, bSrc) {
+  if (a === b || !player(a)?.present || !player(b)?.present) return false;
+  const waits = src => src === 'wait';
+  if (waits(aSrc) !== waits(bSrc)) { // a waiting player and someone on court or in the lineup
+    const [w, other, oSrc] = waits(aSrc) ? [a, b, bSrc] : [b, a, aSrc];
+    if (oSrc === 'court' && !seatOf(w)) return run(() => actions.sub(other, w));
+    if (oSrc === 'next' && !nextLineup(Date.now()).some(x => x.name === w)) return planSwap(other, w);
+    return false;
+  }
+  if (aSrc !== bSrc || waits(aSrc)) return false;
+  const ta = teamIn(aSrc, a), tb = teamIn(bSrc, b);
+  if (!ta || !tb || ta === tb) return false;
+  if (aSrc === 'court') return run(() => { [seatOf(a).team, seatOf(b).team] = [tb, ta]; }); // swap sides
+  return planTeams(a, b);
+}
+// Drop a player (from box src) on a box or an area of the diagram.
+function dropOn(name, src, t) {
+  if (!player(name)?.present) return;
+  if (t.dataset.p && pair(name, src, t.dataset.p, t.dataset.src) !== false) return;
+  const zone = (t.dataset.p ? t.closest('[data-zone]') : t)?.dataset.zone;
+  if (!zone) return;
+  if (zone.startsWith('next-')) { if (src === 'next') planMove(name, zone.slice(5)); return; } // lineup: switch team
+  const seat = seatOf(name);
+  if (zone === 'line') { if (seat && src === 'court' && actions.remove(name) !== false) commit(); return; } // back in line
+  if (src === 'next') return; // lineup players reach the court when the game ends
+  if (seat?.team !== zone && teamFull(zone)) return;
+  if (!seat) { if (actions.pick(name) === false || !seatOf(name)) return; } // onto a team: call them
+  run(() => { seatOf(name).team = zone; });
+}
 qmap.addEventListener('dragstart', e => {
-  const n = hit(e, '[data-sub]');
-  if (n) { e.dataTransfer.setData('text/plain', n.dataset.sub); e.dataTransfer.effectAllowed = 'move'; }
+  const n = hit(e, '[data-p][draggable="true"]');
+  if (n) { e.dataTransfer.setData('text/plain', `${n.dataset.src}:${n.dataset.p}`); e.dataTransfer.effectAllowed = 'move'; }
 });
 qmap.addEventListener('dragover', e => {
-  const t = hit(e, '[data-seat]');
+  const t = hit(e, '[data-src="court"],[data-src="next"]') || hit(e, '[data-zone]');
   if (!t) return;
   e.preventDefault();
   qmap.querySelectorAll('.drop').forEach(x => x !== t && x.classList.remove('drop'));
   t.classList.add('drop');
 });
-qmap.addEventListener('dragleave', e => hit(e, '[data-seat]')?.classList.remove('drop'));
+qmap.addEventListener('dragleave', e => { if (!qmap.contains(e.relatedTarget)) qmap.querySelectorAll('.drop').forEach(x => x.classList.remove('drop')); });
 qmap.addEventListener('drop', e => {
-  const t = hit(e, '[data-seat]'), name = e.dataTransfer.getData('text/plain');
-  if (!t || !name) return;
+  const t = hit(e, '[data-p]') || hit(e, '[data-zone]'), data = e.dataTransfer.getData('text/plain');
+  qmap.querySelectorAll('.drop').forEach(x => x.classList.remove('drop'));
+  if (!t || !data.includes(':')) return;
   e.preventDefault();
-  t.classList.remove('drop');
-  doSub(t.dataset.seat, name);
+  const i = data.indexOf(':');
+  sel = null;
+  dropOn(data.slice(i + 1), data.slice(0, i), t);
 });
 qmap.addEventListener('click', e => {
-  const pick = hit(e, '[data-sub]'), seat = hit(e, '[data-seat]');
-  if (pick) { subPick = subPick === pick.dataset.sub ? null : pick.dataset.sub; renderQueue(); qmap.querySelector(`[data-sub="${CSS.escape(pick.dataset.sub)}"]`)?.focus(); }
-  else if (seat && subPick) doSub(seat.dataset.seat, subPick);
+  if (hit(e, '[data-action]')) return; // a box's own button: the document handler runs it
+  const box = hit(e, '[data-p]');
+  if (box) choose(box.dataset.p, box.dataset.src);
+  else if (sel) { sel = null; renderQueue(); } // a click on empty space clears
 });
+// Select a box; with one already selected, pair the two (see pair).
+function choose(name, src) {
+  if (sel && pair(sel.name, sel.src, name, src) !== false) { sel = null; return renderQueue(); }
+  sel = sel?.name === name && sel.src === src ? null : { name, src };
+  renderQueue();
+  qmap.querySelector(`[data-p="${CSS.escape(name)}"][data-src="${src}"]`)?.focus();
+}
 qmap.addEventListener('keydown', e => {
-  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-sub],[data-seat]')) { e.preventDefault(); e.target.click(); }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-p]')) { e.preventDefault(); e.target.click(); }
+  else if (e.key === 'Escape' && sel) { sel = null; renderQueue(); }
 });
 
 // Check in list: each column fills down to the bottom of the screen, then the next one starts.
@@ -578,9 +627,6 @@ function fitRoster() {
 window.addEventListener('resize', fitRoster);
 
 const tag = name => (avgText(name) ? ` · ${avgText(name)}` : '');
-// A labeled group of player boxes (Check in and Queue); nothing when there are no boxes.
-const boxGroup = (label, boxes, cls = '', mark = '') => (boxes.length
-  ? `<div class="qgrp ${cls}"><p class="grp">${mark}${esc(label)}</p><div class="qnodes">${boxes.join('')}</div></div>` : '');
 // Team marker for labels: a filled square for Home, an outlined one for Away.
 const mk = team => `<i class="mk ${team}" aria-hidden="true"></i>`;
 

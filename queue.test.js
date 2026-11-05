@@ -108,6 +108,11 @@ assert.equal(Queue.leaderboard(lbPlayers, 'perGame', 2).find(r => r.player.name 
   assert.equal(homeScore(), 6);
   const names = Queue.played(g).map(c => c.name);
   assert.equal(new Set(names).size, names.length);
+  // A sub made by mistake and swapped straight back (the sub scored nothing) leaves no trace.
+  Queue.sub(g, 'D', 'A', true);
+  Queue.sub(g, 'A', 'D', true);
+  assert.deepEqual(g.subbedOut.map(c => c.name), ['C']);
+  assert.equal(called(g), 'KLBDEFGHIJ');
   // The game counts for C (subbed off) and for B, L (subbed on), not for A (swapped out before play).
   Queue.endGame(subs, g, 500);
   assert.deepEqual(subs.filter(p => p.games).map(p => p.name).join(''), 'BCDEFGHIJKL');

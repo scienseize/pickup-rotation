@@ -61,16 +61,18 @@ const Queue = {
   // Substitution: inName takes outName's seat and team. Once play has started (keep), the player
   // coming off goes to game.subbedOut with their points, so the team score holds and the game
   // counts for them too; before that it is a plain swap. Someone coming back on gets their points
-  // back, so each player stays one row in the results.
+  // back, so each player stays one row in the results. A sub who comes back off without scoring
+  // is treated as an undo (a sub made by mistake): they leave no row and the game doesn't count.
   // ponytail: a player coming back for the other team brings their points along; split per team if that ever happens
+  // ponytail: a sub who played a while and scored nothing also leaves no row; track minutes if that matters
   sub(game, outName, inName, keep) {
     const seat = game.onCourt.find(c => c.name === outName);
     if (!seat || game.onCourt.some(c => c.name === inName)) return;
     const off = (game.subbedOut ??= []);
     const back = off.findIndex(c => c.name === inName);
     const points = back < 0 ? 0 : off.splice(back, 1)[0].points;
-    if (keep) off.push({ ...seat });
-    Object.assign(seat, { name: inName, points });
+    if (keep && !(seat.sub && !seat.points)) off.push({ name: seat.name, team: seat.team, points: seat.points });
+    Object.assign(seat, { name: inName, points, sub: true });
     game.satOut = game.satOut.filter(n => n !== inName);
   },
 

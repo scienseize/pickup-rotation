@@ -49,11 +49,14 @@ for (const file of ['public/names.js', 'public/queue.js', 'public/app.js']) {
 }
 const run = code => vm.runInContext(code, context);
 
-// The first render ran with no errors; the diagram marks who can be dragged and where to.
+// The first render ran with no errors. The Queue tab is the diagram: every box is selectable and
+// draggable, and it holds its own Full screen button.
 let map = els.qmap.innerHTML;
-assert.match(map, /data-seat="Player A"/);
-assert.match(map, /draggable="true" tabindex="0" role="button" data-sub="Player K"/);
-assert.doesNotMatch(map, /data-sub="Player A"/); // on court: a drop target, not draggable
+assert.match(map, /class="qn on home" data-p="Player A" data-src="court" draggable="true"/);
+assert.match(map, /class="qn nx (home|away)" data-p="Player K" data-src="next" draggable="true"/); // court full: K is in the next lineup
+assert.match(map, /data-action="fullscreen"/);
+assert.doesNotMatch(map, /data-action="fill"/); // the court is full
+assert.match(map, /data-zone="line"/);
 
 // Check in: one list, grouped by status (on court, here, to arrive, done), then A to Z, with
 // each status's own look and button.
@@ -75,25 +78,79 @@ assert.ok(!run(`Queue.waitingOrder(state.players, state.game).some(p => p.name =
 run(`actions.undoDone('Player K'); actions.undoDone('Player L'); commit();`);
 assert.equal(run(`Queue.waitingOrder(state.players, state.game).length`), 2);
 
-// Sub K in for A (who has 6 points) mid-game: the score holds, A is waiting again.
-run(`if (actions.sub('Player A', 'Player K') !== false) commit();`);
-assert.equal(els.homeScore.textContent, 6);
+// The queue's actions never ask to confirm.
+context.confirm = () => { throw new Error('the queue asked to confirm'); };
+const zone = z => ({ dataset: { zone: z }, closest: () => null });
+const onto = (name, src) => ({ dataset: { p: name, src }, closest: () => null });
+const court = () => run(`state.game.onCourt.map(c => c.name).join()`);
+
+// The court is full, so Up next is game 2's lineup in its own Home and Away: K and L (no games
+// yet) plus the 8 on court with the fewest games, 5 and 5.
+const lineup = () => run(`nextLineup(Date.now()).map(x => x.name + ':' + x.team).join()`);
+assert.equal(run(`nextLineup(Date.now()).filter(x => x.team === 'home').length`), 5);
+assert.match(lineup(), /Player K:/);
+// Select K in the lineup, then click A on court: no pairing (a lineup player isn't waiting).
+run(`choose('Player K', 'next')`);
+assert.match(els.qmap.innerHTML, /class="qn nx \w+ picked" data-p="Player K" data-src="next"/);
+run(`choose('Player K', 'next')`); // clears
+
+// Mid-game sub, by clicks, with M: a late arrival with more games, so only waiting.
+run(`state.players.push({ name: 'Player M', games: 3, readyAt: Date.now(), present: true, totalPoints: 0 }); render();`);
+assert.match(els.qmap.innerHTML, /data-p="Player M" data-src="wait"/);
+run(`choose('Player M', 'wait')`);
 map = els.qmap.innerHTML;
-assert.match(map, /data-seat="Player K"/);
-assert.match(map, /data-sub="Player A"/);
+assert.match(map, /class="qn picked" data-p="Player M" data-src="wait"[\s\S]*?data-action="done" data-name="Player M"/);
+assert.doesNotMatch(map, /data-action="pick"/); // no Pick while the game is on
+run(`choose('Player A', 'court')`); // M subs in for A, who has 6 points; the score holds
+assert.equal(run('sel'), null);
+assert.equal(els.homeScore.textContent, 6);
+assert.ok(court().startsWith('Player M,'));
 assert.equal(JSON.parse(storage.get('pickup-rotation-v1')).game.subbedOut[0].name, 'Player A');
+// A mistaken sub, swapped straight back: A returns with their points; M leaves no trace.
+run(`choose('Player A', 'wait'); choose('Player M', 'court');`);
+assert.ok(court().startsWith('Player A,'));
+assert.deepEqual(run(`state.game.subbedOut`), []);
 
-// Click, then click: L is picked first, then dropped on B.
-run(`subPick = 'Player L'; renderQueue();`);
-assert.match(els.qmap.innerHTML, /picked" draggable/);
-run(`doSub('Player B', subPick);`);
-assert.equal(run('subPick'), null);
+// Replace someone in the lineup with a waiting player (drag M onto them), and switch a lineup
+// player's team by dragging them onto someone on the other team.
+const homeNext = run(`nextLineup(Date.now()).find(x => x.team === 'home').name`);
+const awayNext = run(`nextLineup(Date.now()).find(x => x.team === 'away').name`);
+context.dropOn = run('dropOn');
+context.dropOn('Player M', 'wait', onto(homeNext, 'next'));
+assert.ok(lineup().includes('Player M:home') && !lineup().includes(homeNext + ':'));
+context.dropOn('Player M', 'next', onto(awayNext, 'next'));
+assert.ok(lineup().includes('Player M:away') && lineup().includes(awayNext + ':home'));
+const planned = lineup();
 
-// End the game: everyone who played gets a result row, A's 6 points included.
+// End the game: everyone who played gets a result row, A's 6 points included, and Up next takes
+// the court in its teams.
+context.confirm = () => true;
 run(`actions.endGame(); commit();`);
 const sent = JSON.parse(storage.get('pickup-rotation-v1')).unsynced[0].rows;
-assert.equal(sent.length, 12);
+assert.equal(sent.length, 10);
 assert.equal(sent.find(r => r.name === 'Player A').points, 6);
-assert.deepEqual(run('state.game.subbedOut'), []);
+assert.equal(run(`state.game.onCourt.map(c => c.name + ':' + c.team).join()`), planned);
+assert.doesNotMatch(els.qmap.innerHTML, /data-action="fill"/); // already full
+
+// Game 2, before play: a selected court player has Sit out and Remove, and no team buttons.
+context.confirm = () => { throw new Error('the queue asked to confirm'); };
+const [first] = run(`state.game.onCourt.map(c => c.name)`);
+run(`choose(${JSON.stringify(first)}, 'court')`);
+map = els.qmap.innerHTML;
+for (const a of ['sitOut', 'remove']) assert.match(map, new RegExp(`data-action="${a}" data-name="${first}"`));
+assert.doesNotMatch(map, /data-action="team"/);
+// Both teams full: dragging a Home player onto an Away player swaps the two.
+const firstTeam = run(`seatOf(${JSON.stringify(first)}).team`);
+const rival = run(`state.game.onCourt.find(c => c.team !== ${JSON.stringify(firstTeam)}).name`);
+context.dropOn(first, 'court', onto(rival, 'court'));
+assert.notEqual(run(`seatOf(${JSON.stringify(first)}).team`), firstTeam);
+assert.equal(run(`seatOf(${JSON.stringify(rival)}).team`), firstTeam);
+// Back to the line undoes the call; then Fill is back, and onto Away calls them again, on Away.
+context.dropOn(first, 'court', zone('line'));
+assert.equal(run(`seatOf(${JSON.stringify(first)})`), undefined);
+assert.match(els.qmap.innerHTML, /data-action="fill"/);
+const awaySide = run(`['home', 'away'].find(t => !teamFull(t))`);
+context.dropOn(first, 'wait', zone(awaySide));
+assert.equal(run(`seatOf(${JSON.stringify(first)}).team`), awaySide);
 
 console.log('app.test.js: all checks passed');
