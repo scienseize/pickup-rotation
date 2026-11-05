@@ -153,4 +153,13 @@ const awaySide = run(`['home', 'away'].find(t => !teamFull(t))`);
 context.dropOn(first, 'wait', zone(awaySide));
 assert.equal(run(`seatOf(${JSON.stringify(first)}).team`), awaySide);
 
+// Switch sides: the board mirrors, saved across a refresh; the teams' scores don't move.
+const score = () => [els.homeScore.textContent, els.awayScore.textContent].join();
+const before = score();
+run(`actions.flip(); commit();`);
+assert.equal(JSON.parse(storage.get('pickup-rotation-v1')).flipped, true);
+assert.equal(score(), before);
+run(`actions.flip(); commit();`);
+assert.equal(JSON.parse(storage.get('pickup-rotation-v1')).flipped, false);
+
 console.log('app.test.js: all checks passed');

@@ -249,6 +249,11 @@ td.empty{color:var(--mu)}
 #board:fullscreen .hint:empty,#board:fullscreen .clockt .tip{display:none}
 @media (min-width:901px){#board:fullscreen .scorebar{grid-template-columns:1fr 1.25fr 1fr}}
 .scorebar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto) minmax(0,1fr);gap:16px;align-items:stretch}
+/* Switch sides: the teams trade places on the board, score cards and player lists alike, for when
+   they change ends. Only the view changes; scores and players stay with their team. */
+#board.flip .t-home{order:3}
+#board.flip .t-away{order:1}
+@media (min-width:901px){#board.flip .clockt{order:2}}
 .team{text-align:center;align-items:center}
 .tname{width:100%;text-align:center;font-family:var(--serif);font-size:28px;line-height:1.1;color:var(--ink);background:transparent;border:1px solid transparent;border-radius:8px;padding:4px 8px}
 .tname:focus{border-color:var(--faint);outline:none}
@@ -543,6 +548,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
           <button class="btn inv o" data-action="resetClock">Reset clock</button>
           <button class="btn inv o" data-action="endGame">End game</button>
           <button class="btn inv o" data-action="fullscreen">Full screen</button>
+          <button class="btn inv o" data-action="flip" id="flipBtn" title="Show each team on the other side, for when they change ends">Switch sides</button>
         </div>
         <p class="tip">Space starts and pauses the clock.</p>
       </div>

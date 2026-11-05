@@ -334,6 +334,8 @@ const actions = {
   // From the queue diagram: a waiting player in for someone on court. No confirm: swapping back undoes it.
   sub: (outName, inName) => { Queue.sub(state.game, outName, inName, locked()); },
 
+  flip() { state.flipped = !state.flipped; }, // Switch sides: which team shows on the left
+
   fullscreen(_, arg) {
     if (document.fullscreenElement) document.exitFullscreen();
     else $(arg || 'board').requestFullscreen?.();
@@ -714,6 +716,8 @@ function renderBoard() {
       </div>`).join('') || '<p class="empty">No players on this team.</p>';
   }
   $('boardGame').textContent = `Game ${g.number}`;
+  $('board').classList.toggle('flip', !!state.flipped);
+  $('flipBtn').setAttribute('aria-pressed', !!state.flipped);
   $('boardHint').textContent = ready() ? '' : 'On the Queue tab, fill the spots and set each player to a team.';
 }
 

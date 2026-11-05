@@ -354,6 +354,10 @@ so it reads from across the gym. Phones keep a stacked layout.
   hint sit in the clock tile. If the window is very short, only the player
   lists scroll. Narrower windows and phones scroll as usual.
 - Team names are editable inline. The default is Home / Away.
+- **Switch sides** (in the clock tile) mirrors the board for when the teams
+  change ends: each team's score card and player list move to the other side.
+  Only the view changes; scores and players stay with their team. The choice
+  is saved (`state.flipped`) until it is pressed again or a new session starts.
 - **Team colors:** Home is orange and Away is blue, an easy pair for most
   color-blind people too. The colors are two tokens per theme (`--home`,
   `--away`). The score tiles and player cards have a band across the top in
