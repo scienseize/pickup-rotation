@@ -160,7 +160,8 @@ assert.equal(run(`[player('Player A').wins, player('Player A').losses, player('P
 // The leaderboard shows tonight's FG%: B made 1 of 2; A took no shots, so A's cell is blank.
 const lbHtml = els.leaderBoard.innerHTML;
 assert.match(lbHtml, /<th class="r" title="Field goals made \/ attempted tonight">FG%<\/th>/);
-assert.match(lbHtml, /Player B<\/b>[\s\S]*?<td class="r mono fg" title="1 of 2 tonight"><small>1\/2<\/small> 50%<\/td>/);
+// B made 1 of 2: under MIN_FG_SHOTS attempts, so the FG% is greyed out and says why on hover.
+assert.match(lbHtml, /Player B<\/b>[\s\S]*?<td class="r mono fg few" title="1 of 2 tonight, under 5 attempts"><small>1\/2<\/small> 50%<\/td>/);
 assert.match(lbHtml, /Player A<\/b>[\s\S]*?<td class="r mono fg"><\/td>\s*<td class="r mono">1-0<\/td>/); // W-L tonight
 assert.match(lbHtml, /Player F<\/b>[\s\S]*?<td class="r mono">0-1<\/td>/);
 for (const h of ['W-L', 'PPG', 'Win%', 'All-time']) assert.match(lbHtml, new RegExp(`>${h}</th>`));

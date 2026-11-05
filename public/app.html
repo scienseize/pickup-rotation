@@ -193,6 +193,13 @@ td.empty{color:var(--mu)}
 }
 @media (max-width:1099px){.lb.split > .tw + .tw thead{display:none}}
 .lb.noavg .avg{display:none}
+/* FG% from fewer than MIN_FG_SHOTS attempts is greyed out: too few shots to mean much. */
+.lb td.few{opacity:.4}
+.lbctl{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;align-items:center}
+/* Full screen for the TV: the whole tab on the page background, scaled by fitLeaders to fill the
+   screen. Esc leaves; the Full screen button hides while it's on. */
+#leaders:fullscreen{background-color:var(--bg);overflow:hidden;padding:2vh 2vw;justify-content:center}
+#leaders:fullscreen [data-action="fullscreen"]{display:none}
 /* Two tables side by side leave little room for names: drop Games (W-L shows the record) and
    show tonight's FG% as the percentage only (makes and attempts on hover). */
 .lb.split .gm,.lb.split td.fg small{display:none}
@@ -535,7 +542,10 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
     <div class="hero sm">
       <h1>Leaderboard</h1>
       <p class="date" id="leaderIntro"></p>
-      <div class="seg" role="group" aria-label="Rank by" id="leaderMode"></div>
+      <div class="lbctl">
+        <div class="seg" role="group" aria-label="Rank by" id="leaderMode"></div>
+        <button class="btn o s" data-action="fullscreen" data-arg="leaders">Full screen</button>
+      </div>
     </div>
 
     <section>

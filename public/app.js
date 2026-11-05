@@ -7,6 +7,7 @@ const SPOTS = TEAM_SIZE * 2;
 const GAME_MS = GAME_MINUTES * 60000;
 const KEY = 'pickup-rotation-v1';
 const MIN_RANKED_GAMES = 2; // per-game ranking: one lucky game shouldn't top the board
+const MIN_FG_SHOTS = 5; // fewer attempts than this and FG% is greyed out: 1 of 1 isn't 100% shooting
 
 const $ = id => document.getElementById(id);
 const newGame = number => ({
@@ -447,20 +448,24 @@ function renderQueue() {
   // All-time, from the database: points per game, then FG% once it has shots for the player and
   // Win% once it has results (games from before each was tracked don't count). "New" for a first-timer.
   const allTime = name => {
-    const pr = profileOf(name), cell = v => `<td class="r mono avg hide-sm">${v}</td>`;
+    const pr = profileOf(name), cell = (v, cls = '', title = '') => `<td class="r mono avg hide-sm${cls}"${title}>${v}</td>`;
     if (!pr?.games) return cell('New') + cell('') + cell('');
     const decided = (pr.wins ?? 0) + (pr.losses ?? 0);
-    return cell(pr.avg.toFixed(1)) + cell(pr.fga ? pct(pr.fgm, pr.fga) : '') + cell(decided ? pct(pr.wins, decided) : '');
+    return cell(pr.avg.toFixed(1)) + cell(pr.fga ? pct(pr.fgm, pr.fga) : '', pr.fga ? few(pr.fga) : '', pr.fga ? ` title="${pr.fgm} of ${pr.fga}, every week"` : '')
+      + cell(decided ? pct(pr.wins, decided) : '');
   };
-  // Tonight's FG%: makes over attempts, e.g. "6/10 60%"; blank with no attempts.
+  // Tonight's FG%: makes over attempts, e.g. "6/10 60%"; blank with no attempts, greyed out
+  // under MIN_FG_SHOTS attempts.
   const fg = (p, fgPct) => (fgPct === null ? '' : `<small>${p.fgm}/${p.fga}</small> ${fgPct}%`);
-  const fgTitle = (p, fgPct) => (fgPct === null ? '' : ` title="${p.fgm} of ${p.fga} tonight"`);
+  const few = n => (n < MIN_FG_SHOTS ? ' few' : '');
+  const fgAttrs = (p, fgPct) => (fgPct === null ? '' : `${few(p.fga)}" title="${p.fgm} of ${p.fga} tonight${
+    p.fga < MIN_FG_SHOTS ? `, under ${MIN_FG_SHOTS} attempts` : ''}`);
   // Tonight's record, e.g. "3-1"; ties count for neither.
   const wl = p => (p.wins || p.losses ? `${p.wins ?? 0}-${p.losses ?? 0}` : '');
   const row = ({ player: p, perGame: pg, fgPct, rank }) => `<tr class="${!rank ? 'un' : rank <= 3 ? `top p${rank}` : ''}">
       <td class="n">${rank ?? ''}</td><td class="who"><b title="${esc(p.name)}">${esc(p.name)}</b></td>
       <td class="r mono gm">${p.games}</td><td class="${big(!perGame)}">${p.totalPoints}</td>
-      <td class="${big(perGame)}">${pg === null ? '' : pg.toFixed(1)}</td><td class="r mono fg"${fgTitle(p, fgPct)}>${fg(p, fgPct)}</td>
+      <td class="${big(perGame)}">${pg === null ? '' : pg.toFixed(1)}</td><td class="r mono fg${fgAttrs(p, fgPct)}">${fg(p, fgPct)}</td>
       <td class="r mono">${wl(p)}</td>${allTime(p.name)}</tr>`;
   const table = list => `<div class="tw"><table><thead>
       <tr class="grp"><th colspan="2"></th><th class="gm"></th><th colspan="4"></th><th colspan="3" class="avg hide-sm">All-time</th></tr>
@@ -474,6 +479,7 @@ function renderQueue() {
     : (!played.length ? '<p class="empty">No games played yet.</p>'
       : split ? table(played.slice(0, half)) + table(played.slice(half)) : table(played))
       + (notYet.length ? `<p class="rest">Not played yet: ${notYet.map(r => esc(r.player.name)).join(', ')}</p>` : '');
+  fitLeaders();
 
   renderMap(order, now);
   renderHome();
@@ -650,6 +656,20 @@ qmap.addEventListener('keydown', e => {
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-p]')) { e.preventDefault(); e.target.click(); }
   else if (e.key === 'Escape' && sel) { sel = null; renderQueue(); }
 });
+
+// Leaderboard in full screen: scale the tab (CSS zoom) so it fills the TV, as large as both the
+// width and the height allow. Out of full screen it is the normal page.
+function fitLeaders() {
+  const t = $('leaders'), parts = [...t.children]; // the title block and the table: the panel stays screen-sized
+  const zoom = z => parts.forEach(c => { c.style.zoom = z; });
+  if (document.fullscreenElement !== t) return zoom('');
+  zoom(1);
+  // The content's own size: the table's width, and from the title's top to the table's bottom.
+  const w = $('leaderBoard').offsetWidth, h = $('leaderBoard').getBoundingClientRect().bottom - parts[0].getBoundingClientRect().top;
+  zoom(Math.max(1, Math.min(3, Math.min(innerWidth / w, innerHeight / h) * 0.9)).toFixed(3));
+}
+document.addEventListener('fullscreenchange', fitLeaders);
+window.addEventListener('resize', fitLeaders);
 
 // Check in layout: how many rows a column holds, and which groups stack in one column. Columns
 // hold as many rows as fit between the top of the list and the bottom of the screen; a group that

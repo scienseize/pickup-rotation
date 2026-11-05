@@ -334,12 +334,17 @@ so it reads from across the gym. Phones keep a stacked layout.
   ranking splits into two columns side by side on laptop and TV widths.
   Players who haven't played yet collapse into one "Not played yet" line.
 - **FG%** is tonight's field goal percentage with the makes and attempts
-  ("6/10 60%"), blank for a player with no attempts. **W-L** is tonight's
+  ("6/10 60%"), blank for a player with no attempts. Under 5 attempts
+  (`MIN_FG_SHOTS`) it is greyed out, all-time too, since 1 of 1 isn't 100%
+  shooting; hovering says why. **W-L** is tonight's
   record ("3-1"); ties count for neither. Neither affects the ranking.
 - **All-time** (from the database, under one label): **PPG** (points per game,
   or "New"), **FG%** and **Win%**. FG% and Win% only count games played since
   each was tracked, and stay blank until there are some. The columns are
   hidden when the database isn't loaded, and on phones.
+- **Full screen** (next to the toggle) puts the leaderboard on the TV, scaled
+  to fill the screen (`fitLeaders`, CSS zoom on the title and the table) as
+  large as both the width and the height allow. Esc leaves.
 - **Two tables** (past 12 players) drop the Games column (W-L shows the record)
   and show tonight's FG% as the percentage only, with makes and attempts on
   hover, so names stay readable. About 26 players fit on one screen from
