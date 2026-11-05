@@ -324,35 +324,36 @@ so it reads from across the gym. Phones keep a stacked layout.
 
 ### Leaderboard tab
 
-- Tonight's name, games played, total points and points per game, plus each
-  player's all-time average from the database. Rows are numbered, and ties
-  share a rank.
+A toggle switches between two views. The ranking lives in `Queue.leaderboard`,
+rows are numbered, and ties share a rank (1, 2, 2, 4).
+
+- **Tonight** (this session), ranked by points. Columns: Games, **Points**
+  (the big number), Per game, FG%, W-L. Players who haven't played yet
+  collapse into one "Not played yet" line.
+- **All-time** (every week in the database), ranked by points per game for
+  players with at least 3 games (`MIN_ALLTIME_GAMES`); players with fewer are
+  listed after, unranked. Columns: Games, **PPG** (the big number), Points,
+  FG%, W-L, Win%. FG% and wins only count games played since each was tracked.
+  It needs the database; without it the view says so.
+- **FG%** shows makes, attempts and the percentage ("6/10 60%"), blank with no
+  attempts. Under 5 attempts (`MIN_FG_SHOTS`) it is greyed out, since 1 of 1
+  isn't 100% shooting; hovering says why. **W-L** is the record ("3-1"); ties
+  count for neither. Neither affects the ranking.
 - **Podium:** ranks 1 to 3 (ties included) are larger, and the leader sits on
   a subtle tile. No team colors here, because players change teams between
   games.
-- **One screen for about 30 players:** compact rows, and past 12 players the
-  ranking splits into two columns side by side on laptop and TV widths.
-  Players who haven't played yet collapse into one "Not played yet" line.
-- **FG%** is tonight's field goal percentage with the makes and attempts
-  ("6/10 60%"), blank for a player with no attempts. Under 5 attempts
-  (`MIN_FG_SHOTS`) it is greyed out, all-time too, since 1 of 1 isn't 100%
-  shooting; hovering says why. **W-L** is tonight's
-  record ("3-1"); ties count for neither. Neither affects the ranking.
-- **All-time** (from the database, under one label): **PPG** (points per game,
-  or "New"), **FG%** and **Win%**. FG% and Win% only count games played since
-  each was tracked, and stay blank until there are some. The columns are
-  hidden when the database isn't loaded, and on phones.
+- **Fits the screen:** up to 12 players is one table. Past that the list
+  splits into tables side by side, as many as it takes for the rows to fit
+  between the top of the list and the bottom of the screen (`leaderTables`):
+  two, or three on pages at least 1200 px wide. With three, Games and the
+  secondary column (Per game tonight; Points and W-L all-time) drop out, FG%
+  shows the percentage only, and rows tighten, so names stay readable. 40
+  players fit on one screen from 1280x720 up. Below 1100 px the tables stack
+  and the page scrolls; phones also drop those columns.
 - **Full screen** (next to the toggle) puts the leaderboard on the TV, scaled
-  to fill the screen (`fitLeaders`, CSS zoom on the title and the table) as
-  large as both the width and the height allow. Esc leaves.
-- **Two tables** (past 12 players) drop the Games column (W-L shows the record)
-  and show tonight's FG% as the percentage only, with makes and attempts on
-  hover, so names stay readable. About 26 players fit on one screen from
-  1280x720 up.
-- A toggle ranks by *Total points* (everyone who has played) or *Per game*.
-  Per game only ranks players with at least 2 games (`MIN_RANKED_GAMES`), so
-  one lucky game can't top the board. The rest are listed after them with no
-  number. The ranking lives in `Queue.leaderboard`.
+  (`fitLeaders`, CSS zoom on the title and the tables) as large as both the
+  width and the height allow, or smaller when a big night would not fit, so
+  nothing is cut off. Esc leaves.
 
 ### Scoreboard view (for the court; full screen)
 

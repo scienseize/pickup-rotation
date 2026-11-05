@@ -164,7 +164,29 @@ assert.match(lbHtml, /<th class="r" title="Field goals made \/ attempted tonight
 assert.match(lbHtml, /Player B<\/b>[\s\S]*?<td class="r mono fg few" title="1 of 2 tonight, under 5 attempts"><small>1\/2<\/small> 50%<\/td>/);
 assert.match(lbHtml, /Player A<\/b>[\s\S]*?<td class="r mono fg"><\/td>\s*<td class="r mono">1-0<\/td>/); // W-L tonight
 assert.match(lbHtml, /Player F<\/b>[\s\S]*?<td class="r mono">0-1<\/td>/);
-for (const h of ['W-L', 'PPG', 'Win%', 'All-time']) assert.match(lbHtml, new RegExp(`>${h}</th>`));
+assert.match(lbHtml, />W-L<\/th>/);
+assert.doesNotMatch(lbHtml, />PPG<\/th>|>Win%<\/th>/); // all-time numbers have their own view now
+// The toggle is Tonight / All-time (no Per game).
+assert.match(els.leaderMode.innerHTML, /data-arg="tonight" aria-pressed="true">Tonight<[\s\S]*data-arg="alltime" aria-pressed="false">All-time</);
+assert.doesNotMatch(els.leaderMode.innerHTML, /perGame/);
+
+// All-time: everyone in the database with a game, ranked by points per game with at least
+// MIN_ALLTIME_GAMES games; fewer are listed after, unranked. Columns: PPG, Points, FG%, W-L, Win%.
+run(`actions.leaderMode('', 'alltime')`);
+assert.match(els.leaderBoard.innerHTML, /need the database/); // nothing loaded yet in this test
+run(`profiles = new Map([
+  ['ana', { name: 'Ana', games: 4, points: 40, avg: 10, fgm: 15, fga: 30, wins: 3, losses: 1 }],
+  ['ben', { name: 'Ben', games: 3, points: 36, avg: 12, fgm: 2, fga: 4, wins: 0, losses: 0 }],
+  ['cy', { name: 'Cy', games: 1, points: 20, avg: 20, fgm: 0, fga: 0, wins: 1, losses: 0 }],
+  ['dee', { name: 'Dee', games: 0, points: 0, avg: null, fgm: 0, fga: 0, wins: 0, losses: 0 }],
+]); renderLeaders();`);
+const allHtml = els.leaderBoard.innerHTML;
+const allRows = [...allHtml.matchAll(/<td class="n">(\d*)<\/td><td class="who"><b title="([^"]+)"/g)].map(m => `${m[1] || '-'}${m[2]}`);
+assert.deepEqual(allRows, ['1Ben', '2Ana', '-Cy']); // Cy has 1 game: listed, not ranked; Dee never played
+assert.match(allHtml, /Ana<\/b><\/td><td class="r mono gm">4<\/td><td class="r pts">10\.0<\/td><td class="r mono sub">40<\/td><td class="r mono fg" title="15 of 30 every week"><small>15\/30<\/small> 50%<\/td><td class="r mono sub">3-1<\/td><td class="r mono">75%<\/td>/);
+assert.match(allHtml, /Ben<\/b>[\s\S]*?<td class="r mono fg few"/); // 2 of 4: too few attempts
+for (const h of ['PPG', 'Points', 'FG%', 'W-L', 'Win%']) assert.match(allHtml, new RegExp(`>${h}</th>`));
+run(`actions.leaderMode('', 'tonight')`);
 assert.equal(run(`state.game.onCourt.map(c => c.name + ':' + c.team).join()`), planned);
 assert.doesNotMatch(els.qmap.innerHTML, /data-action="fill"/); // already full
 

@@ -188,11 +188,10 @@ td.empty{color:var(--mu)}
 .lb tr.p1 td:first-child{border-radius:10px 0 0 10px;padding-left:12px}
 .lb tr.p1 td:last-child{border-radius:0 10px 10px 0;padding-right:12px}
 @media (min-width:1100px){
-  .lb.split{grid-template-columns:repeat(2,minmax(0,1fr));max-width:1280px}
+  .lb.split{grid-template-columns:repeat(var(--k,2),minmax(0,1fr));max-width:1400px}
   .lb.split th.r,.lb.split td.r{padding-left:10px}
 }
 @media (max-width:1099px){.lb.split > .tw + .tw thead{display:none}}
-.lb.noavg .avg{display:none}
 /* FG% from fewer than MIN_FG_SHOTS attempts is greyed out: too few shots to mean much. */
 .lb td.few{opacity:.4}
 .lbctl{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;align-items:center}
@@ -200,14 +199,18 @@ td.empty{color:var(--mu)}
    screen. Esc leaves; the Full screen button hides while it's on. */
 #leaders:fullscreen{background-color:var(--bg);overflow:hidden;padding:2vh 2vw;justify-content:center}
 #leaders:fullscreen [data-action="fullscreen"]{display:none}
-/* Two tables side by side leave little room for names: drop Games (W-L shows the record) and
-   show tonight's FG% as the percentage only (makes and attempts on hover). */
-.lb.split .gm,.lb.split td.fg small{display:none}
+/* Three tables side by side (a big night) leave little room for names: drop Games and the
+   secondary column (.sub: Per game tonight; Points and W-L all-time), show FG% as the percentage
+   only (makes and attempts on hover), and tighten the rows a little. Phones do the same, since
+   their one narrow column has no room either. */
+@media (min-width:1100px){
+  .lb.split3 :is(.gm,.sub),.lb.split3 td.fg small{display:none}
+  .lb.split3 :is(th,td){padding-block:2px}
+  .lb.split3 tr.top td{padding-block:4px}
+  .lb.split3 > .rest{margin-top:4px}
+}
+@media (max-width:600px){.lb :is(.gm,.sub),.lb td.fg small{display:none}}
 .lb td.fg small{display:inline;font-size:.85em;color:var(--mu);margin-right:2px}
-/* "All-time" labels the last three columns (the database's numbers), with a rule under it. */
-.lb tr.grp th{padding-block:0;border-bottom:0;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;text-align:center}
-.lb tr.grp th.avg{border-bottom:1px solid var(--line);padding-left:14px}
-.lb.noavg tr.p1 td:nth-last-child(4){border-radius:0 10px 10px 0;padding-right:12px}
 .lb > :is(.rest,.empty){grid-column:1 / -1}
 .lb > .rest{color:var(--mu);font-size:15px;margin-top:12px}
 .lb > .empty{color:var(--mu)}
@@ -459,7 +462,6 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
   .qmap{padding:16px}
   .lb th.r,.lb td.r{padding-left:10px}
   .lb th,.lb td{padding-right:8px}
-  .lb tr.p1 td:nth-last-child(4){border-radius:0 10px 10px 0;padding-right:12px}
   .hero{padding-block:40px 40px}
   .c{padding:22px 20px}
   .hide-sm{display:none}

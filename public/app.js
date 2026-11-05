@@ -8,6 +8,7 @@ const GAME_MS = GAME_MINUTES * 60000;
 const KEY = 'pickup-rotation-v1';
 const MIN_RANKED_GAMES = 2; // per-game ranking: one lucky game shouldn't top the board
 const MIN_FG_SHOTS = 5; // fewer attempts than this and FG% is greyed out: 1 of 1 isn't 100% shooting
+const MIN_ALLTIME_GAMES = 3; // the all-time leaderboard ranks players with at least this many games
 
 const $ = id => document.getElementById(id);
 const newGame = number => ({
@@ -23,7 +24,7 @@ const PASS_KEY = 'pickup-passcode', PROFILES_KEY = 'pickup-profiles';
 const stored = key => { try { return localStorage.getItem(key); } catch { return null; } };
 // lowercase name -> { name, games, points, avg }; the last copy is kept so profiles still show offline
 let profiles = new Map((JSON.parse(stored(PROFILES_KEY)) || []).map(p => [p.name.toLowerCase(), p]));
-let leaderMode = 'total'; // 'total' | 'perGame', the leaderboard toggle
+let leaderMode = 'tonight'; // 'tonight' | 'alltime', the leaderboard toggle
 let db = 'connecting'; // 'online' | 'offline' | 'locked' (needs the organizer passcode)
 
 function load() {
@@ -111,6 +112,7 @@ function show(name) {
   island.querySelector('[aria-selected="true"]').scrollIntoView({ block: 'nearest', inline: 'nearest' });
   if (changed) window.scrollTo(0, 0);
   if (name === 'checkin') renderTonight();
+  if (name === 'leaders') renderLeaders();
 }
 const route = () => show(decodeURIComponent(location.hash.slice(1)));
 function go(name) { try { history.replaceState(null, '', '#' + name); } catch {} show(name); }
@@ -278,7 +280,7 @@ const actions = {
   remove(name) { if (locked()) return false; Queue.remove(state.game, name); },
   done: name => { player(name).present = false; }, // no confirm: Undo puts them back
   undoDone: name => { player(name).present = true; },
-  leaderMode(_, mode) { leaderMode = mode; keepFocus(renderQueue); return false; }, // a view choice, not saved
+  leaderMode(_, mode) { leaderMode = mode; keepFocus(renderLeaders); return false; }, // a view choice, not saved
   checkIn: name => { checkIn(name); return false; },
   removeName: name => { state.expected = state.expected.filter(n => n !== name); },
   choose: (name, query) => { needsChoice = needsChoice.filter(c => c.query !== query); addToList(name); saveList(); },
@@ -433,53 +435,7 @@ function renderQueue() {
   const order = Queue.waitingOrder(state.players, state.game);
   const now = Date.now();
 
-  // The ranked figure is the big one; per game needs MIN_RANKED_GAMES to get a rank.
-  const perGame = leaderMode === 'perGame';
-  $('leaderIntro').textContent = perGame
-    ? `Ranked by tonight's points per game, ${MIN_RANKED_GAMES} games minimum. All-time covers every week.`
-    : 'Ranked by tonight\'s points. All-time covers every week.';
-  $('leaderMode').innerHTML = [['total', 'Total points'], ['perGame', 'Per game']]
-    .map(([m, label]) => btn('leaderMode', '', label, { arg: m, pressed: leaderMode === m, cls: leaderMode === m ? 's' : 'o s' })).join('');
-  const big = on => `r ${on ? 'pts' : 'mono'}`;
-  // Podium for ranks 1 to 3 (ties share it); two tables side by side past 12 rows so about 30
-  // fit on one screen; players with no games yet collapse into one line under the tables.
-  const rows = Queue.leaderboard(state.players, leaderMode, MIN_RANKED_GAMES);
-  const played = rows.filter(r => r.player.games), notYet = rows.filter(r => !r.player.games);
-  // All-time, from the database: points per game, then FG% once it has shots for the player and
-  // Win% once it has results (games from before each was tracked don't count). "New" for a first-timer.
-  const allTime = name => {
-    const pr = profileOf(name), cell = (v, cls = '', title = '') => `<td class="r mono avg hide-sm${cls}"${title}>${v}</td>`;
-    if (!pr?.games) return cell('New') + cell('') + cell('');
-    const decided = (pr.wins ?? 0) + (pr.losses ?? 0);
-    return cell(pr.avg.toFixed(1)) + cell(pr.fga ? pct(pr.fgm, pr.fga) : '', pr.fga ? few(pr.fga) : '', pr.fga ? ` title="${pr.fgm} of ${pr.fga}, every week"` : '')
-      + cell(decided ? pct(pr.wins, decided) : '');
-  };
-  // Tonight's FG%: makes over attempts, e.g. "6/10 60%"; blank with no attempts, greyed out
-  // under MIN_FG_SHOTS attempts.
-  const fg = (p, fgPct) => (fgPct === null ? '' : `<small>${p.fgm}/${p.fga}</small> ${fgPct}%`);
-  const few = n => (n < MIN_FG_SHOTS ? ' few' : '');
-  const fgAttrs = (p, fgPct) => (fgPct === null ? '' : `${few(p.fga)}" title="${p.fgm} of ${p.fga} tonight${
-    p.fga < MIN_FG_SHOTS ? `, under ${MIN_FG_SHOTS} attempts` : ''}`);
-  // Tonight's record, e.g. "3-1"; ties count for neither.
-  const wl = p => (p.wins || p.losses ? `${p.wins ?? 0}-${p.losses ?? 0}` : '');
-  const row = ({ player: p, perGame: pg, fgPct, rank }) => `<tr class="${!rank ? 'un' : rank <= 3 ? `top p${rank}` : ''}">
-      <td class="n">${rank ?? ''}</td><td class="who"><b title="${esc(p.name)}">${esc(p.name)}</b></td>
-      <td class="r mono gm">${p.games}</td><td class="${big(!perGame)}">${p.totalPoints}</td>
-      <td class="${big(perGame)}">${pg === null ? '' : pg.toFixed(1)}</td><td class="r mono fg${fgAttrs(p, fgPct)}">${fg(p, fgPct)}</td>
-      <td class="r mono">${wl(p)}</td>${allTime(p.name)}</tr>`;
-  const table = list => `<div class="tw"><table><thead>
-      <tr class="grp"><th colspan="2"></th><th class="gm"></th><th colspan="4"></th><th colspan="3" class="avg hide-sm">All-time</th></tr>
-      <tr><th>#</th><th>Player</th><th class="r gm">Games</th><th class="r">Points</th><th class="r">Per game</th>
-      <th class="r" title="Field goals made / attempted tonight">FG%</th><th class="r" title="Wins and losses tonight">W-L</th>
-      <th class="r avg hide-sm" title="Points per game, every week">PPG</th><th class="r avg hide-sm" title="Field goal %, every week">FG%</th>
-      <th class="r avg hide-sm" title="Share of games won, every week">Win%</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>`;
-  const split = played.length > 12, half = Math.ceil(played.length / 2);
-  $('leaderBoard').className = `wide lb${split ? ' split' : ''}${profiles.size ? '' : ' noavg'}`;
-  $('leaderBoard').innerHTML = !rows.length ? '<p class="empty">No players yet.</p>'
-    : (!played.length ? '<p class="empty">No games played yet.</p>'
-      : split ? table(played.slice(0, half)) + table(played.slice(half)) : table(played))
-      + (notYet.length ? `<p class="rest">Not played yet: ${notYet.map(r => esc(r.player.name)).join(', ')}</p>` : '');
-  fitLeaders();
+  renderLeaders();
 
   renderMap(order, now);
   renderHome();
@@ -657,8 +613,70 @@ qmap.addEventListener('keydown', e => {
   else if (e.key === 'Escape' && sel) { sel = null; renderQueue(); }
 });
 
-// Leaderboard in full screen: scale the tab (CSS zoom) so it fills the TV, as large as both the
-// width and the height allow. Out of full screen it is the normal page.
+// Leaderboard: Tonight (this session, ranked by points) or All-time (every week in the database,
+// ranked by points per game, MIN_ALLTIME_GAMES games minimum). The ranked figure is the big one,
+// ranks 1 to 3 are a podium (ties share it), and the list splits into tables side by side so it
+// fits the screen (leaderTables).
+function renderLeaders() {
+  const all = leaderMode === 'alltime';
+  $('leaderIntro').textContent = all
+    ? `Every week, ranked by points per game (${MIN_ALLTIME_GAMES}+ games).`
+    : 'Tonight, ranked by points.';
+  $('leaderMode').innerHTML = [['tonight', 'Tonight'], ['alltime', 'All-time']]
+    .map(([m, label]) => btn('leaderMode', '', label, { arg: m, pressed: leaderMode === m, cls: leaderMode === m ? 's' : 'o s' })).join('');
+  // All-time players come from the database profiles, in the shape Queue.leaderboard takes.
+  const list = !all ? state.players : [...profiles.values()].filter(p => p.games).map(p => ({
+    name: p.name, games: p.games, totalPoints: p.points, fgm: p.fgm ?? 0, fga: p.fga ?? 0, wins: p.wins ?? 0, losses: p.losses ?? 0 }));
+  const rows = Queue.leaderboard(list, all ? 'perGame' : 'total', all ? MIN_ALLTIME_GAMES : MIN_RANKED_GAMES);
+  const played = rows.filter(r => r.player.games), notYet = all ? [] : rows.filter(r => !r.player.games);
+  const when = all ? 'every week' : 'tonight';
+  // FG%: makes over attempts, e.g. "6/10 60%"; blank with no attempts, greyed out under MIN_FG_SHOTS.
+  const fgCell = (p, fgPct) => (fgPct === null ? '<td class="r mono fg"></td>'
+    : `<td class="r mono fg${p.fga < MIN_FG_SHOTS ? ' few' : ''}" title="${p.fgm} of ${p.fga} ${when}${
+      p.fga < MIN_FG_SHOTS ? `, under ${MIN_FG_SHOTS} attempts` : ''}"><small>${p.fgm}/${p.fga}</small> ${fgPct}%</td>`);
+  // Record, e.g. "3-1" (ties count for neither), and the share of decided games won.
+  const decided = p => (p.wins ?? 0) + (p.losses ?? 0);
+  const wl = p => (decided(p) ? `${p.wins ?? 0}-${p.losses ?? 0}` : '');
+  const cell = (v, cls = 'r mono') => `<td class="${cls}">${v}</td>`;
+  const big = v => cell(v, 'r pts');
+  const row = ({ player: p, perGame: pg, fgPct, rank }) => `<tr class="${!rank ? 'un' : rank <= 3 ? `top p${rank}` : ''}">
+      <td class="n">${rank ?? ''}</td><td class="who"><b title="${esc(p.name)}">${esc(p.name)}</b></td>${cell(p.games, 'r mono gm')}${all
+      ? big(pg.toFixed(1)) + cell(p.totalPoints, 'r mono sub') + fgCell(p, fgPct) + cell(wl(p), 'r mono sub') + cell(decided(p) ? pct(p.wins, decided(p)) : '')
+      : big(p.totalPoints) + cell(pg === null ? '' : pg.toFixed(1), 'r mono sub') + fgCell(p, fgPct) + cell(wl(p))}</tr>`;
+  const th = (label, title, cls = 'r') => `<th class="${cls}" title="${title}">${label}</th>`;
+  const head = `<tr><th>#</th><th>Player</th>${th('Games', `Games ${when}`, 'r gm')}${all
+    ? th('PPG', 'Points per game, every week') + th('Points', 'Total points, every week', 'r sub') + th('FG%', 'Field goals made / attempted, every week')
+      + th('W-L', 'Wins and losses, every week', 'r sub') + th('Win%', 'Share of decided games won, every week')
+    : th('Points', 'Points tonight') + th('Per game', 'Points per game tonight', 'r sub') + th('FG%', 'Field goals made / attempted tonight')
+      + th('W-L', 'Wins and losses tonight')}</tr>`;
+  const table = part => `<div class="tw"><table><thead>${head}</thead><tbody>${part.map(row).join('')}</tbody></table></div>`;
+  const k = leaderTables(played.length), per = Math.ceil(played.length / k), parts = [];
+  for (let i = 0; i < played.length; i += per) parts.push(played.slice(i, i + per));
+  const lb = $('leaderBoard');
+  lb.className = `wide lb${k > 1 ? ' split' : ''}${k > 2 ? ' split3' : ''}`;
+  lb.style.setProperty('--k', k);
+  lb.innerHTML = all && !profiles.size ? '<p class="empty">All-time stats need the database. Check the dot in the top bar.</p>'
+    : !rows.length ? `<p class="empty">${all ? 'No games in the database yet.' : 'No players yet.'}</p>`
+    : (!played.length ? '<p class="empty">No games played yet.</p>' : parts.map(table).join(''))
+      + (notYet.length ? `<p class="rest">Not played yet: ${notYet.map(r => esc(r.player.name)).join(', ')}</p>` : '');
+  fitLeaders();
+}
+// How many tables side by side: one up to 12 players; past that, as many as it takes for the rows
+// to fit between the top of the list and the bottom of the screen, up to 3 where the page is wide
+// enough (2 otherwise). Below 1100px wide the tables stack, so the page scrolls.
+function leaderTables(n) {
+  if (n <= 12) return 1;
+  const lb = $('leaderBoard');
+  if ($('leaders').hidden || innerWidth < 1100) return 2; // laid out again when the tab shows
+  const room = innerHeight - (lb.getBoundingClientRect().top + scrollY) - 24 - 34 - 40; // header row, the "not played" line
+  const rows = Math.max(8, Math.floor((room - 42) / 28)); // about 28px a row; the podium's 3 rows take about 42px more
+  return Math.min(lb.parentElement.clientWidth >= 1200 ? 3 : 2, Math.max(2, Math.ceil(n / rows)));
+}
+window.addEventListener('resize', () => { if (!$('leaders').hidden) renderLeaders(); });
+
+// Leaderboard in full screen: scale the title and table (CSS zoom) so they fill the TV, as large as
+// both the width and the height allow, or smaller when a big night would not fit. Out of full
+// screen it is the normal page.
 function fitLeaders() {
   const t = $('leaders'), parts = [...t.children]; // the title block and the table: the panel stays screen-sized
   const zoom = z => parts.forEach(c => { c.style.zoom = z; });
@@ -666,7 +684,7 @@ function fitLeaders() {
   zoom(1);
   // The content's own size: the table's width, and from the title's top to the table's bottom.
   const w = $('leaderBoard').offsetWidth, h = $('leaderBoard').getBoundingClientRect().bottom - parts[0].getBoundingClientRect().top;
-  zoom(Math.max(1, Math.min(3, Math.min(innerWidth / w, innerHeight / h) * 0.9)).toFixed(3));
+  zoom(Math.max(0.5, Math.min(3, Math.min(innerWidth / w, innerHeight / h) * 0.9)).toFixed(3)); // shrinks for a big night
 }
 document.addEventListener('fullscreenchange', fitLeaders);
 window.addEventListener('resize', fitLeaders);
