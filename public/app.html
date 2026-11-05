@@ -364,6 +364,13 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .qn.on b{color:var(--btn-tx)}
 .qn.on small{color:var(--btn-mu)}
 .qmap .empty{color:var(--mu);font-size:15px}
+/* Substitutions: waiting players drag (or click, then click) onto someone on court. */
+.qmap [data-sub]{cursor:grab}
+.qmap [data-sub]:active{cursor:grabbing}
+.qmap .qn.picked{outline:3px solid var(--ink);outline-offset:2px}
+.qmap:has(.picked) [data-seat]{cursor:pointer}
+.qmap [data-seat].drop{outline:3px dashed var(--ink);outline-offset:3px}
+.qmap [role="button"]:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
 #qmap:fullscreen{max-width:none;border-radius:0;background-color:var(--bg);height:100vh;overflow:auto;padding:3cqw 2.5vw;gap:2vw;container-type:inline-size}
 #qmap:fullscreen .qcol{gap:1.6cqw}
 #qmap:fullscreen .col{font-size:clamp(12px,1.1cqw,26px)}

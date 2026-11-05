@@ -4,7 +4,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node queue.test.js && node names.test.js && node worker/rules.test.mjs && node worker/index.test.mjs"
+    "test": "node queue.test.js && node app.test.js && node names.test.js && node worker/rules.test.mjs && node worker/index.test.mjs"
   },
   "devDependencies": {
     "wrangler": "4.157.0"

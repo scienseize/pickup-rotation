@@ -10,7 +10,7 @@ const MIN_RANKED_GAMES = 2; // per-game ranking: one lucky game shouldn't top th
 
 const $ = id => document.getElementById(id);
 const newGame = number => ({
-  number, onCourt: [], satOut: [], homeName: 'Home', awayName: 'Away',
+  number, onCourt: [], subbedOut: [], satOut: [], homeName: 'Home', awayName: 'Away',
   remainingMs: GAME_MS, endsAt: null, started: false,
 });
 const newSession = () => ({ players: [], game: newGame(1), expected: [], unsynced: [], startedAt: Date.now() });
@@ -50,14 +50,14 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const seatOf = name => state.game.onCourt.find(c => c.name === name);
 const player = name => state.players.find(p => p.name === name);
 const teamFull = team => state.game.onCourt.filter(c => c.team === team).length >= TEAM_SIZE;
-const score = team =>state.game.onCourt.filter(c => c.team === team).reduce((t, c) => t + c.points, 0);
+const score = team => Queue.played(state.game).filter(c => c.team === team).reduce((t, c) => t + c.points, 0);
 const remaining = () => (state.game.endsAt ? Math.max(0, state.game.endsAt - Date.now()) : state.game.remainingMs);
 const clockText = ms => {
   const s = Math.ceil(ms / 1000);
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 };
 // Fill, Pick, Sit out and Remove lock once the clock has started or anyone has scored.
-const locked = () => state.game.started || state.game.onCourt.some(c => c.points > 0);
+const locked = () => state.game.started || Queue.played(state.game).some(c => c.points > 0);
 const ready = () => {
   const court = state.game.onCourt;
   return court.length > 0 && court.every(c => c.team) && ['home', 'away'].every(t => court.some(c => c.team === t));
@@ -301,7 +301,7 @@ const actions = {
     Queue.endGame(state.players, g, Date.now());
     state.unsynced.push({
       session: state.startedAt, date: localDate(state.startedAt), game: g.number,
-      rows: g.onCourt.map(c => ({ name: c.name, points: c.points })),
+      rows: Queue.played(g).map(c => ({ name: c.name, points: c.points })),
     });
     state.game = newGame(g.number + 1);
     setTimeout(sync);
@@ -326,6 +326,13 @@ const actions = {
     if (!confirm('Start a new session? This clears tonight\'s players, list and points. The database keeps every result.')) return false;
     state = { ...newSession(), unsynced: state.unsynced };
     needsChoice = [];
+  },
+
+  // From the queue diagram: drag a waiting player onto someone on court (or click one, then the other).
+  sub(outName, inName) {
+    subPick = null;
+    if (!confirm(`Sub ${inName} in for ${outName}?`)) return false;
+    Queue.sub(state.game, outName, inName, locked());
   },
 
   fullscreen(_, arg) {
@@ -500,7 +507,9 @@ function renderMap(order, now) {
   const node = (name, cls) => {
     const p = player(name);
     const wait = seatOf(name) ? '' : ` · ${Math.floor((now - p.readyAt) / 60000)} min`; // on court: not waiting
-    return `<div class="qn${cls ? ` ${cls}` : ''}" title="${esc(name)}"><b>${esc(shortName(name))}</b><small>${plural(p.games, 'game')}${wait}</small></div>`;
+    const drag = seatOf(name) ? ` data-seat="${esc(name)}"${subPick ? ' tabindex="0" role="button"' : ''}`
+      : ` draggable="true" tabindex="0" role="button" data-sub="${esc(name)}" aria-pressed="${subPick === name}"`;
+    return `<div class="qn${cls ? ` ${cls}` : ''}${subPick === name ? ' picked' : ''}"${drag} title="${esc(name)}${seatOf(name) ? '' : ' · drag onto a player on court to sub in'}"><b>${esc(shortName(name))}</b><small>${plural(p.games, 'game')}${wait}</small></div>`;
   };
   const group = (label, names, cls = '', mark = '') => names.length
     ? `<div class="qgrp"><p class="grp">${mark}${esc(label)}</p><div class="qnodes">${names.map(n => node(n, cls)).join('')}</div></div>` : '';
@@ -522,6 +531,41 @@ function renderMap(order, now) {
     + col('next', open ? 'Up next · fills open spots' : 'Up next · next game', group(plural(next.length, 'player'), next), 'Nobody to call.') + arrow
     + col('wait', 'Waiting', waiting, 'Nobody waiting.');
 }
+
+// Substitutions on the diagram. Native drag and drop, plus click-then-click (or Enter) for touch
+// and keyboard: subPick is the waiting player chosen first.
+let subPick = null;
+const qmap = $('qmap');
+// Drag events can target the text inside a box (Firefox), so look up from its element.
+const hit = (e, sel) => (e.target.nodeType === 1 ? e.target : e.target.parentElement)?.closest(sel);
+const doSub = (outName, inName) => { if (actions.sub(outName, inName) !== false) commit(); else renderQueue(); };
+qmap.addEventListener('dragstart', e => {
+  const n = hit(e, '[data-sub]');
+  if (n) { e.dataTransfer.setData('text/plain', n.dataset.sub); e.dataTransfer.effectAllowed = 'move'; }
+});
+qmap.addEventListener('dragover', e => {
+  const t = hit(e, '[data-seat]');
+  if (!t) return;
+  e.preventDefault();
+  qmap.querySelectorAll('.drop').forEach(x => x !== t && x.classList.remove('drop'));
+  t.classList.add('drop');
+});
+qmap.addEventListener('dragleave', e => hit(e, '[data-seat]')?.classList.remove('drop'));
+qmap.addEventListener('drop', e => {
+  const t = hit(e, '[data-seat]'), name = e.dataTransfer.getData('text/plain');
+  if (!t || !name) return;
+  e.preventDefault();
+  t.classList.remove('drop');
+  doSub(t.dataset.seat, name);
+});
+qmap.addEventListener('click', e => {
+  const pick = hit(e, '[data-sub]'), seat = hit(e, '[data-seat]');
+  if (pick) { subPick = subPick === pick.dataset.sub ? null : pick.dataset.sub; renderQueue(); qmap.querySelector(`[data-sub="${CSS.escape(pick.dataset.sub)}"]`)?.focus(); }
+  else if (seat && subPick) doSub(seat.dataset.seat, subPick);
+});
+qmap.addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-sub],[data-seat]')) { e.preventDefault(); e.target.click(); }
+});
 
 const tag = name => (avgText(name) ? ` · ${avgText(name)}` : '');
 // A labeled group of player boxes (Check in and Queue); nothing when there are no boxes.
@@ -565,6 +609,7 @@ function renderTonight() {
     </div>`).join('');
 
   const pending = state.unsynced.length;
+  const offline = db === 'offline';
   const dot = $('dbDot');
   const label = `Database ${db === 'locked' ? 'needs the organizer passcode' : db}${pending ? ` · ${plural(pending, 'game')} not saved yet` : ''}`;
   dot.className = `island-db ${{ online: 'on', offline: 'off', locked: 'off' }[db] ?? ''}`;
@@ -600,7 +645,7 @@ function renderClock() {
   $('islandClock').classList.toggle('on', !!g.endsAt);
   // The TV standby: the wall clock and today's date.
   const now = new Date();
-  $('sbTime').textContent = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  $('sbTime').textContent = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
   $('sbDate').textContent = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
 

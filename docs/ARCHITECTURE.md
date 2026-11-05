@@ -118,6 +118,7 @@ state = {
   game: {                           // the current or next game; never empty
     number,                         // 1, 2, 3 ... within the session
     onCourt: [ { name, team: 'home' | 'away' | null, points } ],
+    subbedOut: [ { name, team, points } ], // came off after play started; still count
     satOut: [ names ],              // sat out this game; Fill skips them
     homeName, awayName,             // editable labels, default "Home" / "Away"
     endsAt,                         // timestamp while the clock runs, else null
@@ -170,6 +171,13 @@ Design choices:
    by mistake. Sit out, Remove, Fill and Pick all lock once the clock has
    started or anyone has scored, so a clock reset cannot drop a scorer's
    points.
+   **Substitution** still works then: on the queue diagram, drag a waiting
+   player onto someone on court (or click one, then the other) and confirm.
+   The sub takes that seat and team. Once play has started, the player coming
+   off moves to `subbedOut` with their points, so the team score holds and the
+   game counts for both (`Queue.played`). Before that it is a plain swap. A
+   player who comes back on gets their points back, so each player is one
+   results row.
 5. **Assign teams.** The players choose their own sides. The attendant taps
    each called player to set Home or Away. The scoreboard is enabled once all
    called players have a team, with at least one per side. That is normally 10;
@@ -225,8 +233,8 @@ laptop screen and still works at phone width.
   | Court and teams set, not started | Start game N (Scoreboard) |
   | Game started | Back to game N (Scoreboard) |
 
-- **Standby on TV** fills the screen with the logo and "Hexagames", nothing
-  else. It only exists in full screen; a click or Esc comes back. The queue diagram and the scoreboard keep their own
+- **Standby on TV** fills the screen with the logo, "Hexagames", the live
+  time (with seconds) and today's date. It only exists in full screen; a click or Esc comes back. The queue diagram and the scoreboard keep their own
   *Full screen* buttons.
 - *Sign out* lives here.
 
@@ -257,7 +265,8 @@ laptop screen and still works at phone width.
   box shows the name, games played and wait time. Before the game fills, Up
   next is who Fill calls now. Once it's full, it's who the following game
   will call (`Queue.nextGame`, the same rule run on a copy). *Full screen*
-  puts only the diagram on the TV, sized to the screen.
+  puts only the diagram on the TV, sized to the screen. Waiting boxes drag
+  onto on-court boxes to make a substitution.
 - **Player boxes, not tables.** Below the diagram the organizer sees the same
   small boxes as Check in, each with its own buttons, so about 30 players fit
   without losing track.

@@ -80,4 +80,40 @@ assert.equal(board('total'), '1Ana 2Ben 3Dee 4Cy -Eli');
 assert.equal(board('perGame'), '1Ben 2Ana 2Dee -Cy -Eli');
 assert.equal(Queue.leaderboard(lbPlayers, 'perGame', 2).find(r => r.player.name === 'Cy').perGame, 12);
 
+// Substitution: before play it is a plain swap; once play has started the player coming off
+// keeps their points (the team score holds) and the game counts for both.
+{
+  const subs = [...'ABCDEFGHIJKL'].map(join);
+  const g = newGame(1);
+  Queue.fill(subs, g, 10);
+  g.onCourt.forEach((c, i) => { c.team = i < 5 ? 'home' : 'away'; });
+  Queue.sub(g, 'A', 'K', false);
+  assert.equal(called(g), 'KBCDEFGHIJ');
+  assert.deepEqual(g.subbedOut, []);
+  assert.equal(g.onCourt[0].team, 'home');
+  g.onCourt[1].points = 6; // B
+  Queue.sub(g, 'B', 'L', true);
+  assert.equal(called(g), 'KLCDEFGHIJ');
+  assert.deepEqual(g.subbedOut, [{ name: 'B', team: 'home', points: 6 }]);
+  const homeScore = () => Queue.played(g).filter(c => c.team === 'home').reduce((t, c) => t + c.points, 0);
+  assert.equal(homeScore(), 6);
+  Queue.sub(g, 'K', 'K', true); // already on court: nothing happens
+  Queue.sub(g, 'Z', 'A', true); // nobody called Z on court: nothing happens
+  assert.equal(called(g), 'KLCDEFGHIJ');
+  // B is waiting again and comes back on for C, bringing their 6 points: one row each.
+  assert.ok(Queue.waitingOrder(subs, g).some(p => p.name === 'B'));
+  Queue.sub(g, 'C', 'B', true);
+  assert.deepEqual(g.subbedOut.map(c => c.name), ['C']);
+  assert.equal(g.onCourt.find(c => c.name === 'B').points, 6);
+  assert.equal(homeScore(), 6);
+  const names = Queue.played(g).map(c => c.name);
+  assert.equal(new Set(names).size, names.length);
+  // The game counts for C (subbed off) and for B, L (subbed on), not for A (swapped out before play).
+  Queue.endGame(subs, g, 500);
+  assert.deepEqual(subs.filter(p => p.games).map(p => p.name).join(''), 'BCDEFGHIJKL');
+  assert.equal(subs.find(p => p.name === 'B').totalPoints, 6);
+}
+// Games saved before substitutions existed have no subbedOut list.
+assert.equal(Queue.played({ onCourt: [Queue.seat('A')] }).length, 1);
+
 console.log('queue.test.js: all checks passed');
