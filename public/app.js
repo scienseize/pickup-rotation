@@ -35,7 +35,7 @@ function load() {
       seatTeams(st.game); // saved before every called player had a team
       // Saved before shots were tracked: start everyone's shots at 0.
       for (const c of [...st.game.onCourt, ...(st.game.subbedOut ?? [])]) Object.assign(c, { fgm: c.fgm ?? 0, fga: c.fga ?? 0, log: c.log ?? [] });
-      for (const p of st.players) Object.assign(p, { fgm: p.fgm ?? 0, fga: p.fga ?? 0 });
+      for (const p of st.players) Object.assign(p, { fgm: p.fgm ?? 0, fga: p.fga ?? 0, wins: p.wins ?? 0, losses: p.losses ?? 0 });
       return st;
     }
   } catch {}
@@ -189,7 +189,7 @@ function checkIn(raw) {
   const p = playerNamed(typed);
   if (p) return flash(p.present ? `${p.name} is already checked in.` : `${p.name} is done for the night.`);
   const name = profileOf(typed)?.name ?? typed; // keep the database's spelling
-  state.players.push({ name, games: 0, readyAt: Date.now(), present: true, totalPoints: 0, fgm: 0, fga: 0 });
+  state.players.push({ name, games: 0, readyAt: Date.now(), present: true, totalPoints: 0, fgm: 0, fga: 0, wins: 0, losses: 0 });
   flash(`${name} checked in.`);
   commit();
 }
@@ -321,7 +321,7 @@ const actions = {
     Queue.endGame(state.players, g, Date.now());
     state.unsynced.push({
       session: state.startedAt, date: localDate(state.startedAt), game: g.number,
-      rows: Queue.played(g).map(c => ({ name: c.name, points: c.points, fgm: c.fgm, fga: c.fga })),
+      rows: Queue.played(g).map(c => ({ name: c.name, points: c.points, fgm: c.fgm, fga: c.fga, won: Queue.won(g, c) })),
     });
     state.game = newGame(g.number + 1);
     state.game.onCourt = lineup.map(x => ({ ...Queue.seat(x.name), team: x.team })); // Up next takes the court
@@ -435,8 +435,8 @@ function renderQueue() {
   // The ranked figure is the big one; per game needs MIN_RANKED_GAMES to get a rank.
   const perGame = leaderMode === 'perGame';
   $('leaderIntro').textContent = perGame
-    ? `Tonight's points per game. Players need ${MIN_RANKED_GAMES} games to be ranked. FG% is tonight's; Avg is their points per game and FG% across every week.`
-    : 'Tonight\'s total points. FG% is tonight\'s; Avg is each player\'s points per game and FG% across every week.';
+    ? `Ranked by tonight's points per game, ${MIN_RANKED_GAMES} games minimum. All-time covers every week.`
+    : 'Ranked by tonight\'s points. All-time covers every week.';
   $('leaderMode').innerHTML = [['total', 'Total points'], ['perGame', 'Per game']]
     .map(([m, label]) => btn('leaderMode', '', label, { arg: m, pressed: leaderMode === m, cls: leaderMode === m ? 's' : 'o s' })).join('');
   const big = on => `r ${on ? 'pts' : 'mono'}`;
@@ -444,23 +444,30 @@ function renderQueue() {
   // fit on one screen; players with no games yet collapse into one line under the tables.
   const rows = Queue.leaderboard(state.players, leaderMode, MIN_RANKED_GAMES);
   const played = rows.filter(r => r.player.games), notYet = rows.filter(r => !r.player.games);
-  // Avg: the player's points per game across every week, then their all-time FG% once the
-  // database has shots for them (games before FG tracking count as no attempts).
-  const avgNum = name => {
-    const pr = profileOf(name);
-    if (!pr?.games) return 'New';
-    return pr.avg.toFixed(1) + (pr.fga ? ` <small>${pct(pr.fgm, pr.fga)}</small>` : '');
+  // All-time, from the database: points per game, then FG% once it has shots for the player and
+  // Win% once it has results (games from before each was tracked don't count). "New" for a first-timer.
+  const allTime = name => {
+    const pr = profileOf(name), cell = v => `<td class="r mono avg hide-sm">${v}</td>`;
+    if (!pr?.games) return cell('New') + cell('') + cell('');
+    const decided = (pr.wins ?? 0) + (pr.losses ?? 0);
+    return cell(pr.avg.toFixed(1)) + cell(pr.fga ? pct(pr.fgm, pr.fga) : '') + cell(decided ? pct(pr.wins, decided) : '');
   };
-  // FG%: tonight's makes over attempts, e.g. "6/10 60%"; blank with no attempts.
+  // Tonight's FG%: makes over attempts, e.g. "6/10 60%"; blank with no attempts.
   const fg = (p, fgPct) => (fgPct === null ? '' : `<small>${p.fgm}/${p.fga}</small> ${fgPct}%`);
+  const fgTitle = (p, fgPct) => (fgPct === null ? '' : ` title="${p.fgm} of ${p.fga} tonight"`);
+  // Tonight's record, e.g. "3-1"; ties count for neither.
+  const wl = p => (p.wins || p.losses ? `${p.wins ?? 0}-${p.losses ?? 0}` : '');
   const row = ({ player: p, perGame: pg, fgPct, rank }) => `<tr class="${!rank ? 'un' : rank <= 3 ? `top p${rank}` : ''}">
       <td class="n">${rank ?? ''}</td><td class="who"><b title="${esc(p.name)}">${esc(p.name)}</b></td>
-      <td class="r mono">${p.games}</td><td class="${big(!perGame)}">${p.totalPoints}</td>
-      <td class="${big(perGame)}">${pg === null ? '' : pg.toFixed(1)}</td><td class="r mono fg">${fg(p, fgPct)}</td>
-      <td class="r mono avg hide-sm">${avgNum(p.name)}</td></tr>`;
-  const table = list => `<div class="tw"><table><thead><tr><th>#</th><th>Player</th><th class="r">Games</th><th class="r">Points</th>
-      <th class="r">Per game</th><th class="r" title="Field goals made / attempted tonight">FG%</th>
-      <th class="r avg hide-sm" title="Points per game and FG% across every week">Avg</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>`;
+      <td class="r mono gm">${p.games}</td><td class="${big(!perGame)}">${p.totalPoints}</td>
+      <td class="${big(perGame)}">${pg === null ? '' : pg.toFixed(1)}</td><td class="r mono fg"${fgTitle(p, fgPct)}>${fg(p, fgPct)}</td>
+      <td class="r mono">${wl(p)}</td>${allTime(p.name)}</tr>`;
+  const table = list => `<div class="tw"><table><thead>
+      <tr class="grp"><th colspan="2"></th><th class="gm"></th><th colspan="4"></th><th colspan="3" class="avg hide-sm">All-time</th></tr>
+      <tr><th>#</th><th>Player</th><th class="r gm">Games</th><th class="r">Points</th><th class="r">Per game</th>
+      <th class="r" title="Field goals made / attempted tonight">FG%</th><th class="r" title="Wins and losses tonight">W-L</th>
+      <th class="r avg hide-sm" title="Points per game, every week">PPG</th><th class="r avg hide-sm" title="Field goal %, every week">FG%</th>
+      <th class="r avg hide-sm" title="Share of games won, every week">Win%</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>`;
   const split = played.length > 12, half = Math.ceil(played.length / 2);
   $('leaderBoard').className = `wide lb${split ? ' split' : ''}${profiles.size ? '' : ' noavg'}`;
   $('leaderBoard').innerHTML = !rows.length ? '<p class="empty">No players yet.</p>'
@@ -695,7 +702,8 @@ function renderTonight() {
   const row = ({ n, name, p }, key) => {
     const pr = profileOf(name);
     const record = !profiles.size ? '' : pr?.games
-      ? ` · ${plural(pr.games, 'game')} · AVG ${pr.avg.toFixed(1)}${pr.fga ? ` · FG ${pct(pr.fgm, pr.fga)}` : ''}` : ' · First game';
+      ? ` · ${plural(pr.games, 'game')} · AVG ${pr.avg.toFixed(1)}${pr.fga ? ` · FG ${pct(pr.fgm, pr.fga)}` : ''}${
+        pr.wins || pr.losses ? ` · ${pr.wins}-${pr.losses}` : ''}` : ' · First game';
     const games = p ? `<small>${plural(p.games, 'game')}</small>` : '';
     const trail = key === 'arrive'
       ? btn('checkIn', name, 'Check in', { cls: 's' }) + `<button type="button" class="xbtn" data-action="removeName"

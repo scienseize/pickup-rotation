@@ -62,11 +62,11 @@ env.DB = { prepare: sql => ({ bind: (...v) => ({ sql, v }), all: async () => ({ 
 assert.equal((await post('/api/players', { names: ['Ana'] }, { Cookie: session, Authorization: `Bearer ${PASS}` })).status, 200);
 assert.equal(db.length, 1);
 // A finished game: each row's insert names its columns, field goals included.
-const game = { session: 1793700000000, date: '2026-11-06', game: 1, rows: [{ name: 'Ana', points: 7, fgm: 3, fga: 8 }] };
+const game = { session: 1793700000000, date: '2026-11-06', game: 1, rows: [{ name: 'Ana', points: 7, fgm: 3, fga: 8, won: 1 }] };
 assert.equal((await post('/api/results', game, { Cookie: session, Authorization: `Bearer ${PASS}` })).status, 200);
 const insert = db.find(q => q.sql.includes('INTO results'));
-assert.match(insert.sql, /\(session, played_on, game, name, points, fgm, fga\)/);
-assert.deepEqual(insert.v, [1793700000000, '2026-11-06', 1, 'Ana', 7, 3, 8]);
+assert.match(insert.sql, /\(session, played_on, game, name, points, fgm, fga, won\)/);
+assert.deepEqual(insert.v, [1793700000000, '2026-11-06', 1, 'Ana', 7, 3, 8, 1]);
 
 // A cookie from before a passcode change no longer works.
 env.ORGANIZER_PASSCODE = 'new-passcode-7';

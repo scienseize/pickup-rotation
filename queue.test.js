@@ -142,6 +142,28 @@ assert.equal(Queue.leaderboard(lbPlayers, 'perGame', 2).find(r => r.player.name 
   assert.equal(lb.find(r => r.player.name === 'B').fgPct, null); // no attempts
 }
 
+// Wins: the higher score wins, counting players subbed off; a tie gives neither.
+{
+  const ps = [...'ABCDEFGHIJK'].map(join);
+  const g = newGame(1);
+  Queue.fill(ps, g, 10);
+  g.onCourt.forEach((c, i) => { c.team = i < 5 ? 'home' : 'away'; });
+  g.onCourt[0].points = 4; // A, home
+  g.onCourt[5].points = 6; // F, away
+  Queue.sub(g, 'F', 'K', true); // F's 6 go off court with F but still count for Away
+  assert.equal(Queue.winner(g), 'away');
+  assert.deepEqual([Queue.won(g, g.onCourt[0]), Queue.won(g, g.subbedOut[0])], [0, 1]);
+  Queue.endGame(ps, g, 1000);
+  const rec = n => { const p = ps.find(x => x.name === n); return [p.wins, p.losses]; };
+  assert.deepEqual([rec('A'), rec('F'), rec('K')], [[0, 1], [1, 0], [1, 0]]);
+  const tie = newGame(2);
+  tie.onCourt = [{ ...Queue.seat('A'), team: 'home', points: 2 }, { ...Queue.seat('B'), team: 'away', points: 2 }];
+  assert.equal(Queue.winner(tie), null);
+  Queue.endGame(ps, tie, 2000);
+  assert.deepEqual(rec('A'), [0, 1]); // a tie adds neither
+  assert.equal(ps.find(x => x.name === 'A').games, 2); // but the game counts
+}
+
 // Games saved before substitutions existed have no subbedOut list.
 assert.equal(Queue.played({ onCourt: [Queue.seat('A')] }).length, 1);
 

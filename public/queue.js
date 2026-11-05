@@ -77,7 +77,16 @@ const Queue = {
     game.satOut = game.satOut.filter(n => n !== inName);
   },
 
-  // Count the game for everyone who played it.
+  // The winning team: whoever scored more, counting players subbed off; null on a tie.
+  winner(game) {
+    const total = t => Queue.played(game).filter(c => c.team === t).reduce((n, c) => n + c.points, 0);
+    const home = total('home'), away = total('away');
+    return home === away ? null : home > away ? 'home' : 'away';
+  },
+  // A player's result in this game: 1 a win, 0 a loss, null on a tie.
+  won: (game, c) => { const w = Queue.winner(game); return w === null ? null : c.team === w ? 1 : 0; },
+
+  // Count the game for everyone who played it: games, points, shots, and a win or a loss.
   endGame(players, game, now) {
     for (const c of Queue.played(game)) {
       const p = players.find(p => p.name === c.name);
@@ -86,6 +95,8 @@ const Queue = {
       p.totalPoints += c.points;
       p.fgm = (p.fgm ?? 0) + (c.fgm ?? 0);
       p.fga = (p.fga ?? 0) + (c.fga ?? 0);
+      const won = Queue.won(game, c);
+      if (won !== null) { p.wins = (p.wins ?? 0) + won; p.losses = (p.losses ?? 0) + 1 - won; }
     }
   },
 

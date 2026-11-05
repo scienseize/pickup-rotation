@@ -113,7 +113,7 @@ The entire app state is one JSON object, saved under one `localStorage` key.
 ```js
 state = {
   players: [
-    { name, games, readyAt, present, totalPoints, fgm, fga } // name is the key; present = false means done for the night
+    { name, games, readyAt, present, totalPoints, fgm, fga, wins, losses } // name is the key; present = false means done for the night
   ],
   game: {                           // the current or next game; never empty
     number,                         // 1, 2, 3 ... within the session
@@ -198,8 +198,11 @@ Design choices:
    *not* end automatically, so the attendant can count a last-second basket or
    let a tie play on.
 8. **End game.** Asks for confirmation. Every on-court player gets
-   `games + 1` and `readyAt = now`, their game points go into `totalPoints`
-   and their shots into `fgm` / `fga`,
+   `games + 1` and `readyAt = now`, their game points go into `totalPoints`,
+   their shots into `fgm` / `fga`, and a win or a loss into `wins` /
+   `losses`: the team with more points wins (`Queue.winner`), counting players
+   subbed off, who share their team's result. A tie gives neither, though the
+   game still counts,
    and the game is queued in `unsynced` for the database. Up next's lineup
    (below) then takes the court in its teams, so the next game is ready to
    start; *Fill* is only needed if spots are open.
@@ -331,11 +334,16 @@ so it reads from across the gym. Phones keep a stacked layout.
   ranking splits into two columns side by side on laptop and TV widths.
   Players who haven't played yet collapse into one "Not played yet" line.
 - **FG%** is tonight's field goal percentage with the makes and attempts
-  ("6/10 60%"), blank for a player with no attempts. It doesn't affect the
-  ranking.
-- **Avg** shows the all-time points per game, or "New", then the all-time FG%
-  once the database has shots for the player (games from before FG tracking
-  count as no attempts). The column is hidden when the database isn't loaded.
+  ("6/10 60%"), blank for a player with no attempts. **W-L** is tonight's
+  record ("3-1"); ties count for neither. Neither affects the ranking.
+- **All-time** (from the database, under one label): **PPG** (points per game,
+  or "New"), **FG%** and **Win%**. FG% and Win% only count games played since
+  each was tracked, and stay blank until there are some. The columns are
+  hidden when the database isn't loaded, and on phones.
+- **Two tables** (past 12 players) drop the Games column (W-L shows the record)
+  and show tonight's FG% as the percentage only, with makes and attempts on
+  hover, so names stay readable. About 26 players fit on one screen from
+  1280x720 up.
 - A toggle ranks by *Total points* (everyone who has played) or *Per game*.
   Per game only ranks players with at least 2 games (`MIN_RANKED_GAMES`), so
   one lucky game can't top the board. The rest are listed after them with no
@@ -504,14 +512,16 @@ players (name TEXT PRIMARY KEY COLLATE NOCASE, added_on TEXT)
 results (session INTEGER, played_on TEXT, game INTEGER, name TEXT,
          points INTEGER CHECK (points BETWEEN 0 AND 200),
          fgm INTEGER DEFAULT 0, fga INTEGER DEFAULT 0, -- field goals made / attempted
+         won INTEGER CHECK (won IN (0, 1)),           -- 1 a win, 0 a loss, NULL a tie
          UNIQUE (session, game, name))
 ```
 
 - **Changes to existing databases** are SQL files in `migrations/`, run once
   per database with `npx wrangler d1 execute pickup --remote --file ...` (and
   `--local` for local testing). `schema.sql` always has the full current
-  tables for a new database. `0001_fg.sql` added `fgm` and `fga`; it must run
-  on the live database before the Worker that writes them is deployed.
+  tables for a new database. `0001_fg.sql` added `fgm` and `fga`, and
+  `0002_wins.sql` added `won`; each must run on the live database before the
+  Worker that writes it is deployed.
   Otherwise saves fail and games wait on the laptop until it has run.
 
 - **One row per player per game.** Averages are computed by a query and never
@@ -530,13 +540,14 @@ Every call except sign-in needs the session cookie (section 13).
 | `POST /api/login {passcode}` | Signs this device in for 30 days (cookie), returns the profiles | The passcode itself |
 | `POST /api/logout` | Clears this device's session cookie | No |
 | `GET /api/session` | 204 when this device is signed in, else 401 | No (session only) |
-| `GET /api/profiles` | Every player with games, points, average, and all-time `fgm` / `fga` | No (session only) |
+| `GET /api/profiles` | Every player with games, points, average, all-time `fgm` / `fga`, and `wins` / `losses` | No (session only) |
 | `POST /api/players {names}` | Adds new names from tonight's list | Yes |
-| `POST /api/results {session, date, game, rows: [{name, points, fgm, fga}]}` | Saves one finished game | Yes |
+| `POST /api/results {session, date, game, rows: [{name, points, fgm, fga, won}]}` | Saves one finished game | Yes |
 
 The Worker validates every input: names are 1 to 60 characters, points are
 whole numbers from 0 to 200, field goals are whole numbers with made no more
-than attempted (both optional, as 0, so older saved games still sync), rows are a list of objects, and the date is real.
+than attempted (both optional, as 0), `won` is 1, 0 or null (optional, as
+null), so older saved games still sync, rows are a list of objects, and the date is real.
 POSTs must be JSON, so other websites can't write. Only the files in `public/`
 are served.
 

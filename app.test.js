@@ -152,13 +152,18 @@ run(`actions.endGame(); commit();`);
 const sent = JSON.parse(storage.get('pickup-rotation-v1')).unsynced[0].rows;
 assert.equal(sent.length, 10);
 assert.equal(sent.find(r => r.name === 'Player A').points, 6);
-assert.deepEqual(sent.find(r => r.name === 'Player B'), { name: 'Player B', points: 2, fgm: 1, fga: 2 });
-assert.deepEqual(sent.find(r => r.name === 'Player A'), { name: 'Player A', points: 6, fgm: 0, fga: 0 });
+// Home (A's 6, B's 2) beat Away (nothing): Home's rows say won 1, Away's won 0.
+assert.deepEqual(sent.find(r => r.name === 'Player B'), { name: 'Player B', points: 2, fgm: 1, fga: 2, won: 1 });
+assert.deepEqual(sent.find(r => r.name === 'Player A'), { name: 'Player A', points: 6, fgm: 0, fga: 0, won: 1 });
+assert.equal(sent.find(r => r.name === 'Player F').won, 0);
+assert.equal(run(`[player('Player A').wins, player('Player A').losses, player('Player F').wins, player('Player F').losses].join()`), '1,0,0,1');
 // The leaderboard shows tonight's FG%: B made 1 of 2; A took no shots, so A's cell is blank.
 const lbHtml = els.leaderBoard.innerHTML;
 assert.match(lbHtml, /<th class="r" title="Field goals made \/ attempted tonight">FG%<\/th>/);
-assert.match(lbHtml, /Player B<\/b>[\s\S]*?<td class="r mono fg"><small>1\/2<\/small> 50%<\/td>/);
-assert.match(lbHtml, /Player A<\/b>[\s\S]*?<td class="r mono fg"><\/td>/);
+assert.match(lbHtml, /Player B<\/b>[\s\S]*?<td class="r mono fg" title="1 of 2 tonight"><small>1\/2<\/small> 50%<\/td>/);
+assert.match(lbHtml, /Player A<\/b>[\s\S]*?<td class="r mono fg"><\/td>\s*<td class="r mono">1-0<\/td>/); // W-L tonight
+assert.match(lbHtml, /Player F<\/b>[\s\S]*?<td class="r mono">0-1<\/td>/);
+for (const h of ['W-L', 'PPG', 'Win%', 'All-time']) assert.match(lbHtml, new RegExp(`>${h}</th>`));
 assert.equal(run(`state.game.onCourt.map(c => c.name + ':' + c.team).join()`), planned);
 assert.doesNotMatch(els.qmap.innerHTML, /data-action="fill"/); // already full
 

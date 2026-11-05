@@ -166,8 +166,8 @@ td.act > span{display:inline-flex;gap:8px;flex-wrap:wrap;justify-content:flex-en
 td.tags > span{display:inline-flex;gap:6px;flex-wrap:wrap}
 td.empty{color:var(--mu)}
 /* Leaderboard: prose width so the numbers sit beside the names; points are the big figure. */
-.lb{max-width:760px;display:grid;gap:0 40px}
-.lb th,.lb td{padding-block:4px;vertical-align:middle;line-height:1.25}
+.lb{max-width:900px;display:grid;gap:0 40px}
+.lb th,.lb td{padding-block:3px;vertical-align:middle;line-height:1.25}
 /* A tighter head and foot on this tab so about 30 players fit on one laptop screen. */
 #leaders .hero.sm{padding-block:4px 0;gap:10px}
 #leaders .hero.sm h1{font-size:clamp(30px,3.4vw,42px)}
@@ -181,21 +181,26 @@ td.empty{color:var(--mu)}
 .lb tr.un b,.lb tr.un td.pts,.lb tr.un td.n{color:var(--mu);font-weight:500}
 /* Podium: ranks 1 to 3 larger, and the leader on a subtle tile. Neutral on purpose: team colors
    would mislead here, since players change teams between games. */
-.lb tr.top td{padding-block:8px}
+.lb tr.top td{padding-block:6px}
 .lb tr.top td.n{font-size:26px;line-height:1}
 .lb tr.top td.who b{font-size:17px}
 .lb tr.p1 td{background:var(--panel);border-bottom-color:transparent}
 .lb tr.p1 td:first-child{border-radius:10px 0 0 10px;padding-left:12px}
 .lb tr.p1 td:last-child{border-radius:0 10px 10px 0;padding-right:12px}
 @media (min-width:1100px){
-  .lb.split{grid-template-columns:repeat(2,minmax(0,1fr));max-width:1080px}
-  .lb.split th.r,.lb.split td.r{padding-left:14px}
+  .lb.split{grid-template-columns:repeat(2,minmax(0,1fr));max-width:1280px}
+  .lb.split th.r,.lb.split td.r{padding-left:10px}
 }
 @media (max-width:1099px){.lb.split > .tw + .tw thead{display:none}}
 .lb.noavg .avg{display:none}
-.lb td.fg small,.lb td.avg small{display:inline;font-size:.85em;color:var(--mu);margin-right:2px}
-.lb td.avg small{margin:0 0 0 4px}
-.lb.noavg tr.p1 td:nth-last-child(2){border-radius:0 10px 10px 0;padding-right:12px}
+/* Two tables side by side leave little room for names: drop Games (W-L shows the record) and
+   show tonight's FG% as the percentage only (makes and attempts on hover). */
+.lb.split .gm,.lb.split td.fg small{display:none}
+.lb td.fg small{display:inline;font-size:.85em;color:var(--mu);margin-right:2px}
+/* "All-time" labels the last three columns (the database's numbers), with a rule under it. */
+.lb tr.grp th{padding-block:0;border-bottom:0;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;text-align:center}
+.lb tr.grp th.avg{border-bottom:1px solid var(--line);padding-left:14px}
+.lb.noavg tr.p1 td:nth-last-child(4){border-radius:0 10px 10px 0;padding-right:12px}
 .lb > :is(.rest,.empty){grid-column:1 / -1}
 .lb > .rest{color:var(--mu);font-size:15px;margin-top:12px}
 .lb > .empty{color:var(--mu)}
@@ -447,7 +452,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
   .qmap{padding:16px}
   .lb th.r,.lb td.r{padding-left:10px}
   .lb th,.lb td{padding-right:8px}
-  .lb tr.p1 td:nth-last-child(2){border-radius:0 10px 10px 0;padding-right:12px}
+  .lb tr.p1 td:nth-last-child(4){border-radius:0 10px 10px 0;padding-right:12px}
   .hero{padding-block:40px 40px}
   .c{padding:22px 20px}
   .hide-sm{display:none}

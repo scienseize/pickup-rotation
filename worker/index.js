@@ -15,7 +15,8 @@ const json = (status, body) => new Response(JSON.stringify(body), {
 async function profiles(db) {
   const { results } = await db.prepare(`
     SELECT p.name AS name, COUNT(r.points) AS games, COALESCE(SUM(r.points), 0) AS points, AVG(r.points) AS avg,
-      COALESCE(SUM(r.fgm), 0) AS fgm, COALESCE(SUM(r.fga), 0) AS fga
+      COALESCE(SUM(r.fgm), 0) AS fgm, COALESCE(SUM(r.fga), 0) AS fga,
+      COALESCE(SUM(r.won = 1), 0) AS wins, COALESCE(SUM(r.won = 0), 0) AS losses
     FROM players p LEFT JOIN results r ON r.name = p.name
     GROUP BY p.name ORDER BY p.name`).all();
   return results.map(p => ({ ...p, avg: p.avg === null ? null : Math.round(p.avg * 10) / 10 }));
@@ -34,8 +35,8 @@ async function write(db, path, body) {
   if (!g.rows.length) return;
   await db.batch([
     ...g.rows.map(r => addPlayer(r.name, g.date)),
-    ...g.rows.map(r => db.prepare('INSERT OR IGNORE INTO results (session, played_on, game, name, points, fgm, fga) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .bind(g.session, g.date, g.game, r.name, r.points, r.fgm, r.fga)),
+    ...g.rows.map(r => db.prepare('INSERT OR IGNORE INTO results (session, played_on, game, name, points, fgm, fga, won) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(g.session, g.date, g.game, r.name, r.points, r.fgm, r.fga, r.won)),
   ]);
 }
 

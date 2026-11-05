@@ -33,9 +33,9 @@ export function playersBody(body) {
   return body.names.map(cleanName);
 }
 
-// POST /api/results { session, date, game, rows: [{ name, points, fgm?, fga? }] }
-// fgm and fga (field goals made and attempted) are optional, as 0, so games saved by an older
-// version of the app still sync.
+// POST /api/results { session, date, game, rows: [{ name, points, fgm?, fga?, won? }] }
+// fgm and fga (field goals made and attempted) are optional, as 0, and won (1 a win, 0 a loss,
+// null a tie) is optional, as null, so games saved by an older version of the app still sync.
 export function gameBody(body) {
   const session = whole(body?.session, 0, 2 ** 53, 'session');
   const game = whole(body.game, 1, 1000, 'game');
@@ -44,7 +44,9 @@ export function gameBody(body) {
   const rows = body.rows.map(r => {
     if (!r || typeof r !== 'object' || Array.isArray(r)) throw new Invalid('each row must be an object');
     const fga = whole(r.fga ?? 0, 0, MAX_POINTS, 'fga'), fgm = whole(r.fgm ?? 0, 0, fga, 'fgm (no more than fga)');
-    return { name: cleanName(r.name), points: whole(r.points, 0, MAX_POINTS, 'points'), fgm, fga };
+    const won = r.won ?? null;
+    if (won !== null && won !== 0 && won !== 1) throw new Invalid('won must be 1, 0 or null');
+    return { name: cleanName(r.name), points: whole(r.points, 0, MAX_POINTS, 'points'), fgm, fga, won };
   });
   return { session, date, game, rows };
 }
