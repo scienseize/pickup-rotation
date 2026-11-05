@@ -332,39 +332,42 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .qn.out{background:transparent;border-style:dashed;border-color:var(--faint)}
 .qn.out b{color:var(--mu)}
 .here > .empty{color:var(--mu);font-size:15px}
-/* Check in: tonight's list and everyone checked in as one list, grouped by status and A to Z
-   down each column, so about 40 players fit on a laptop screen (more on a wider one). Each status has its own look:
-   on court is the team's filled pill (as on the TV diagram), here is a solid card with a green
-   dot, to arrive is a dashed outline, done is faded and struck through. The count line doubles as the key. */
+/* Check in: grouped lists in the Apple style. Each group (Home, Away, Here, To arrive, Done) has
+   a small header with its count, then its players as quiet one-line rows in rounded cards, with
+   hairline separators inset from the leading edge. Columns of rows fill down to the bottom of the
+   screen (renderTonight); groups sit side by side, centered. Sizes match ROW_H, HEAD_H, COL_W. */
 #checkin :is(.sh,.wide){max-width:none}
 #checkin .sh{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
 #checkin section{gap:20px}
 .page:has(> #checkin:not([hidden])){padding-bottom:24px}
-/* The tab spans the whole page. Each column fills down to the bottom of the screen before the
-   next one starts; --rows (set by fitRoster) is how many boxes fit. The columns stay centered, so
-   the list spreads outward from the middle as it fills. */
-.roster{display:grid;grid-auto-flow:column;grid-template-rows:repeat(var(--rows,8),auto);grid-auto-columns:minmax(210px,260px);justify-content:center;gap:8px}
-.roster:has(> .empty){display:block}
-@media (max-width:600px){.roster{grid-auto-columns:1fr}}
-#rosterCount{text-align:center}
-.roster > .qn{align-items:center;gap:6px;padding:5px 6px 5px 12px;min-height:42px}
-.roster > .qn b{flex:1}
-.roster > .qn :is(.btn,.xbtn,small){flex-shrink:0}
-.roster > .qn .btn{padding:6px 10px;font-size:13px}
-.roster > .qn .xbtn{width:26px;height:26px}
-.roster > .qn.on{padding:5px 16px}
-.roster > .qn.on small{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
-.roster > .st-here{border-color:var(--faint)}
-.roster > .st-here b::before,.lg.here{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:8px;vertical-align:.08em}
-.roster > .st-arrive{background:transparent;border:1px dashed var(--faint)}
-.roster > .st-done{opacity:.55;border-color:transparent}
-.roster > .st-done b{text-decoration:line-through}
-.lg{display:inline-block;width:14px;height:10px;border-radius:999px;margin-right:6px;vertical-align:-.05em}
-.lg.court{background:linear-gradient(90deg,var(--home) 50%,var(--away) 50%)}
-.lg.here{width:8px;height:8px}
-.lg.arrive{border:1px dashed var(--mu);border-radius:3px}
-.lg.done{border:1px dashed var(--faint);border-radius:3px;opacity:.7}
-#rosterCount .sep{display:inline-block;width:18px}
+.roster{display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-start;gap:24px 28px}
+.roster > .empty{color:var(--mu);font-size:15px;text-align:center;width:100%}
+.stack{display:flex;flex-direction:column;gap:24px;min-width:0}
+.sec{display:flex;flex-direction:column;min-width:0}
+.sech{display:flex;align-items:center;gap:8px;height:30px;margin:0;padding:0 14px 8px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mu)}
+.sech .mk{margin-right:0}
+.sech span{color:var(--faint);margin-left:2px}
+.sdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.sec .cols{display:flex;gap:8px;align-items:flex-start}
+.rows{width:212px;background:var(--card);border-radius:12px;overflow:hidden}
+.rrow{position:relative;display:flex;align-items:center;gap:8px;height:40px;padding:0 8px 0 14px}
+.rrow + .rrow::before{content:"";position:absolute;left:14px;right:0;top:0;height:1px;background:var(--line)}
+.rrow b{flex:1;min-width:0;font-weight:500;font-size:15px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rrow small{flex-shrink:0;font-family:var(--mono);font-size:11px;color:var(--mu);padding-right:6px}
+.rrow :is(.btn,.xbtn){flex-shrink:0}
+.rrow .btn{padding:5px 11px;font-size:13px;border-radius:999px}
+.rrow .btn.o{border:0;background:var(--panel);color:var(--ink)}
+.rrow .xbtn{width:26px;height:26px}
+.s-done .rrow b{color:var(--mu)}
+/* Buttons that are not the main action wait until the row is hovered or focused; touch shows them. */
+@media (hover:hover){
+  .rrow:not(:hover):not(:focus-within) :is(.btn.o,.xbtn){display:none}
+  .rrow:is(:hover,:focus-within):has(.btn.o) small{display:none}
+  .rrow:hover{background:var(--panel)}
+  .rrow:hover .btn.o{background:var(--card)}
+}
+@media (hover:none){.rrow:has(.btn.o) small{display:none}}
+@media (max-width:600px){.roster{flex-direction:column;align-items:stretch}.sec .cols,.rows{width:100%}}
 .roster > .empty{color:var(--mu);font-size:15px;text-align:center}
 /* Queue: the same boxes with the organizer's buttons on their own line. */
 /* Up next: the two teams side by side like the scoreboard's team cards; "No team yet" spans both. */
@@ -502,8 +505,7 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
         <p class="note" id="msg" role="status" style="margin-top:12px;max-width:none"></p>
         <div id="choices"></div>
       </div>
-      <div class="wide here">
-        <p class="grp" id="rosterCount"></p>
+      <div class="wide">
         <div class="roster" id="roster"></div>
       </div>
     </section>

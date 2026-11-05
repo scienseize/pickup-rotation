@@ -105,7 +105,7 @@ function show(name) {
   place();
   island.querySelector('[aria-selected="true"]').scrollIntoView({ block: 'nearest', inline: 'nearest' });
   if (changed) window.scrollTo(0, 0);
-  if (name === 'checkin') fitRoster();
+  if (name === 'checkin') renderTonight();
 }
 const route = () => show(decodeURIComponent(location.hash.slice(1)));
 function go(name) { try { history.replaceState(null, '', '#' + name); } catch {} show(name); }
@@ -614,55 +614,75 @@ qmap.addEventListener('keydown', e => {
   else if (e.key === 'Escape' && sel) { sel = null; renderQueue(); }
 });
 
-// Check in list: each column fills down to the bottom of the screen, then the next one starts.
-// With more players than fit, the columns get taller and the page scrolls (a phone: one column).
-function fitRoster() {
-  const r = $('roster');
-  if ($('checkin').hidden || !r.firstElementChild) return; // measured once the tab shows
-  const row = r.firstElementChild.offsetHeight + 8; // box plus the 8px gap
-  const fit = Math.floor((innerHeight - (r.getBoundingClientRect().top + scrollY) - 24 + 8) / row);
-  const cols = Math.max(1, Math.floor((r.clientWidth + 8) / 218)); // 210px columns and gaps
-  r.style.setProperty('--rows', Math.max(1, fit, Math.ceil(r.children.length / cols)));
+// Check in layout: how many rows a column holds, and which groups stack in one column. Columns
+// hold as many rows as fit between the top of the list and the bottom of the screen; a group that
+// fits in one column stacks under the previous one when both fit the height. If the columns still
+// don't fit across the page, columns get longer (the page then scrolls down, never sideways).
+// A phone shows each group as one full-width column.
+function rosterLayout(ns) {
+  const r = $('roster'), most = Math.max(1, ...ns), one = { rows: most, stacks: ns.map((_, i) => [i]) };
+  if ($('checkin').hidden || r.clientWidth < 600) return one; // laid out again when the tab shows
+  const H = innerHeight - (r.getBoundingClientRect().top + scrollY) - 24, STACK_GAP = 24;
+  const pack = rows => {
+    const stacks = [];
+    let used = Infinity; // height used in the last stack, when it can take more
+    ns.forEach((n, i) => {
+      const h = HEAD_H + Math.min(n, rows) * ROW_H;
+      if (n <= rows && used + STACK_GAP + h <= H) { stacks.at(-1).push(i); used += STACK_GAP + h; }
+      else { stacks.push([i]); used = n <= rows ? h : Infinity; }
+    });
+    const width = stacks.reduce((w, st) => w + Math.max(...st.map(i => Math.ceil(ns[i] / rows))) * COL_W, 0) + GROUP_GAP * (stacks.length - 1);
+    return { rows, stacks, width };
+  };
+  for (let rows = Math.max(4, Math.floor((H - HEAD_H) / ROW_H)); rows < most; rows++) {
+    const l = pack(rows);
+    if (l.width <= r.clientWidth) return l;
+  }
+  return pack(most);
 }
-window.addEventListener('resize', fitRoster);
+window.addEventListener('resize', () => renderTonight());
 
 const tag = name => (avgText(name) ? ` · ${avgText(name)}` : '');
 // Team marker for labels: a filled square for Home, an outlined one for Away.
 const mk = team => `<i class="mk ${team}" aria-hidden="true"></i>`;
 
+// Check in: tonight's list and everyone here, as grouped lists in the Apple style: one group per
+// status (Home, Away, Here, To arrive, Done) with a small header and count, quiet one-line rows in
+// rounded cards, color only in the headers. Each group fills down to the bottom of the screen,
+// then starts another column; short groups stack (Home over Away), and groups never mix. A row shows its details
+// (games tonight) until it is hovered or focused, then its button: Done, Undo, or the x that takes
+// a name off the list. Check in, the main action, always shows; touch screens show every button.
+const ROW_H = 40, HEAD_H = 30, COL_W = 220, GROUP_GAP = 28; // px: .rrow height, .sech height, .rows width + 8px gap, .roster gap
+const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); // Test 2 before Test 10
 function renderTonight() {
-  // One list for tonight: everyone on the list plus walk-ins, grouped by status (on court by team,
-  // here, to arrive, done), A to Z within each. Each status has its own look and its one button:
-  // here -> Done (out of the queue), to arrive -> Check in (and x), done -> Undo. Record on hover.
   const people = new Map(state.expected.map(n => [n.toLowerCase(), { n, name: profileOf(n)?.name ?? n }]));
   for (const p of state.players) people.set(p.name.toLowerCase(), { n: p.name, name: p.name });
-  const ORDER = ['court', 'here', 'arrive', 'done'];
-  const list = [...people.values()].map(x => {
-    const p = playerNamed(x.name);
-    return { ...x, p, status: !p ? 'arrive' : !p.present ? 'done' : seatOf(p.name) ? 'court' : 'here' };
-  });
-  const side = x => ['home', 'away'].indexOf(x.status === 'court' ? seatOf(x.name).team : 'home') >>> 0; // on court: Home, Away, no team
-  list.sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || side(a) - side(b) || a.name.localeCompare(b.name));
-  const count = st => list.filter(x => x.status === st).length;
-  const g = state.game;
-  $('rosterCount').innerHTML = !list.length ? '' : [['court', 'on court'], ['here', 'here'], ['arrive', 'to arrive'], ['done', 'done']]
-    .filter(([st]) => count(st)).map(([st, label]) => `<span class="lg ${st}" aria-hidden="true"></span>${count(st)} ${label}`).join('<span class="sep"></span>');
-  $('roster').innerHTML = list.map(({ n, name, p, status }) => {
+  const g = state.game, groups = { home: [], away: [], here: [], arrive: [], done: [] };
+  for (const x of people.values()) {
+    const p = playerNamed(x.name), seat = p && seatOf(p.name);
+    groups[!p ? 'arrive' : !p.present ? 'done' : seat ? seat.team ?? 'home' : 'here'].push({ ...x, p });
+  }
+  const row = ({ n, name, p }, key) => {
     const pr = profileOf(name);
     const record = !profiles.size ? '' : pr?.games ? ` · ${plural(pr.games, 'game')} · AVG ${pr.avg.toFixed(1)}` : ' · First game';
-    const tonight = p ? ` · ${plural(p.games, 'game')} tonight` : '';
-    const box = (cls, inner, label) => `<div class="qn st-${status}${cls}" title="${esc(name)} · ${label}${tonight}${record}"><b>${esc(name)}</b>${inner}</div>`;
-    if (status === 'court') {
-      const team = seatOf(name).team;
-      return box(` on ${team ?? 'none'}`, `<small>${team ? esc(g[team + 'Name']) : 'No team'}</small>`, 'On court');
-    }
-    if (status === 'here') return box('', btn('done', name, 'Done'), 'Here, waiting to play');
-    if (status === 'done') return box(' out', btn('undoDone', name, 'Undo'), 'Done for the night');
-    return box('', btn('checkIn', name, 'Check in', { cls: 's' }) + `<button type="button" class="xbtn" data-action="removeName"
-      data-name="${esc(n)}" data-arg="" aria-label="Remove ${esc(name)} from tonight's list">&times;</button>`, 'Not here yet');
-  }).join('') || '<p class="empty">Nobody on the list yet. Add players above, or paste this week\'s list.</p>';
-
-  fitRoster();
+    const games = p ? `<small>${plural(p.games, 'game')}</small>` : '';
+    const trail = key === 'arrive'
+      ? btn('checkIn', name, 'Check in', { cls: 's' }) + `<button type="button" class="xbtn" data-action="removeName"
+        data-name="${esc(n)}" data-arg="" aria-label="Remove ${esc(name)} from tonight's list">&times;</button>`
+      : key === 'here' ? games + btn('done', name, 'Done') : key === 'done' ? games + btn('undoDone', name, 'Undo') : games;
+    return `<div class="rrow" title="${esc(name)}${p ? ` · ${plural(p.games, 'game')} tonight` : ''}${record}"><b>${esc(name)}</b>${trail}</div>`;
+  };
+  const heads = { home: [mk('home'), g.homeName], away: [mk('away'), g.awayName], here: ['<i class="sdot" aria-hidden="true"></i>', 'Here'],
+    arrive: ['', 'To arrive'], done: ['', 'Done for the night'] };
+  const keys = Object.keys(groups).filter(k => groups[k].length);
+  const { rows, stacks } = rosterLayout(keys.map(k => groups[k].length));
+  const sec = i => {
+    const k = keys[i], list = groups[k].sort((a, b) => byName(a.name, b.name)), cols = [];
+    for (let j = 0; j < list.length; j += rows) cols.push(`<div class="rows">${list.slice(j, j + rows).map(x => row(x, k)).join('')}</div>`);
+    return `<div class="sec s-${k}"><p class="sech">${heads[k][0]}${esc(heads[k][1])}<span>${list.length}</span></p><div class="cols">${cols.join('')}</div></div>`;
+  };
+  $('roster').innerHTML = stacks.map(st => `<div class="stack">${st.map(sec).join('')}</div>`).join('')
+    || '<p class="empty">Nobody on the list yet. Add players above, or paste this week\'s list.</p>';
 
   $('choices').innerHTML = needsChoice.map(c => `<div class="notice">
       <b>${esc(c.query)} matches ${c.choices.length} players. Which one is coming?</b>

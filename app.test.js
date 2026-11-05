@@ -58,20 +58,20 @@ assert.match(map, /data-action="fullscreen"/);
 assert.doesNotMatch(map, /data-action="fill"/); // the court is full
 assert.match(map, /data-zone="line"/);
 
-// Check in: one list, grouped by status (on court, here, to arrive, done), then A to Z, with
-// each status's own look and button.
+// Check in: grouped lists, one per status (Home, Away, Here, To arrive, Done), each with a header
+// and count; rows sorted with numbers in order; each row its one button.
 run(`state.expected = ['Player A', 'Zed New', 'Abe New']; player('Player L').present = false; seatOf('Player A').team = 'away'; render();`);
-assert.equal(els.rosterCount.innerHTML.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), '10 on court 1 here 2 to arrive 1 done');
 const roster = els.roster.innerHTML;
-assert.equal((roster.match(/class="qn/g) || []).length, 14); // Player A appears once, not twice
-const order = [...roster.matchAll(/<b>([^<]+)<\/b>/g)].map(m => m[1]);
-assert.deepEqual(order.slice(9), ['Player J', 'Player K', 'Abe New', 'Zed New', 'Player L']);
-assert.match(roster, /class="qn st-court on away"[^>]*><b>Player A<\/b><small>Away<\/small>/);
-assert.deepEqual(order.slice(0, 6), ['Player B', 'Player C', 'Player D', 'Player E', 'Player A', 'Player F']); // Home, then Away
+const heads = [...roster.matchAll(/<p class="sech">(?:<[^>]+>)*(?:<\/i>)?([^<]+)<span>(\d+)<\/span>/g)].map(m => `${m[1]} ${m[2]}`);
+assert.deepEqual(heads, ['Home 4', 'Away 6', 'Here 1', 'To arrive 2', 'Done for the night 1']);
+assert.equal((roster.match(/class="rrow"/g) || []).length, 14); // Player A appears once, not twice
+const section = k => { const i = roster.indexOf(`s-${k}"`), j = roster.indexOf('<div class="sec ', i); return roster.slice(i, j < 0 ? undefined : j); };
+assert.match(section('away'), /<b>Player A<\/b><small>0 games<\/small><\/div>/); // on court: details only
+assert.match(section('here'), /<b>Player K<\/b><small>0 games<\/small><button class="btn o s" data-action="done"/);
+assert.match(section('arrive'), /<b>Abe New<\/b><button class="btn s" data-action="checkIn"[\s\S]*<b>Zed New<\/b>/); // A to Z
+assert.match(section('done'), /<b>Player L<\/b><small>0 games<\/small><button class="btn o s" data-action="undoDone"/);
 run(`seatOf('Player A').team = 'home';`);
-assert.match(roster, /class="qn st-here"[^>]*><b>Player K<\/b><button class="btn o s" data-action="done"/);
-assert.match(roster, /class="qn st-arrive"[^>]*><b>Zed New<\/b><button class="btn s" data-action="checkIn"/);
-assert.match(roster, /class="qn st-done out"[^>]*><b>Player L<\/b><button class="btn o s" data-action="undoDone"/);
+assert.equal(run(`byName('Test 2', 'Test 10')`) < 0, true); // numbers sort in order
 // Done takes a player out of the queue; Undo puts them back.
 run(`actions.done('Player K'); commit();`);
 assert.ok(!run(`Queue.waitingOrder(state.players, state.game).some(p => p.name === 'Player K')`));

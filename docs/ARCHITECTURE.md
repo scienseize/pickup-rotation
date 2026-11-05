@@ -253,23 +253,27 @@ laptop screen and still works at phone width.
   someone is saved under just that first name. A name nobody has used shows a
   *New player* row. *Paste a list* opens a dialog for the weekly names, and
   shared first names wait in a "Which one is coming?" callout.
-- **One list for tonight:** everyone on tonight's list plus walk-ins, grouped
-  by status and A to Z within each group, down each column:
-  1. **On court:** the team's filled pill (orange Home, blue Away, as on the TV
-     diagram) with the team name. Home's players come first, then Away's.
-  2. **Here:** a solid card with a green dot and *Done*, which marks the
-     player done for the night so the queue never calls them again.
-  3. **To arrive:** a dashed outline with *Check in* and a × to take them
-     off the list.
-  4. **Done:** faded and struck through, with *Undo* to put them back in line.
+- **Tonight, as grouped lists:** everyone on tonight's list plus walk-ins, in
+  one group per status, in the Apple grouped-list style: a small header with
+  the group's count, then its players as quiet one-line rows in rounded cards,
+  with hairline separators. Color appears only in the headers (the Home and
+  Away team marks, a green dot for Here). Names sort with numbers in order
+  (Test 2 before Test 10).
+  1. **Home** and **Away:** who is on court, with games tonight.
+  2. **Here:** checked in and waiting. *Done* marks a player done for the
+     night, so the queue never calls them again.
+  3. **To arrive:** *Check in*, and a × to take them off the list.
+  4. **Done for the night:** *Undo* puts them back in line.
 
-  The line above counts each group and doubles as the key. Hovering over a
-  box shows the full name, games tonight and their record from the database.
-  Each column fills down to the bottom of the screen before the next one
-  starts, and the columns stay centered, so the list spreads outward from the
-  middle as players arrive.
-  About 40 players fit on one laptop screen (1280x720 and up) without
-  scrolling, more on a wider screen. A phone shows one column.
+  A row shows its details (games tonight) until it is hovered or focused,
+  then its button. *Check in*, the main action, always shows, and touch
+  screens show every button. Each group fills down to the bottom of the
+  screen, then starts another column; short groups stack (Home over Away)
+  when they fit, and groups never mix. If the columns don't fit across the
+  page they get longer, so the page scrolls down, never sideways. About 40
+  players fit on one laptop screen (1280x720 and up). A phone shows each
+  group as one full-width list. Hovering over a row shows the full name,
+  games tonight and their record from the database.
 
 ### Queue tab (for the attendant)
 
