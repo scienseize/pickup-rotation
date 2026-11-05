@@ -8,7 +8,7 @@ const vm = require('node:vm');
 
 // An element that takes any property and any method call.
 const fake = () => {
-  const store = { style: {}, dataset: {}, classList: { add() {}, remove() {}, toggle() {} }, length: 0, [Symbol.toPrimitive]: () => '' };
+  const store = { style: { setProperty() {} }, dataset: {}, classList: { add() {}, remove() {}, toggle() {} }, length: 0, [Symbol.toPrimitive]: () => '' };
   return new Proxy(function () {}, {
     get: (t, k) => (k in store ? store[k] : k === Symbol.iterator ? [][Symbol.iterator] : (store[k] = fake())),
     set: (t, k, v) => { store[k] = v; return true; },
@@ -54,6 +54,26 @@ let map = els.qmap.innerHTML;
 assert.match(map, /data-seat="Player A"/);
 assert.match(map, /draggable="true" tabindex="0" role="button" data-sub="Player K"/);
 assert.doesNotMatch(map, /data-sub="Player A"/); // on court: a drop target, not draggable
+
+// Check in: one list, grouped by status (on court, here, to arrive, done), then A to Z, with
+// each status's own look and button.
+run(`state.expected = ['Player A', 'Zed New', 'Abe New']; player('Player L').present = false; seatOf('Player A').team = 'away'; render();`);
+assert.equal(els.rosterCount.innerHTML.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), '10 on court 1 here 2 to arrive 1 done');
+const roster = els.roster.innerHTML;
+assert.equal((roster.match(/class="qn/g) || []).length, 14); // Player A appears once, not twice
+const order = [...roster.matchAll(/<b>([^<]+)<\/b>/g)].map(m => m[1]);
+assert.deepEqual(order.slice(9), ['Player J', 'Player K', 'Abe New', 'Zed New', 'Player L']);
+assert.match(roster, /class="qn st-court on away"[^>]*><b>Player A<\/b><small>Away<\/small>/);
+assert.deepEqual(order.slice(0, 6), ['Player B', 'Player C', 'Player D', 'Player E', 'Player A', 'Player F']); // Home, then Away
+run(`seatOf('Player A').team = 'home';`);
+assert.match(roster, /class="qn st-here"[^>]*><b>Player K<\/b><button class="btn o s" data-action="done"/);
+assert.match(roster, /class="qn st-arrive"[^>]*><b>Zed New<\/b><button class="btn s" data-action="checkIn"/);
+assert.match(roster, /class="qn st-done out"[^>]*><b>Player L<\/b><button class="btn o s" data-action="undoDone"/);
+// Done takes a player out of the queue; Undo puts them back.
+run(`actions.done('Player K'); commit();`);
+assert.ok(!run(`Queue.waitingOrder(state.players, state.game).some(p => p.name === 'Player K')`));
+run(`actions.undoDone('Player K'); actions.undoDone('Player L'); commit();`);
+assert.equal(run(`Queue.waitingOrder(state.players, state.game).length`), 2);
 
 // Sub K in for A (who has 6 points) mid-game: the score holds, A is waiting again.
 run(`if (actions.sub('Player A', 'Player K') !== false) commit();`);

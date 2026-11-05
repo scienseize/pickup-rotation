@@ -334,6 +334,40 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .qn.out{background:transparent;border-style:dashed;border-color:var(--faint)}
 .qn.out b{color:var(--mu)}
 .here > .empty{color:var(--mu);font-size:15px}
+/* Check in: tonight's list and everyone checked in as one list, grouped by status and A to Z
+   down each column, so about 40 players fit on a laptop screen (more on a wider one). Each status has its own look:
+   on court is the team's filled pill (as on the TV diagram), here is a solid card with a green
+   dot, to arrive is a dashed outline, done is faded and struck through. The count line doubles as the key. */
+#checkin :is(.sh,.wide){max-width:none}
+#checkin .sh{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
+#checkin section{gap:20px}
+.page:has(> #checkin:not([hidden])){padding-bottom:24px}
+/* The tab spans the whole page. Each column fills down to the bottom of the screen before the
+   next one starts; --rows (set by fitRoster) is how many boxes fit. The columns stay centered, so
+   the list spreads outward from the middle as it fills. */
+.roster{display:grid;grid-auto-flow:column;grid-template-rows:repeat(var(--rows,8),auto);grid-auto-columns:minmax(210px,260px);justify-content:center;gap:8px}
+.roster:has(> .empty){display:block}
+@media (max-width:600px){.roster{grid-auto-columns:1fr}}
+#rosterCount{text-align:center}
+.roster > .qn{align-items:center;gap:6px;padding:5px 6px 5px 12px;min-height:42px}
+.roster > .qn b{flex:1}
+.roster > .qn :is(.btn,.xbtn,small){flex-shrink:0}
+.roster > .qn .btn{padding:6px 10px;font-size:13px}
+.roster > .qn .xbtn{width:26px;height:26px}
+.roster > .qn.on{padding:5px 16px}
+.roster > .qn.on small{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
+.roster > .st-here{border-color:var(--faint)}
+.roster > .st-here b::before,.lg.here{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:8px;vertical-align:.08em}
+.roster > .st-arrive{background:transparent;border:1px dashed var(--faint)}
+.roster > .st-done{opacity:.55;border-color:transparent}
+.roster > .st-done b{text-decoration:line-through}
+.lg{display:inline-block;width:14px;height:10px;border-radius:999px;margin-right:6px;vertical-align:-.05em}
+.lg.court{background:linear-gradient(90deg,var(--home) 50%,var(--away) 50%)}
+.lg.here{width:8px;height:8px}
+.lg.arrive{border:1px dashed var(--mu);border-radius:3px}
+.lg.done{border:1px dashed var(--faint);border-radius:3px;opacity:.7}
+#rosterCount .sep{display:inline-block;width:18px}
+.roster > .empty{color:var(--mu);font-size:15px;text-align:center}
 /* Queue: the same boxes with the organizer's buttons on their own line. */
 .qbox{display:flex;flex-direction:column;gap:14px}
 .qbox:empty{display:none}
@@ -470,19 +504,10 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
         <p class="note" id="msg" role="status" style="margin-top:12px;max-width:none"></p>
         <div id="choices"></div>
       </div>
-      <div class="wide tw">
-        <table>
-          <thead><tr><th>Player</th><th class="r" id="expectedCount"></th></tr></thead>
-          <tbody id="expected"></tbody>
-        </table>
+      <div class="wide here">
+        <p class="grp" id="rosterCount"></p>
+        <div class="roster" id="roster"></div>
       </div>
-    </section>
-
-    <section>
-      <div class="sh">
-        <h2>Checked in.</h2>
-      </div>
-      <div class="wide here" id="here"></div>
     </section>
 
   </div>

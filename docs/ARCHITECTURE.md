@@ -248,15 +248,23 @@ laptop screen and still works at phone width.
   someone is saved under just that first name. A name nobody has used shows a
   *New player* row. *Paste a list* opens a dialog for the weekly names, and
   shared first names wait in a "Which one is coming?" callout.
-- **List rows:** everyone on the list who hasn't checked in yet, with games,
-  points and average from the database, a *Check in* button and a × to take
-  them off the list. The header counts how many are still to arrive.
-- **Checked in:** everyone who has checked in tonight, as small boxes (the
-  queue diagram's style) grouped into Waiting, On court and Done for the
-  night, each with a count. Each box is one line, the name and the arrival
-  number, newest first in each group. Hovering over a box shows the full name
-  and games tonight. About 30 players fit on one laptop screen, so nobody has
-  to scroll to find a name.
+- **One list for tonight:** everyone on tonight's list plus walk-ins, grouped
+  by status and A to Z within each group, down each column:
+  1. **On court:** the team's filled pill (orange Home, blue Away, as on the TV
+     diagram) with the team name. Home's players come first, then Away's.
+  2. **Here:** a solid card with a green dot and *Done*, which marks the
+     player done for the night so the queue never calls them again.
+  3. **To arrive:** a dashed outline with *Check in* and a × to take them
+     off the list.
+  4. **Done:** faded and struck through, with *Undo* to put them back in line.
+
+  The line above counts each group and doubles as the key. Hovering over a
+  box shows the full name, games tonight and their record from the database.
+  Each column fills down to the bottom of the screen before the next one
+  starts, and the columns stay centered, so the list spreads outward from the
+  middle as players arrive.
+  About 40 players fit on one laptop screen (1280x720 and up) without
+  scrolling, more on a wider screen. A phone shows one column.
 
 ### Queue tab (for the attendant)
 

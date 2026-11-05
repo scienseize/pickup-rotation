@@ -97,6 +97,7 @@ function show(name) {
   place();
   island.querySelector('[aria-selected="true"]').scrollIntoView({ block: 'nearest', inline: 'nearest' });
   if (changed) window.scrollTo(0, 0);
+  if (name === 'checkin') fitRoster();
 }
 const route = () => show(decodeURIComponent(location.hash.slice(1)));
 function go(name) { try { history.replaceState(null, '', '#' + name); } catch {} show(name); }
@@ -267,10 +268,7 @@ const actions = {
     if (c.team !== team && teamFull(team)) return false;
     c.team = c.team === team ? null : team;
   },
-  done(name) {
-    if (!confirm(`Mark ${name} done for the night? They won't be called again.`)) return false;
-    player(name).present = false;
-  },
+  done: name => { player(name).present = false; }, // no confirm: Undo puts them back
   undoDone: name => { player(name).present = true; },
   leaderMode(_, mode) { leaderMode = mode; keepFocus(renderQueue); return false; }, // a view choice, not saved
   checkIn: name => { checkIn(name); return false; },
@@ -567,6 +565,18 @@ qmap.addEventListener('keydown', e => {
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-sub],[data-seat]')) { e.preventDefault(); e.target.click(); }
 });
 
+// Check in list: each column fills down to the bottom of the screen, then the next one starts.
+// With more players than fit, the columns get taller and the page scrolls (a phone: one column).
+function fitRoster() {
+  const r = $('roster');
+  if ($('checkin').hidden || !r.firstElementChild) return; // measured once the tab shows
+  const row = r.firstElementChild.offsetHeight + 8; // box plus the 8px gap
+  const fit = Math.floor((innerHeight - (r.getBoundingClientRect().top + scrollY) - 24 + 8) / row);
+  const cols = Math.max(1, Math.floor((r.clientWidth + 8) / 218)); // 210px columns and gaps
+  r.style.setProperty('--rows', Math.max(1, fit, Math.ceil(r.children.length / cols)));
+}
+window.addEventListener('resize', fitRoster);
+
 const tag = name => (avgText(name) ? ` · ${avgText(name)}` : '');
 // A labeled group of player boxes (Check in and Queue); nothing when there are no boxes.
 const boxGroup = (label, boxes, cls = '', mark = '') => (boxes.length
@@ -575,32 +585,38 @@ const boxGroup = (label, boxes, cls = '', mark = '') => (boxes.length
 const mk = team => `<i class="mk ${team}" aria-hidden="true"></i>`;
 
 function renderTonight() {
-  const here = new Set(state.players.map(p => p.name.toLowerCase()));
-  const waiting = state.expected.filter(n => !here.has(n.toLowerCase()));
-  $('expectedCount').textContent = state.expected.length ? `${waiting.length} OF ${state.expected.length} TO ARRIVE` : '';
-  $('expected').innerHTML = waiting.map(n => {
-    const p = profileOf(n), name = p?.name ?? n;
-    const record = !profiles.size ? '' : p?.games ? `${plural(p.games, 'game')} · ${p.points} points · AVG ${p.avg.toFixed(1)}` : 'First game';
-    return `<tr>
-      <td><b>${esc(name)}</b><small>${record}</small></td>
-      <td class="act"><span>${btn('checkIn', name, 'Check in', { cls: 's' })}<button type="button" class="xbtn" data-action="removeName"
-        data-name="${esc(n)}" data-arg="" aria-label="Remove ${esc(name)} from tonight's list">&times;</button></span></td>
-    </tr>`;
-  }).join('') || `<tr><td colspan="2" class="empty">${state.expected.length
-    ? 'Everyone on the list has checked in.' : 'Nobody on the list yet. Add players above, or paste this week\'s list.'}</td></tr>`;
+  // One list for tonight: everyone on the list plus walk-ins, grouped by status (on court by team,
+  // here, to arrive, done), A to Z within each. Each status has its own look and its one button:
+  // here -> Done (out of the queue), to arrive -> Check in (and x), done -> Undo. Record on hover.
+  const people = new Map(state.expected.map(n => [n.toLowerCase(), { n, name: profileOf(n)?.name ?? n }]));
+  for (const p of state.players) people.set(p.name.toLowerCase(), { n: p.name, name: p.name });
+  const ORDER = ['court', 'here', 'arrive', 'done'];
+  const list = [...people.values()].map(x => {
+    const p = playerNamed(x.name);
+    return { ...x, p, status: !p ? 'arrive' : !p.present ? 'done' : seatOf(p.name) ? 'court' : 'here' };
+  });
+  const side = x => ['home', 'away'].indexOf(x.status === 'court' ? seatOf(x.name).team : 'home') >>> 0; // on court: Home, Away, no team
+  list.sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || side(a) - side(b) || a.name.localeCompare(b.name));
+  const count = st => list.filter(x => x.status === st).length;
+  const g = state.game;
+  $('rosterCount').innerHTML = !list.length ? '' : [['court', 'on court'], ['here', 'here'], ['arrive', 'to arrive'], ['done', 'done']]
+    .filter(([st]) => count(st)).map(([st, label]) => `<span class="lg ${st}" aria-hidden="true"></span>${count(st)} ${label}`).join('<span class="sep"></span>');
+  $('roster').innerHTML = list.map(({ n, name, p, status }) => {
+    const pr = profileOf(name);
+    const record = !profiles.size ? '' : pr?.games ? ` · ${plural(pr.games, 'game')} · AVG ${pr.avg.toFixed(1)}` : ' · First game';
+    const tonight = p ? ` · ${plural(p.games, 'game')} tonight` : '';
+    const box = (cls, inner, label) => `<div class="qn st-${status}${cls}" title="${esc(name)} · ${label}${tonight}${record}"><b>${esc(name)}</b>${inner}</div>`;
+    if (status === 'court') {
+      const team = seatOf(name).team;
+      return box(` on ${team ?? 'none'}`, `<small>${team ? esc(g[team + 'Name']) : 'No team'}</small>`, 'On court');
+    }
+    if (status === 'here') return box('', btn('done', name, 'Done'), 'Here, waiting to play');
+    if (status === 'done') return box(' out', btn('undoDone', name, 'Undo'), 'Done for the night');
+    return box('', btn('checkIn', name, 'Check in', { cls: 's' }) + `<button type="button" class="xbtn" data-action="removeName"
+      data-name="${esc(n)}" data-arg="" aria-label="Remove ${esc(name)} from tonight's list">&times;</button>`, 'Not here yet');
+  }).join('') || '<p class="empty">Nobody on the list yet. Add players above, or paste this week\'s list.</p>';
 
-  // Everyone checked in tonight as small boxes (the queue diagram's), grouped by where they
-  // are now, newest first in each group. #n is their arrival order.
-  const newest = state.players.map((p, i) => ({ p, n: i + 1 })).reverse();
-  $('here').innerHTML = [
-    ['Waiting', x => x.p.present && !seatOf(x.p.name), ''],
-    ['On court', x => x.p.present && seatOf(x.p.name), ' on'],
-    ['Done for the night', x => !x.p.present, ' out'],
-  ].map(([label, test, cls]) => {
-    const list = newest.filter(test);
-    return boxGroup(`${label} · ${list.length}`, list.map(({ p, n }) =>
-      `<div class="qn${cls}" title="${esc(p.name)} · ${plural(p.games, 'game')} tonight"><b>${esc(p.name)}</b><small>#${n}</small></div>`));
-  }).join('') || '<p class="empty">Nobody checked in yet.</p>';
+  fitRoster();
 
   $('choices').innerHTML = needsChoice.map(c => `<div class="notice">
       <b>${esc(c.query)} matches ${c.choices.length} players. Which one is coming?</b>
@@ -676,6 +692,8 @@ setInterval(() => keepFocus(renderQueue), 15000); // keep wait times current
 // The dot only acts when there is something to do: ask for the passcode when the database
 // refused it, retry when offline. Online it just shows its state (hover for details).
 $('dbDot').onclick = () => { if (db === 'locked') askPasscode(); else if (db !== 'online') { db = 'connecting'; renderTonight(); sync(); } };
+// Enter in the passcode box saves; left to the form it would press Cancel, the first button.
+$('passText').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('passDlg').close('save'); } });
 $('passDlg').addEventListener('close', () => {
   if ($('passDlg').returnValue !== 'save' || !$('passText').value) return;
   const passcode = $('passText').value;
