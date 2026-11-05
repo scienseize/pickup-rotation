@@ -10,5 +10,7 @@ CREATE TABLE IF NOT EXISTS results (
   game INTEGER NOT NULL,
   name TEXT NOT NULL COLLATE NOCASE REFERENCES players(name),
   points INTEGER NOT NULL CHECK (points BETWEEN 0 AND 200),
+  fgm INTEGER NOT NULL DEFAULT 0, -- field goals made: +2 and +3 on the scoreboard
+  fga INTEGER NOT NULL DEFAULT 0, -- field goals attempted: makes plus misses
   UNIQUE (session, game, name)
 );

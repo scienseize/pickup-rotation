@@ -94,7 +94,7 @@ assert.equal(Queue.leaderboard(lbPlayers, 'perGame', 2).find(r => r.player.name 
   g.onCourt[1].points = 6; // B
   Queue.sub(g, 'B', 'L', true);
   assert.equal(called(g), 'KLCDEFGHIJ');
-  assert.deepEqual(g.subbedOut, [{ name: 'B', team: 'home', points: 6 }]);
+  assert.deepEqual(g.subbedOut, [{ name: 'B', team: 'home', points: 6, fgm: 0, fga: 0, log: [] }]);
   const homeScore = () => Queue.played(g).filter(c => c.team === 'home').reduce((t, c) => t + c.points, 0);
   assert.equal(homeScore(), 6);
   Queue.sub(g, 'K', 'K', true); // already on court: nothing happens
@@ -118,6 +118,30 @@ assert.equal(Queue.leaderboard(lbPlayers, 'perGame', 2).find(r => r.player.name 
   assert.deepEqual(subs.filter(p => p.games).map(p => p.name).join(''), 'BCDEFGHIJKL');
   assert.equal(subs.find(p => p.name === 'B').totalPoints, 6);
 }
+// Shots: they travel with the player through a sub and back, count at the end of the game, and
+// give the leaderboard's FG%. A sub with no points but a missed shot played, so they keep a row.
+{
+  const ps = [...'ABCDEFGHIJKL'].map(join);
+  const g = newGame(1);
+  Queue.fill(ps, g, 10);
+  g.onCourt.forEach((c, i) => { c.team = i < 5 ? 'home' : 'away'; });
+  Object.assign(g.onCourt[0], { points: 5, fgm: 2, fga: 4, log: [2, 0, 3, 0] }); // A: 2 of 4
+  Queue.sub(g, 'A', 'K', true);
+  assert.deepEqual(g.subbedOut[0], { name: 'A', team: 'home', points: 5, fgm: 2, fga: 4, log: [2, 0, 3, 0] });
+  assert.deepEqual([g.onCourt[0].fgm, g.onCourt[0].fga, g.onCourt[0].log], [0, 0, []]); // K starts clean
+  g.onCourt[0].fga = 1; // K misses once
+  Queue.sub(g, 'K', 'A', true); // A comes back with their shots; K played, so K keeps a row
+  assert.deepEqual([g.onCourt[0].name, g.onCourt[0].fgm, g.onCourt[0].fga], ['A', 2, 4]);
+  assert.deepEqual(g.subbedOut.map(c => c.name), ['K']);
+  Queue.endGame(ps, g, 900);
+  const a = ps.find(p => p.name === 'A'), k = ps.find(p => p.name === 'K');
+  assert.deepEqual([a.fgm, a.fga, k.fgm, k.fga, k.games], [2, 4, 0, 1, 1]);
+  const lb = Queue.leaderboard(ps, 'total', 2);
+  assert.equal(lb.find(r => r.player.name === 'A').fgPct, 50);
+  assert.equal(lb.find(r => r.player.name === 'K').fgPct, 0);
+  assert.equal(lb.find(r => r.player.name === 'B').fgPct, null); // no attempts
+}
+
 // Games saved before substitutions existed have no subbedOut list.
 assert.equal(Queue.played({ onCourt: [Queue.seat('A')] }).length, 1);
 

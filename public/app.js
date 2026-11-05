@@ -33,6 +33,9 @@ function load() {
       delete s.log; // never read
       const st = { expected: [], unsynced: [], startedAt: Date.now(), ...s };
       seatTeams(st.game); // saved before every called player had a team
+      // Saved before shots were tracked: start everyone's shots at 0.
+      for (const c of [...st.game.onCourt, ...(st.game.subbedOut ?? [])]) Object.assign(c, { fgm: c.fgm ?? 0, fga: c.fga ?? 0, log: c.log ?? [] });
+      for (const p of st.players) Object.assign(p, { fgm: p.fgm ?? 0, fga: p.fga ?? 0 });
       return st;
     }
   } catch {}
@@ -73,6 +76,7 @@ function seatTeams(g = state.game) {
 const cleanName = Names.clean;
 const profileOf = name => profiles.get(name.toLowerCase());
 const playerNamed = name => state.players.find(p => p.name.toLowerCase() === name.toLowerCase());
+const pct = (made, tried) => `${Math.round((made / tried) * 100)}%`;
 const avgText = name => {
   if (!profiles.size) return '';
   const p = profileOf(name);
@@ -185,7 +189,7 @@ function checkIn(raw) {
   const p = playerNamed(typed);
   if (p) return flash(p.present ? `${p.name} is already checked in.` : `${p.name} is done for the night.`);
   const name = profileOf(typed)?.name ?? typed; // keep the database's spelling
-  state.players.push({ name, games: 0, readyAt: Date.now(), present: true, totalPoints: 0 });
+  state.players.push({ name, games: 0, readyAt: Date.now(), present: true, totalPoints: 0, fgm: 0, fga: 0 });
   flash(`${name} checked in.`);
   commit();
 }
@@ -282,7 +286,21 @@ const actions = {
     $('pasteDlg').showModal();
     return false;
   },
-  points: (name, n) => { const c = seatOf(name); c.points = Math.max(0, c.points + Number(n)); },
+  // Scoring is in field goals: Miss is an attempt; +2 and +3 are points and a make (an attempt
+  // too). Undo reverses the player's last tap, so points and shots always agree.
+  miss(name) { const c = seatOf(name); c.fga += 1; c.log.push(0); },
+  make(name, n) {
+    const c = seatOf(name), pts = Number(n);
+    if (pts !== 2 && pts !== 3) return false;
+    Object.assign(c, { points: c.points + pts, fgm: c.fgm + 1, fga: c.fga + 1 });
+    c.log.push(pts);
+  },
+  undo(name) {
+    const c = seatOf(name), last = c.log.pop();
+    if (last === undefined) return false;
+    c.fga -= 1;
+    if (last) { c.fgm -= 1; c.points -= last; }
+  },
 
   startPause() {
     const g = state.game;
@@ -303,7 +321,7 @@ const actions = {
     Queue.endGame(state.players, g, Date.now());
     state.unsynced.push({
       session: state.startedAt, date: localDate(state.startedAt), game: g.number,
-      rows: Queue.played(g).map(c => ({ name: c.name, points: c.points })),
+      rows: Queue.played(g).map(c => ({ name: c.name, points: c.points, fgm: c.fgm, fga: c.fga })),
     });
     state.game = newGame(g.number + 1);
     state.game.onCourt = lineup.map(x => ({ ...Queue.seat(x.name), team: x.team })); // Up next takes the court
@@ -417,8 +435,8 @@ function renderQueue() {
   // The ranked figure is the big one; per game needs MIN_RANKED_GAMES to get a rank.
   const perGame = leaderMode === 'perGame';
   $('leaderIntro').textContent = perGame
-    ? `Tonight's points per game. Players need ${MIN_RANKED_GAMES} games to be ranked. Avg is their average across every week.`
-    : 'Tonight\'s total points. Avg is each player\'s average across every week.';
+    ? `Tonight's points per game. Players need ${MIN_RANKED_GAMES} games to be ranked. FG% is tonight's; Avg is their points per game and FG% across every week.`
+    : 'Tonight\'s total points. FG% is tonight\'s; Avg is each player\'s points per game and FG% across every week.';
   $('leaderMode').innerHTML = [['total', 'Total points'], ['perGame', 'Per game']]
     .map(([m, label]) => btn('leaderMode', '', label, { arg: m, pressed: leaderMode === m, cls: leaderMode === m ? 's' : 'o s' })).join('');
   const big = on => `r ${on ? 'pts' : 'mono'}`;
@@ -426,13 +444,23 @@ function renderQueue() {
   // fit on one screen; players with no games yet collapse into one line under the tables.
   const rows = Queue.leaderboard(state.players, leaderMode, MIN_RANKED_GAMES);
   const played = rows.filter(r => r.player.games), notYet = rows.filter(r => !r.player.games);
-  const avgNum = name => (profileOf(name)?.games ? profileOf(name).avg.toFixed(1) : 'New');
-  const row = ({ player: p, perGame: pg, rank }) => `<tr class="${!rank ? 'un' : rank <= 3 ? `top p${rank}` : ''}">
+  // Avg: the player's points per game across every week, then their all-time FG% once the
+  // database has shots for them (games before FG tracking count as no attempts).
+  const avgNum = name => {
+    const pr = profileOf(name);
+    if (!pr?.games) return 'New';
+    return pr.avg.toFixed(1) + (pr.fga ? ` <small>${pct(pr.fgm, pr.fga)}</small>` : '');
+  };
+  // FG%: tonight's makes over attempts, e.g. "6/10 60%"; blank with no attempts.
+  const fg = (p, fgPct) => (fgPct === null ? '' : `<small>${p.fgm}/${p.fga}</small> ${fgPct}%`);
+  const row = ({ player: p, perGame: pg, fgPct, rank }) => `<tr class="${!rank ? 'un' : rank <= 3 ? `top p${rank}` : ''}">
       <td class="n">${rank ?? ''}</td><td class="who"><b title="${esc(p.name)}">${esc(p.name)}</b></td>
       <td class="r mono">${p.games}</td><td class="${big(!perGame)}">${p.totalPoints}</td>
-      <td class="${big(perGame)}">${pg === null ? '' : pg.toFixed(1)}</td><td class="r mono avg hide-sm">${avgNum(p.name)}</td></tr>`;
+      <td class="${big(perGame)}">${pg === null ? '' : pg.toFixed(1)}</td><td class="r mono fg">${fg(p, fgPct)}</td>
+      <td class="r mono avg hide-sm">${avgNum(p.name)}</td></tr>`;
   const table = list => `<div class="tw"><table><thead><tr><th>#</th><th>Player</th><th class="r">Games</th><th class="r">Points</th>
-      <th class="r">Per game</th><th class="r avg hide-sm">Avg</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>`;
+      <th class="r">Per game</th><th class="r" title="Field goals made / attempted tonight">FG%</th>
+      <th class="r avg hide-sm" title="Points per game and FG% across every week">Avg</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>`;
   const split = played.length > 12, half = Math.ceil(played.length / 2);
   $('leaderBoard').className = `wide lb${split ? ' split' : ''}${profiles.size ? '' : ' noavg'}`;
   $('leaderBoard').innerHTML = !rows.length ? '<p class="empty">No players yet.</p>'
@@ -666,7 +694,8 @@ function renderTonight() {
   }
   const row = ({ n, name, p }, key) => {
     const pr = profileOf(name);
-    const record = !profiles.size ? '' : pr?.games ? ` · ${plural(pr.games, 'game')} · AVG ${pr.avg.toFixed(1)}` : ' · First game';
+    const record = !profiles.size ? '' : pr?.games
+      ? ` · ${plural(pr.games, 'game')} · AVG ${pr.avg.toFixed(1)}${pr.fga ? ` · FG ${pct(pr.fgm, pr.fga)}` : ''}` : ' · First game';
     const games = p ? `<small>${plural(p.games, 'game')}</small>` : '';
     const trail = key === 'arrive'
       ? btn('checkIn', name, 'Check in', { cls: 's' }) + `<button type="button" class="xbtn" data-action="removeName"
@@ -711,8 +740,9 @@ function renderBoard() {
     $(t + 'Lbl').textContent = g[t + 'Name'];
     $(t + 'Count').textContent = plural(team.length, 'player').toUpperCase();
     $(t + 'Players').innerHTML = team.map(c => `<div class="pl">
-        <span><b>${esc(c.name)}</b><small class="mono">${avgText(c.name)}</small></span><span class="pts">${c.points}</span>
-        <span class="pt">${[1, 2, 3, -1].map(n => btn('points', c.name, n > 0 ? `+${n}` : '&minus;1', { arg: n, cls: 'o' })).join('')}</span>
+        <span><b>${esc(c.name)}</b><small class="mono">${[avgText(c.name), `FG ${c.fgm}/${c.fga}`].filter(Boolean).join(' · ')}</small></span><span class="pts">${c.points}</span>
+        <span class="pt">${btn('miss', c.name, 'Miss', { cls: 'o' })}${btn('make', c.name, '+2', { arg: 2, cls: 'o' })}${
+          btn('make', c.name, '+3', { arg: 3, cls: 'o' })}${btn('undo', c.name, 'Undo', { cls: 'o', disabled: !c.log.length })}</span>
       </div>`).join('') || '<p class="empty">No players on this team.</p>';
   }
   $('boardGame').textContent = `Game ${g.number}`;

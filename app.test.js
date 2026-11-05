@@ -122,6 +122,29 @@ context.dropOn('Player M', 'next', onto(awayNext, 'next'));
 assert.ok(lineup().includes('Player M:away') && lineup().includes(awayNext + ':home'));
 const planned = lineup();
 
+// Scoring in field goals: Miss, +2, +3, Undo (no +1 or -1). B misses, makes a 2 and a 3, then
+// undoes the 3: points, shots and the team score agree at every step.
+let board = els.homePlayers.innerHTML;
+assert.match(board, /data-action="miss" data-name="Player B"[^>]*>Miss</);
+assert.match(board, /data-action="make" data-name="Player B" data-arg="2"[^>]*>\+2</);
+assert.match(board, /data-action="make" data-name="Player B" data-arg="3"[^>]*>\+3</);
+assert.match(board, /data-action="undo" data-name="Player B" data-arg="" disabled>Undo</); // nothing to undo yet
+assert.doesNotMatch(board, /\+1<|&minus;1|data-action="points"/);
+assert.equal(run(`actions.undo('Player B')`), false);
+const b = () => run(`(c => [c.points, c.fgm, c.fga].join())(seatOf('Player B'))`);
+run(`actions.miss('Player B'); commit();`);
+assert.equal(b(), '0,0,1');
+run(`actions.make('Player B', '2'); commit();`);
+assert.equal(b(), '2,1,2');
+run(`actions.make('Player B', '3'); commit();`);
+assert.equal(b(), '5,2,3');
+assert.equal(els.homeScore.textContent, 11); // A's 6 and B's 5
+assert.match(els.homePlayers.innerHTML, /<b>Player B<\/b><small class="mono">FG 2\/3<\/small>/);
+run(`actions.undo('Player B'); commit();`);
+assert.equal(b(), '2,1,2');
+assert.equal(els.homeScore.textContent, 8);
+assert.equal(run(`actions.make('Player B', '1')`), false); // only 2s and 3s
+
 // End the game: everyone who played gets a result row, A's 6 points included, and Up next takes
 // the court in its teams.
 context.confirm = () => true;
@@ -129,6 +152,13 @@ run(`actions.endGame(); commit();`);
 const sent = JSON.parse(storage.get('pickup-rotation-v1')).unsynced[0].rows;
 assert.equal(sent.length, 10);
 assert.equal(sent.find(r => r.name === 'Player A').points, 6);
+assert.deepEqual(sent.find(r => r.name === 'Player B'), { name: 'Player B', points: 2, fgm: 1, fga: 2 });
+assert.deepEqual(sent.find(r => r.name === 'Player A'), { name: 'Player A', points: 6, fgm: 0, fga: 0 });
+// The leaderboard shows tonight's FG%: B made 1 of 2; A took no shots, so A's cell is blank.
+const lbHtml = els.leaderBoard.innerHTML;
+assert.match(lbHtml, /<th class="r" title="Field goals made \/ attempted tonight">FG%<\/th>/);
+assert.match(lbHtml, /Player B<\/b>[\s\S]*?<td class="r mono fg"><small>1\/2<\/small> 50%<\/td>/);
+assert.match(lbHtml, /Player A<\/b>[\s\S]*?<td class="r mono fg"><\/td>/);
 assert.equal(run(`state.game.onCourt.map(c => c.name + ':' + c.team).join()`), planned);
 assert.doesNotMatch(els.qmap.innerHTML, /data-action="fill"/); // already full
 

@@ -113,12 +113,14 @@ The entire app state is one JSON object, saved under one `localStorage` key.
 ```js
 state = {
   players: [
-    { name, games, readyAt, present, totalPoints }    // name is the key; present = false means done for the night
+    { name, games, readyAt, present, totalPoints, fgm, fga } // name is the key; present = false means done for the night
   ],
   game: {                           // the current or next game; never empty
     number,                         // 1, 2, 3 ... within the session
-    onCourt: [ { name, team: 'home' | 'away', points, sub? } ], // sub: came on as a substitute
-    subbedOut: [ { name, team, points } ], // came off after play started; still count
+    onCourt: [ { name, team: 'home' | 'away', points, fgm, fga, log, sub? } ],
+                                    // fgm/fga: field goals made/attempted; log: taps for Undo
+                                    // (0 a miss, 2 or 3 a make); sub: came on as a substitute
+    subbedOut: [ { name, team, points, fgm, fga, log } ], // came off after play started; still count
     plan: [ { name, team } ] | null, // Up next's lineup once the organizer edits it
     satOut: [ names ],              // sat out this game; Fill skips them
     homeName, awayName,             // editable labels, default "Home" / "Away"
@@ -186,13 +188,18 @@ Design choices:
    across on the queue diagram. The scoreboard is enabled once there is at
    least one player per side. That is normally 10;
    it can be fewer early in a session, before 10 people have arrived.
-6. **Play.** Start, pause, and reset the clock. Tap a player's +1, +2 or +3
-   when they score, or -1 to fix a mistake. A player's points never go below 0.
+6. **Play.** Start, pause, and reset the clock. Scoring is in field goals:
+   tap a player's *Miss* for a missed shot (an attempt), or *+2* / *+3* for a
+   made one (the points, plus a make and an attempt). There are no 1-point
+   scores. *Undo* reverses that player's last tap, so points and shots always
+   agree; it is greyed out when there is nothing to undo. Under each name the
+   board shows this game's makes and attempts ("FG 3/5").
 7. **Time up.** At 0:00 the buzzer sounds and the clock stops. The game does
    *not* end automatically, so the attendant can count a last-second basket or
    let a tie play on.
 8. **End game.** Asks for confirmation. Every on-court player gets
-   `games + 1` and `readyAt = now`, their game points go into `totalPoints`,
+   `games + 1` and `readyAt = now`, their game points go into `totalPoints`
+   and their shots into `fgm` / `fga`,
    and the game is queued in `unsynced` for the database. Up next's lineup
    (below) then takes the court in its teams, so the next game is ready to
    start; *Fill* is only needed if spots are open.
@@ -323,8 +330,12 @@ so it reads from across the gym. Phones keep a stacked layout.
 - **One screen for about 30 players:** compact rows, and past 12 players the
   ranking splits into two columns side by side on laptop and TV widths.
   Players who haven't played yet collapse into one "Not played yet" line.
-- **Avg** shows the all-time average as a number, or "New". The column is
-  hidden when the database isn't loaded.
+- **FG%** is tonight's field goal percentage with the makes and attempts
+  ("6/10 60%"), blank for a player with no attempts. It doesn't affect the
+  ranking.
+- **Avg** shows the all-time points per game, or "New", then the all-time FG%
+  once the database has shots for the player (games from before FG tracking
+  count as no attempts). The column is hidden when the database isn't loaded.
 - A toggle ranks by *Total points* (everyone who has played) or *Per game*.
   Per game only ranks players with at least 2 games (`MIN_RANKED_GAMES`), so
   one lucky game can't top the board. The rest are listed after them with no
@@ -346,8 +357,8 @@ so it reads from across the gym. Phones keep a stacked layout.
 - Team totals and the clock use the largest type on the page. The size scales
   with the viewport width (`vw`) and uses tabular numerals, so digits don't
   shift as they change.
-- Score buttons are large tap targets for fast entry with a mouse or
-  touchscreen. They are 50 px tall, or 38 px on the one-screen laptop layout.
+- Score buttons (*Miss*, *+2*, *+3*, *Undo*) are large tap targets for fast
+  entry with a mouse or touchscreen. They are 50 px tall, or 38 px on the one-screen laptop layout.
 - **One screen.** In a window at least 901 px wide the page does not scroll:
   the player lists keep their height, and the score row takes the rest of the
   window, the same way full screen does. End game, Full screen and the Space
@@ -492,8 +503,16 @@ The Worker in `worker/index.js` serves the app's files and this API.
 players (name TEXT PRIMARY KEY COLLATE NOCASE, added_on TEXT)
 results (session INTEGER, played_on TEXT, game INTEGER, name TEXT,
          points INTEGER CHECK (points BETWEEN 0 AND 200),
+         fgm INTEGER DEFAULT 0, fga INTEGER DEFAULT 0, -- field goals made / attempted
          UNIQUE (session, game, name))
 ```
+
+- **Changes to existing databases** are SQL files in `migrations/`, run once
+  per database with `npx wrangler d1 execute pickup --remote --file ...` (and
+  `--local` for local testing). `schema.sql` always has the full current
+  tables for a new database. `0001_fg.sql` added `fgm` and `fga`; it must run
+  on the live database before the Worker that writes them is deployed.
+  Otherwise saves fail and games wait on the laptop until it has run.
 
 - **One row per player per game.** Averages are computed by a query and never
   stored. The same rows will set over/under lines later.
@@ -511,12 +530,13 @@ Every call except sign-in needs the session cookie (section 13).
 | `POST /api/login {passcode}` | Signs this device in for 30 days (cookie), returns the profiles | The passcode itself |
 | `POST /api/logout` | Clears this device's session cookie | No |
 | `GET /api/session` | 204 when this device is signed in, else 401 | No (session only) |
-| `GET /api/profiles` | Every player with games, points and average | No (session only) |
+| `GET /api/profiles` | Every player with games, points, average, and all-time `fgm` / `fga` | No (session only) |
 | `POST /api/players {names}` | Adds new names from tonight's list | Yes |
-| `POST /api/results {session, date, game, rows}` | Saves one finished game | Yes |
+| `POST /api/results {session, date, game, rows: [{name, points, fgm, fga}]}` | Saves one finished game | Yes |
 
 The Worker validates every input: names are 1 to 60 characters, points are
-whole numbers from 0 to 200, rows are a list of objects, and the date is real.
+whole numbers from 0 to 200, field goals are whole numbers with made no more
+than attempted (both optional, as 0, so older saved games still sync), rows are a list of objects, and the date is real.
 POSTs must be JSON, so other websites can't write. Only the files in `public/`
 are served.
 

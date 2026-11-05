@@ -16,7 +16,15 @@ rejects(() => playersBody(null));
 
 // A finished game: whole points 0 to 200, rows as objects, a real date.
 const ok = { session: 1793700000000, date: '2026-11-04', game: 1, rows: [{ name: 'Ana', points: 10 }] };
-assert.deepEqual(gameBody(ok), ok);
+// A row from before FG tracking gets 0 of 0.
+assert.deepEqual(gameBody(ok), { ...ok, rows: [{ name: 'Ana', points: 10, fgm: 0, fga: 0 }] });
+// Field goals: whole numbers, made no more than attempted, attempts at most 200.
+const shots = (fgm, fga) => gameBody({ ...ok, rows: [{ name: 'Ana', points: 10, fgm, fga }] }).rows[0];
+assert.deepEqual(shots(4, 9), { name: 'Ana', points: 10, fgm: 4, fga: 9 });
+assert.deepEqual(shots(0, 3), { name: 'Ana', points: 10, fgm: 0, fga: 3 });
+for (const [fgm, fga] of [[5, 4], [-1, 3], [1, -1], [1.5, 3], [1, '3'], [0, 201], [1, undefined]]) {
+  rejects(() => shots(fgm, fga), `fgm ${fgm} fga ${fga}`);
+}
 for (const points of [-1, 201, 2.5, '3', true]) rejects(() => gameBody({ ...ok, rows: [{ name: 'Ana', points }] }), `points ${points}`);
 rejects(() => gameBody({ ...ok, rows: { name: 'Ana', points: 1 } }));
 rejects(() => gameBody({ ...ok, rows: ['Ana'] }));
