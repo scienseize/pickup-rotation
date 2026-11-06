@@ -3,14 +3,13 @@
 // A plain script (not a module) so index.html works when opened from file://.
 
 const Queue = {
-  // Present players not on court, in the order they should be called:
-  // fewest games first, then longest wait. Array.sort is stable, so ties
-  // (everyone in a game finishes at once) keep check-in order.
+  // Present players not on court, in the order they should be called: fewest
+  // games first. Array.sort is stable, so ties keep check-in order.
   waitingOrder(players, game) {
     const called = new Set(game.onCourt.map(c => c.name));
     return players
       .filter(p => p.present && !called.has(p.name))
-      .sort((a, b) => a.games - b.games || a.readyAt - b.readyAt);
+      .sort((a, b) => a.games - b.games);
   },
 
   // Players Fill would call, skipping anyone sitting out this game.

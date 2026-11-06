@@ -56,6 +56,7 @@ assert.match(map, /class="qn on home" data-p="Player A" data-src="court" draggab
 assert.match(map, /class="qn nx (home|away)" data-p="Player K" data-src="next" draggable="true"/); // court full: K is in the next lineup
 assert.match(map, /data-action="fullscreen"/);
 assert.doesNotMatch(map, /data-action="fill"/); // the court is full
+assert.doesNotMatch(map, /\d+ min/); // no wait times: they don't affect the order
 assert.match(map, /data-zone="line"/);
 
 // Check in: grouped lists, one per status (Home, Away, Here, To arrive, Done), each with a header
@@ -134,6 +135,14 @@ context.dropOn('Player M', 'wait', onto(homeNext, 'next'));
 assert.ok(lineup().includes('Player M:home') && !lineup().includes(homeNext + ':'));
 context.dropOn('Player M', 'next', onto(awayNext, 'next'));
 assert.ok(lineup().includes('Player M:away') && lineup().includes(awayNext + ':home'));
+// M, now in the edited lineup, subs onto the court: M gives up the Up next spot (they've played
+// this game), and the next in fair order fills it, keeping 5 and 5. Then swap back.
+context.dropOn('Player M', 'next', onto('Player D', 'court'));
+assert.ok(court().includes('Player M') && !lineup().includes('Player M:'));
+assert.equal(run(`nextLineup(Date.now()).length`), 10);
+assert.equal(run(`nextLineup(Date.now()).filter(x => x.team === 'home').length`), 5);
+context.dropOn('Player D', 'next', onto('Player M', 'court'));
+assert.ok(court().includes('Player D') && !court().includes('Player M'));
 const planned = lineup();
 
 // Scoring in field goals: Miss, +2, +3, Undo (no +1 or -1). B misses, makes a 2 and a 3, then
@@ -229,7 +238,7 @@ run(`actions.pickKind('Ana')`);
 assert.match(run(`kindPicker('Ana')`), /data-arg="Outsider"[^>]*>Visitor</);
 run(`actions.pickKind('Ana')`);
 // A type shows on every screen for someone playing: Check in, leaderboard, diagram, scoreboard.
-const onCourt1 = run(`state.game.onCourt[0].name`);
+const onCourt1 = run(`state.game.onCourt.find(c => player(c.name).games).name`); // on the leaderboard's table
 run(`actions.setKind(${JSON.stringify(onCourt1)}, 'Outsider'); commit();`);
 assert.match(els.roster.innerHTML, new RegExp(`class="kt k-outsider"[^>]*>?[\\s\\S]{0,200}?Vis</button><b>${onCourt1}</b>`));
 assert.match(els.leaderBoard.innerHTML, new RegExp(`${onCourt1}</b><span class="kt k-outsider" title="Visitor">Vis</span>`));

@@ -27,11 +27,19 @@ assert.equal(called(game), 'KLMABCDEFG');
 players.push(join('N', 150)); // arrives mid-game
 Queue.endGame(players, game, 200);
 
-// Game 3: latecomer first, then the 1-game tier by wait time, then fillers.
+// Game 3: latecomer first, then the 1-game tier in check-in order, then fillers.
 game = newGame(3);
 Queue.fill(players, game, 10);
 assert.equal(called(game), 'NHIJKLMABC');
 Queue.endGame(players, game, 300);
+
+// Order is game count, then check-in order; waiting time doesn't matter. P checked in first but
+// has been ready for less time than Q, and still goes first.
+assert.equal(Queue.waitingOrder([
+  { name: 'P', games: 1, readyAt: 900, present: true },
+  { name: 'Q', games: 1, readyAt: 100, present: true },
+  { name: 'R', games: 0, readyAt: 950, present: true },
+], newGame(1)).map(p => p.name).join(''), 'RPQ');
 
 // Sit out: no game counted, not re-called by Fill, not "passed over", leads next game.
 game = newGame(4);

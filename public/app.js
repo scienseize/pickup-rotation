@@ -379,8 +379,14 @@ const actions = {
     needsChoice = [];
   },
 
-  // From the queue diagram: a waiting player in for someone on court. No confirm: swapping back undoes it.
-  sub: (outName, inName) => { Queue.sub(state.game, outName, inName, locked()); },
+  // From the queue diagram: a waiting or lineup player in for someone on court. No confirm: swapping
+  // back undoes it. They've now played this game, so they give up any saved Up next spot; the next
+  // in fairness order takes it.
+  sub(outName, inName) {
+    const g = state.game;
+    Queue.sub(g, outName, inName, locked());
+    if (g.plan) g.plan = g.plan.filter(x => x.name !== inName);
+  },
 
   flip() { state.flipped = !state.flipped; }, // Switch sides: which team shows on the left
 
@@ -536,9 +542,8 @@ function renderMap(order, now) {
       + (g.onCourt.length ? `<small class="hint">or click someone on court${full ? ' or up next' : ''} to swap in</small>` : '');
   };
   const node = (name, src, cls = '') => {
-    const p = player(name), on = !!seatOf(name), picked = sel?.name === name && sel.src === src;
+    const p = player(name), picked = sel?.name === name && sel.src === src;
     const notes = [plural(p.games, 'game')];
-    if (!on && p.present) notes.push(`${Math.floor((now - p.readyAt) / 60000)} min`); // on court: not waiting
     if (g.satOut.includes(name)) notes.push('sitting out');
     if (passed.has(name)) notes.push('passed over');
     return `<div class="qn${cls}${picked ? ' picked' : ''}" data-p="${esc(name)}" data-src="${src}"${p.present ? ' draggable="true"' : ''}
@@ -885,7 +890,6 @@ setInterval(() => {
   }
   renderClock();
 }, 250);
-setInterval(() => keepFocus(renderQueue), 15000); // keep wait times current
 
 // The dot only acts when there is something to do: ask for the passcode when the database
 // refused it, retry when offline. Online it just shows its state (hover for details).

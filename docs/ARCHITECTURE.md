@@ -47,12 +47,10 @@ Each checked-in player carries two numbers:
 | Field     | Meaning                                                           |
 |-----------|-------------------------------------------------------------------|
 | `games`   | How many games this player has finished this session.            |
-| `readyAt` | When they became available: check-in time, or when their last game ended. |
+| `readyAt` | When they became available: check-in time, or when their last game ended. Kept in the saved data; nothing uses it now. |
 
 **Calling the next game:** from all players who are present and not on court,
-sort by `games` ascending, then `readyAt` ascending, then check-in order (a tie
-breaker, since all 10 players in a game finish at the same moment), and take
-the first 10.
+sort by `games` ascending, with ties in check-in order, and take the first 10.
 
 That one sort covers every case:
 
@@ -61,9 +59,9 @@ That one sort covers every case:
 - **Late arrivals.** A latecomer has `games = 0` and goes straight to the
   front, ahead of everyone who has already played.
 - **Fair order within a tier.** Among players with the same game count, the
-  one who has waited longest goes first.
+  one who checked in first goes first. Waiting time doesn't count.
 - **Short queue.** If fewer than 10 players have the lowest game count, the
-  open spots fill from the next tier (fewest games, longest wait). There is no
+  open spots fill from the next tier (fewest games, then check-in order). There is no
   special case in the code.
 
 Worked example (13 present, A to M checked in in that order):
@@ -87,7 +85,7 @@ Edge rules:
 - **Short break:** use *Sit out* when a player is called. They keep their
   place and lead the next game.
 - **Done for the night:** the *Done* button on the waiting list
-  (`present = false`, after a confirm) takes a player out of the queue for the
+  (`present = false`, no confirm: *Undo* reverses it) takes a player out of the queue for the
   rest of the session. Fill never calls them again. They stay on the
   leaderboard. Players don't leave and come back, so there is no "back"
   button; *Undo* in the "Done for the night" list only fixes a mistaken tap.
@@ -95,8 +93,7 @@ Edge rules:
   keep groups together. The attendant can *Pick* any waiting player into an
   open "Up next" spot, so friends can be called together. Because this can skip
   people, the app keeps the cost visible:
-  - Every waiting player shows their **games played** and **live wait time**
-    ("waiting 34 min", from `readyAt`).
+  - Every waiting player shows their **games played**.
   - A waiting player with **fewer games than someone in "Up next"** gets a
     *Passed over* badge. The attendant can see at a glance when a hand-pick
     is unfair and to whom.
@@ -308,13 +305,14 @@ so it reads from across the gym. Phones keep a stacked layout.
 
 - **Layout:** On court (Home and Away, "Home · 4 of 5"), then Up next, then everyone else waiting, grouped by games played
   tonight, then Done for the night. Each box shows the first name, games
-  played and wait time, plus "sitting out" or "passed over" when they apply.
+  played, plus "sitting out" or "passed over" when they apply.
   Before the game fills, Up next is who Fill calls now. Once it's full, Up
   next is the following game's lineup, already split into Home and Away (5
   and 5, with a team-colored edge): the fairness order for that game
   (`Queue.nextGame`, the same rule run on a copy), balanced between the
-  teams. Edits to it are kept in `game.plan`; a planned player who leaves is
-  replaced by the next in fairness order. End game seats this lineup. *Fill open spots* sits at the top of On court while spots are open;
+  teams. Edits to it are kept in `game.plan`; a planned player who leaves, or
+  who subs onto the court (they've now played this game), is replaced by the
+  next in fairness order. End game seats this lineup. *Fill open spots* sits at the top of On court while spots are open;
   *Full screen* sits at the top of Waiting and puts only the diagram on the TV.
 - **Click a box** to select it; its buttons appear inside it. On court:
   *Sit out*, *Remove* (no team buttons: teams change by dragging). Waiting: *Pick* (while a spot is open)
