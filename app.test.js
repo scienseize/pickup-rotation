@@ -227,8 +227,8 @@ const onCourt1 = run(`state.game.onCourt[0].name`);
 run(`actions.setKind(${JSON.stringify(onCourt1)}, 'Outsider'); commit();`);
 assert.match(els.roster.innerHTML, new RegExp(`class="kt k-outsider"[^>]*>?[\\s\\S]{0,200}?Out</button><b>${onCourt1}</b>`));
 assert.match(els.leaderBoard.innerHTML, new RegExp(`${onCourt1}</b><span class="kt k-outsider" title="Outsider">Out</span>`));
-assert.match(els.qmap.innerHTML, new RegExp(`data-p="${onCourt1}" data-src="court"[\\s\\S]*?<small>Out · `));
-assert.match(els.homePlayers.innerHTML + els.awayPlayers.innerHTML, new RegExp(`<b>${onCourt1}</b><small class="mono">Out · `));
+assert.match(els.qmap.innerHTML, new RegExp(`data-p="${onCourt1}" data-src="court"[^]*?<span class="qsub"><span class="kt k-outsider" title="Outsider">Out</span><small>`));
+assert.match(els.homePlayers.innerHTML + els.awayPlayers.innerHTML, new RegExp(`<b>${onCourt1}</b><span class="kt k-outsider" title="Outsider">Out</span><small class="mono">`));
 assert.equal(run(`state.game.onCourt.map(c => c.name + ':' + c.team).join()`), planned);
 assert.doesNotMatch(els.qmap.innerHTML, /data-action="fill"/); // already full
 

@@ -535,12 +535,12 @@ function renderMap(order, now) {
   };
   const node = (name, src, cls = '') => {
     const p = player(name), on = !!seatOf(name), picked = sel?.name === name && sel.src === src;
-    const notes = [kindShort(name), plural(p.games, 'game')].filter(Boolean);
+    const notes = [plural(p.games, 'game')];
     if (!on && p.present) notes.push(`${Math.floor((now - p.readyAt) / 60000)} min`); // on court: not waiting
     if (g.satOut.includes(name)) notes.push('sitting out');
     if (passed.has(name)) notes.push('passed over');
     return `<div class="qn${cls}${picked ? ' picked' : ''}" data-p="${esc(name)}" data-src="${src}"${p.present ? ' draggable="true"' : ''}
-      tabindex="0" role="button" aria-pressed="${picked}" title="${esc(name)}"><b>${esc(shortName(name))}</b><small>${notes.join(' · ')}</small>${
+      tabindex="0" role="button" aria-pressed="${picked}" title="${esc(name)}"><b>${esc(shortName(name))}</b><span class="qsub">${kindTag(name)}<small>${notes.join(' · ')}</small></span>${
       picked ? `<span class="qacts">${acts(name, src)}</span>` : ''}</div>`;
   };
   const group = (label, names, src, cls = '', mark = '', zone = '') => names.length || zone
@@ -836,7 +836,7 @@ function renderBoard() {
     $(t + 'Lbl').textContent = g[t + 'Name'];
     $(t + 'Count').textContent = plural(team.length, 'player').toUpperCase();
     $(t + 'Players').innerHTML = team.map(c => `<div class="pl">
-        <span><b>${esc(c.name)}</b><small class="mono">${[kindShort(c.name), avgText(c.name), `FG ${c.fgm}/${c.fga}`].filter(Boolean).join(' · ')}</small></span><span class="pts">${c.points}</span>
+        <span><b>${esc(c.name)}</b>${kindTag(c.name)}<small class="mono">${[avgText(c.name), `FG ${c.fgm}/${c.fga}`].filter(Boolean).join(' · ')}</small></span><span class="pts">${c.points}</span>
         <span class="pt">${btn('miss', c.name, 'Miss', { cls: 'o' })}${btn('make', c.name, '+2', { arg: 2, cls: 'o' })}${
           btn('make', c.name, '+3', { arg: 3, cls: 'o' })}${btn('undo', c.name, 'Undo', { cls: 'o', disabled: !c.log.length })}</span>
       </div>`).join('') || '<p class="empty">No players on this team.</p>';

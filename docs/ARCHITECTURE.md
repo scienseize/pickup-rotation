@@ -273,8 +273,9 @@ laptop screen and still works at phone width.
   leaderboard. Tags use short labels (UG, SHS, Alum, Out); hover gives the full
   one. Each type has a muted tint per theme (`--k-*` tokens): sage UG, gold SHS,
   plum Alumni, warm grey Outsider. There is no orange or blue, which mean the
-  teams. Types also show on the Tonight leaderboard, the queue diagram and the
-  scoreboard, where they can't be edited.
+  teams. The same colored tags show on the Tonight leaderboard
+  and beside names on the queue diagram and the scoreboard, where they can't be
+  edited.
 - **Tonight, as grouped lists:** everyone on tonight's list plus walk-ins, in
   one group per status, in the Apple grouped-list style: a small header with
   the group's count, then its players as quiet one-line rows in rounded cards,

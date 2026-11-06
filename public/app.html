@@ -394,6 +394,12 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 button.kt{cursor:pointer}
 button.kt:hover{border-color:var(--mu)}
 .kt.unset{border-style:dashed;opacity:.7}
+/* On the queue diagram the tag starts the line under the name, so a long name can't wrap it, and
+   scales for the TV. On the scoreboard it sits beside the name. */
+.qsub{display:flex;align-items:center;gap:6px;min-width:0}
+.qsub small{min-width:0}
+#qmap .qsub .kt{font-size:clamp(10px,.8cqw,20px)}
+.pl .kt{margin-left:6px;vertical-align:.12em}
 .kt.k-ug{background:var(--k-ug);color:var(--k-ug-tx);border-color:transparent}
 .kt.k-shs{background:var(--k-shs);color:var(--k-shs-tx);border-color:transparent}
 .kt.k-alumni{background:var(--k-alum);color:var(--k-alum-tx);border-color:transparent}
