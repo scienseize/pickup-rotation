@@ -32,6 +32,7 @@ const context = vm.createContext({
   document: {
     getElementById: id => (els[id] ??= fake()),
     querySelector: () => fake(), querySelectorAll: () => [], addEventListener() {},
+    documentElement: { dataset: { theme: 'dark' } },
     activeElement: null, fullscreenElement: null,
   },
   window: { addEventListener() {}, scrollTo() {} },
@@ -59,12 +60,14 @@ assert.doesNotMatch(map, /data-action="fill"/); // the court is full
 assert.doesNotMatch(map, /\d+ min/); // no wait times: they don't affect the order
 assert.match(map, /data-zone="line"/);
 
-// Check in: grouped lists, one per status (Home, Away, Here, To arrive, Done), each with a header
-// and count; rows sorted with numbers in order; each row its one button.
+// Check in: a board of numbered columns (On court with Home and Away, Here, To arrive with Done at
+// its foot), each with a count; rows sorted with numbers in order; each row its one button.
 run(`state.expected = ['Player A', 'Zed New', 'Abe New']; player('Player L').present = false; seatOf('Player A').team = 'away'; render();`);
 const roster = els.roster.innerHTML;
-const heads = [...roster.matchAll(/<p class="sech">(?:<[^>]+>)*(?:<\/i>)?([^<]+)<span>(\d+)<\/span>/g)].map(m => `${m[1]} ${m[2]}`);
-assert.deepEqual(heads, ['Home 4', 'Away 6', 'Here 1', 'To arrive 2', 'Done for the night 1']);
+const panels = [...roster.matchAll(/<span class="kn">(0\d)\.<\/span><h3>([^<]+)<\/h3><span class="kc">(\d+)<\/span>/g)].map(m => `${m[1]} ${m[2]} ${m[3]}`);
+assert.deepEqual(panels, ['01 On court 10', '02 Here 1', '03 To arrive 2']);
+const subs = [...roster.matchAll(/<p class="sech">(?:<[^>]+><\/i>)?([^<]+)<span>(\d+)<\/span>/g)].map(m => `${m[1]} ${m[2]}`);
+assert.deepEqual(subs, ['Home 4', 'Away 6', 'Done for the night 1']);
 assert.equal((roster.match(/class="rrow"/g) || []).length, 14); // Player A appears once, not twice
 const section = k => { const i = roster.indexOf(`s-${k}"`), j = roster.indexOf('<div class="sec ', i); return roster.slice(i, j < 0 ? undefined : j); };
 assert.match(section('away'), /class="kt unset"[\s\S]*?Type<\/button><b>Player A<\/b><small>0g<\/small><\/div>/); // on court: details only
@@ -268,6 +271,23 @@ const awaySide = run(`['home', 'away'].find(t => !teamFull(t))`);
 context.dropOn(first, 'wait', zone(awaySide));
 assert.equal(run(`seatOf(${JSON.stringify(first)}).team`), awaySide);
 
+// Undo a check-in: someone who hasn't played goes back to To arrive; anyone else stays.
+run(`state.players.push({ name: 'Oops New', games: 0, readyAt: 0, present: true, totalPoints: 0, fgm: 0, fga: 0, wins: 0, losses: 0 }); state.expected = state.expected.filter(n => n !== 'Oops New'); render();`);
+assert.match(els.roster.innerHTML, /data-action="uncheck"\s+data-name="Oops New"/);
+run(`actions.uncheck('Oops New'); commit();`);
+assert.equal(els.msg.textContent, 'Oops New is back on To arrive.');
+assert.equal(run(`player('Oops New')`), undefined);
+assert.match(els.roster.innerHTML, /<b>Oops New<\/b><button class="btn s" data-action="checkIn"/);
+const veteran = run(`state.players.find(p => p.games && !seatOf(p.name))?.name`);
+if (veteran) {
+  assert.doesNotMatch(els.roster.innerHTML, new RegExp(`data-action="uncheck"\\s+data-name="${veteran}"`));
+  assert.equal(run(`actions.uncheck(${JSON.stringify(veteran)})`), false);
+  assert.ok(run(`player(${JSON.stringify(veteran)})`));
+}
+// Someone on court, or subbed off this game, can't be sent back either.
+const seated = run(`state.game.onCourt[0]?.name`);
+if (seated) assert.equal(run(`actions.uncheck(${JSON.stringify(seated)})`), false);
+
 // Switch sides: the board mirrors, saved across a refresh; the teams' scores don't move.
 const score = () => [els.homeScore.textContent, els.awayScore.textContent].join();
 const before = score();
@@ -282,5 +302,14 @@ context.confirm = () => true;
 const pendingBefore = run(`state.kinds.length`);
 run(`actions.newSession(); render();`);
 assert.equal(run(`state.kinds.length`), pendingBefore);
+
+// The light / dark switch flips the page and remembers the choice on this device.
+assert.equal(els.themeBtn.title, 'Switch to light mode');
+run(`actions.theme()`);
+assert.equal(context.document.documentElement.dataset.theme, 'light');
+assert.equal(storage.get('pickup-theme'), 'light');
+assert.equal(els.themeBtn.title, 'Switch to dark mode');
+run(`actions.theme()`);
+assert.equal(storage.get('pickup-theme'), 'dark');
 
 console.log('app.test.js: all checks passed');

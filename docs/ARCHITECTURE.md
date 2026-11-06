@@ -224,13 +224,13 @@ and the floating island tab bar. The fonts come from Google Fonts when the lapto
 is online. Offline, the page falls back to Georgia and the system font, and
 everything still works.
 
-One page with four tabs in the island: Check in, Queue, Scoreboard and
+One page with five tabs in the island: Home, Check in, Queue, Scoreboard and
 Leaderboard. Each tab is a whole view, and its name is kept in the
 URL (`#checkin`, `#queue`, ...) so a refresh returns to it. A small dot beside
 the mark in the island shows the database: green when online, red when
 offline. Hovering over it (or a screen reader) gives the state and any games
 not saved yet. Clicking it asks for the passcode only when the database
-refused it, and retries when offline; when online it does nothing. On a laptop the island folds to a small notch (the mark and
+refused it, and retries when offline; when online it does nothing. The half-filled circle in the top right corner, outside the island, switches between light and dark. The choice is saved per device (`pickup-theme`), and the sign-in page follows it. Dark is the default. On a laptop the island folds to a small notch (the mark and
 the database dot) and opens when the pointer is over it or it has keyboard
 focus. Touch screens keep the full bar. The layout targets a
 laptop screen and still works at phone width.
@@ -253,7 +253,8 @@ laptop screen and still works at phone width.
 
 ### Check in tab (for the attendant)
 
-- **Top of the tab:** the "Tonight's list" heading and *Start a new session*.
+- **Top of the tab:** one row with the "Tonight's list" heading, the add box,
+  *Paste a list* and *Start a new session*.
 - **Tonight's list:** one box with autosuggest adds players. Typing a first
   name, last name or the start of either lists matching players with their
   record, then whoever has played more. Enter adds the only match. A single
@@ -273,27 +274,28 @@ laptop screen and still works at phone width.
   teams. The same colored tags show on the Tonight leaderboard
   and beside names on the queue diagram and the scoreboard, where they can't be
   edited.
-- **Tonight, as grouped lists:** everyone on tonight's list plus walk-ins, in
-  one group per status, in the Apple grouped-list style: a small header with
-  the group's count, then its players as quiet one-line rows in rounded cards,
-  with hairline separators. Color appears only in the headers (the Home and
-  Away team marks, a green dot for Here). Names sort with numbers in order
-  (Test 2 before Test 10).
-  1. **Home** and **Away:** who is on court, with games tonight.
-  2. **Here:** checked in and waiting. *Done* marks a player done for the
-     night, so the queue never calls them again.
-  3. **To arrive:** *Check in*, and a × to take them off the list.
-  4. **Done for the night:** *Undo* puts them back in line.
+- **Tonight, as a board:** everyone on tonight's list plus walk-ins, in numbered
+  columns that run to the bottom of the screen. Each column has a serif header
+  and a count, and players are quiet one-line rows in rounded cards with
+  hairline separators. Names sort with numbers in order (Test 2 before Test 10).
+  1. **01. On court:** one column split in the middle, Home above Away, each
+     card with its team band.
+  2. **02. Here:** checked in and waiting. *Done* marks a player done for the
+     night, so the queue never calls them again. The ← button undoes a mistaken
+     check-in, sending them back to To arrive. It only shows for players who
+     haven't played tonight, since it forgets the player for the night.
+  3. **03. To arrive:** *Check in*, and a × to take them off the list.
+     **Done for the night** sits at the foot of this column, with *Undo* to put
+     a player back in line.
 
-  A row shows its details (games tonight, as "3g") until it is hovered or focused,
-  then its button. *Check in*, the main action, always shows, and touch
-  screens show every button. Each group fills down to the bottom of the
-  screen, then starts another column; short groups stack (Home over Away)
-  when they fit, and groups never mix. If the columns don't fit across the
-  page they get longer, so the page scrolls down, never sideways. About 40
-  players fit on one laptop screen (1280x720 and up). A phone shows each
-  group as one full-width list. Hovering over a row shows the full name,
-  games tonight and their record from the database.
+  A row shows its details (games tonight, as "3g") until it is hovered or
+  focused, then its button. *Check in*, the main action, always shows, and touch
+  screens show every button. Lists fill down to the bottom of the screen before
+  starting another list beside them, and the columns share the page's width by
+  how many lists each holds (`rosterLayout`). If lists would come out too narrow
+  they get longer, so the page scrolls down, never sideways. 40 players fit on
+  one laptop screen (1280x720 and up). A phone stacks the columns. Hovering over
+  a row shows the full name, games tonight and their record from the database.
 
 ### Queue tab (for the attendant)
 

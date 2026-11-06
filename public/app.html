@@ -2,6 +2,7 @@
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
+<script>try { const t = localStorage.getItem('pickup-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}</script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Hexagames</title>
 <link rel="icon" type="image/png" href="favicon.png">
@@ -146,6 +147,13 @@ button.btn:disabled{opacity:.4;cursor:not-allowed}
 .island-db.on{cursor:default}
 .island-db.off::before{background:var(--bad)}
 .island-db:focus-visible{outline:2px solid var(--ember);outline-offset:-2px}
+/* Light / dark switch: on its own in the top right corner, level with the island. Narrow windows
+   keep the island clear of it. */
+.theme-btn{position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);right:12px;z-index:40;width:44px;height:44px;display:grid;place-items:center;border:1px solid var(--line);padding:0;background:var(--panel);color:var(--mu);border-radius:50%;cursor:pointer}
+.theme-btn:hover{color:var(--ink);border-color:var(--faint)}
+.theme-btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.theme-btn svg{width:17px;height:17px;display:block}
+@media (max-width:900px){.island{left:calc(50% - 28px);max-width:calc(100vw - 80px)}}
 /* The island folds to a notch (mark and database dot) until it is hovered or keyboard-focused.
    Only where a pointer can hover: touch screens keep the full bar. Folding waits a moment,
    so brushing past it doesn't snap it shut; the invisible ::after pads the hover target. */
@@ -359,24 +367,36 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .qn.out{background:transparent;border-style:dashed;border-color:var(--faint)}
 .qn.out b{color:var(--mu)}
 .here > .empty{color:var(--mu);font-size:15px}
-/* Check in: grouped lists in the Apple style. Each group (Home, Away, Here, To arrive, Done) has
-   a small header with its count, then its players as quiet one-line rows in rounded cards, with
-   hairline separators inset from the leading edge. Columns of rows fill down to the bottom of the
-   screen (renderTonight); groups sit side by side, centered. Sizes match ROW_H, HEAD_H, COL_W. */
-#checkin :is(.sh,.wide){max-width:none}
-#checkin .sh{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
-#checkin section{gap:20px}
+/* Check in: a board of numbered, full-height columns that share the page's width by how many lists
+   each holds (--c). Inside, players are quiet one-line rows in rounded cards, with hairlines inset
+   from the leading edge. On court is one column split in the middle: Home above, Away below, each
+   card with its team band. Sizes match ROW_H, HEAD_H. */
+#checkin .wide{max-width:none}
+#checkin section{gap:14px}
+#checkin .checkin{align-items:center}
+#checkin .checkin h2{font-size:30px;margin-right:12px}
+#checkin .checkin .btn{padding-block:10px;font-size:15px}
+#checkin #msg:empty{display:none}
 .page:has(> #checkin:not([hidden])){padding-bottom:24px}
-.roster{display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-start;gap:24px 28px}
+.roster{display:flex;gap:12px;align-items:stretch;min-height:var(--kh,0)}
 .roster > .empty{color:var(--mu);font-size:15px;text-align:center;width:100%}
-.stack{display:flex;flex-direction:column;gap:24px;min-width:0}
+.kcol{flex:var(--c,1) 1 0;min-width:0;display:flex;flex-direction:column;background:var(--panel);border-radius:14px;padding:0 12px 12px}
+.kbody{flex:1;display:flex;flex-direction:column;min-height:0}
+.khead{display:flex;align-items:baseline;gap:8px;height:58px;padding:14px 4px 0}
+.kn{font-family:var(--serif);font-size:26px;line-height:1;color:var(--mu);opacity:.6}
+.khead h3{flex:1;margin:0;font-family:var(--serif);font-weight:400;font-size:22px;line-height:1;color:var(--ink)}
+.kc{font-family:var(--mono);font-size:13px;color:var(--mu)}
+.kempty{margin:0;padding:2px 4px;color:var(--mu);font-size:14px}
+.kteams{flex:1;display:grid;grid-template-rows:1fr 1fr;gap:8px}
 .sec{display:flex;flex-direction:column;min-width:0}
-.sech{display:flex;align-items:center;gap:8px;height:30px;margin:0;padding:0 14px 8px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mu)}
+.s-done{margin-top:10px}
+.sech{display:flex;align-items:center;gap:6px;height:26px;margin:0;padding:0 4px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mu)}
 .sech .mk{margin-right:0}
-.sech span{color:var(--faint);margin-left:2px}
-.sdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok)}
-.sec .cols{display:flex;gap:8px;align-items:flex-start}
-.rows{width:var(--colw,212px);background:var(--card);border-radius:12px;overflow:hidden}
+.sech span{margin-left:auto}
+.sec .cols{display:grid;grid-template-columns:repeat(var(--c,1),minmax(0,1fr));gap:8px;align-items:start}
+.rows{min-width:0;background:var(--card);border-radius:10px;overflow:hidden}
+.s-home .rows{border-top:5px solid var(--home)}
+.s-away .rows{border-top:5px solid var(--away)}
 .rrow{position:relative;display:flex;align-items:center;gap:8px;height:40px;padding:0 8px 0 10px}
 .rrow + .rrow::before{content:"";position:absolute;left:14px;right:0;top:0;height:1px;background:var(--line)}
 .rrow b{flex:1;min-width:0;font-weight:500;font-size:15px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -410,14 +430,14 @@ button.kt:hover{border-color:var(--mu)}
 .kpick .xbtn{width:22px;height:22px;flex-shrink:0}
 /* Buttons that are not the main action wait until the row is hovered or focused; touch shows them. */
 @media (hover:hover){
-  .rrow:not(:hover):not(:focus-within) :is(.btn.o,.xbtn){display:none}
+  .rrow:not(:hover):not(:focus-within) .btn.o{display:none}
+  .rrow:not(:hover):not(:focus-within) .xbtn{visibility:hidden} /* keeps its space: Check in must not slide under the pointer */
   .rrow:is(:hover,:focus-within):has(.btn.o) small{display:none}
   .rrow:hover{background:var(--panel)}
   .rrow:hover .btn.o{background:var(--card)}
 }
 @media (hover:none){.rrow:has(.btn.o) small{display:none}}
-@media (max-width:600px){.roster{flex-direction:column;align-items:stretch}.sec .cols,.rows{width:100%}}
-.roster > .empty{color:var(--mu);font-size:15px;text-align:center}
+@media (max-width:600px){.roster{flex-direction:column;min-height:0}.kcol{flex:none}.kteams{grid-template-rows:none}.sec .cols{grid-template-columns:minmax(0,1fr)}}
 /* Queue: the same boxes with the organizer's buttons on their own line. */
 /* Up next: the two teams side by side like the scoreboard's team cards; "No team yet" spans both. */
 .qgrp{display:flex;flex-direction:column;gap:8px}
@@ -513,6 +533,7 @@ button.kt:hover{border-color:var(--mu)}
   </div>
   <span class="clk" id="islandClock"></span>
 </nav>
+<button type="button" class="theme-btn" id="themeBtn" data-action="theme"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg></button>
 
 <main class="page">
   <div class="tabpanel" id="home" role="tabpanel" aria-labelledby="tab-home">
@@ -537,18 +558,16 @@ button.kt:hover{border-color:var(--mu)}
 
   <div class="tabpanel" id="checkin" role="tabpanel" aria-labelledby="tab-checkin" hidden>
     <section>
-      <div class="sh">
-        <h2>Tonight's list.</h2>
-        <div><button class="btn o s" data-action="newSession">Start a new session</button></div>
-      </div>
       <div class="wide">
         <div class="checkin">
+          <h2>Tonight's list.</h2>
           <div class="combo">
             <input class="in" id="listAdd" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="listSug"
               autocomplete="off" maxlength="60" placeholder="Add a player, first name is enough" aria-label="Add a player to tonight's list">
             <ul class="sug" id="listSug" role="listbox" aria-label="Matching players" hidden></ul>
           </div>
           <button class="btn o" type="button" data-action="pasteList">Paste a list</button>
+          <button class="btn o" type="button" data-action="newSession">Start a new session</button>
         </div>
         <p class="note" id="msg" role="status" style="margin-top:12px;max-width:none"></p>
         <div id="choices"></div>

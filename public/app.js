@@ -20,7 +20,7 @@ const newSession = () => ({ players: [], game: newGame(1), expected: [], unsynce
 let state = load();
 let saved = true;
 let audio; // created on the first click; browsers block sound before one
-const PASS_KEY = 'pickup-passcode', PROFILES_KEY = 'pickup-profiles';
+const PASS_KEY = 'pickup-passcode', PROFILES_KEY = 'pickup-profiles', THEME_KEY = 'pickup-theme';
 const stored = key => { try { return localStorage.getItem(key); } catch { return null; } };
 // lowercase name -> { name, games, points, avg }; the last copy is kept so profiles still show offline
 let profiles = new Map((JSON.parse(stored(PROFILES_KEY)) || []).map(p => [p.name.toLowerCase(), p]));
@@ -95,6 +95,11 @@ const kindBtn = name => `<button type="button" class="kt ${kindClass(name)}" dat
 const kindPicker = name => `<div class="kpick" role="group" aria-label="Type for ${esc(name)}">${KINDS.map(k =>
   btn('setKind', name, kindLabel(k), { arg: k, pressed: kindOf(name) === k, cls: kindOf(name) === k ? 's' : 'o s' })).join('')}${
   kindOf(name) ? `<button type="button" class="xbtn" data-action="setKind" data-name="${esc(name)}" data-arg="" aria-label="Clear type">&times;</button>` : ''}</div>`;
+function themeLabel() {
+  const label = `Switch to ${document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'} mode`;
+  $('themeBtn').title = label;
+  $('themeBtn').setAttribute('aria-label', label);
+}
 function closeKindPick() { kindPick = null; renderTonight(); renderLeaders(); }
 const playerNamed = name => state.players.find(p => p.name.toLowerCase() === name.toLowerCase());
 const pct = (made, tried) => `${Math.round((made / tried) * 100)}%`;
@@ -228,6 +233,7 @@ function checkIn(raw) {
 let needsChoice = []; // pasted names that match several players: { query, choices }
 
 const onList = name => state.expected.some(n => n.toLowerCase() === name.toLowerCase());
+const canUncheck = p => !p.games && !Queue.played(state.game).some(c => c.name === p.name);
 function addToList(name) { if (name && !onList(name)) state.expected.push(name); }
 // New names reach the database as soon as they're on the list; offline is fine, games add them later.
 const saveList = () => { if (state.expected.length) api('/api/players', { names: state.expected }).catch(() => {}).then(render); };
@@ -309,6 +315,15 @@ const actions = {
   leaderMode(_, mode) { leaderMode = mode; keepFocus(renderLeaders); return false; }, // a view choice, not saved
   leaderKind(_, kind) { leaderKind = kind; keepFocus(renderLeaders); return false; }, // so is the filter
   checkIn: name => { checkIn(name); return false; },
+  // Undo a mistaken check-in: back to To arrive. Only before they've played (canUncheck), since
+  // it forgets the player for tonight, games and points included.
+  uncheck(name) {
+    const p = player(name);
+    if (!p || !canUncheck(p)) return false;
+    state.players = state.players.filter(x => x !== p);
+    addToList(name);
+    flash(`${name} is back on To arrive.`);
+  },
   removeName: name => { state.expected = state.expected.filter(n => n !== name); },
   choose: (name, query) => { needsChoice = needsChoice.filter(c => c.query !== query); addToList(name); saveList(); },
   pasteList() {
@@ -361,6 +376,14 @@ const actions = {
   },
 
   goTab(_, tab) { go(tab); return false; },
+  // Light or dark, remembered on this device; the page applies it before it paints. Dark by default.
+  theme() {
+    const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem(THEME_KEY, next); } catch {}
+    themeLabel();
+    return false;
+  },
   // Standby on the TV: the logo and Hexagames, full screen. A click on it (or Esc) comes back.
   standby() {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -741,31 +764,28 @@ function fitLeaders() {
 document.addEventListener('fullscreenchange', fitLeaders);
 window.addEventListener('resize', fitLeaders);
 
-// Check in layout: how many rows a column holds, and which groups stack in one column. Columns
-// hold as many rows as fit between the top of the list and the bottom of the screen; a group that
-// fits in one column stacks under the previous one when both fit the height. If the columns still
-// don't fit across the page, columns get longer (the page then scrolls down, never sideways).
-// A phone shows each group as one full-width column.
-function rosterLayout(ns) {
-  const r = $('roster'), most = Math.max(1, ...ns), one = { rows: most, stacks: ns.map((_, i) => [i]) };
-  if ($('checkin').hidden || r.clientWidth < 600) return one; // laid out again when the tab shows
-  const H = innerHeight - (r.getBoundingClientRect().top + scrollY) - 24, STACK_GAP = 24;
-  const pack = rows => {
-    const stacks = [];
-    let used = Infinity; // height used in the last stack, when it can take more
-    ns.forEach((n, i) => {
-      const h = HEAD_H + Math.min(n, rows) * ROW_H;
-      if (n <= rows && used + STACK_GAP + h <= H) { stacks.at(-1).push(i); used += STACK_GAP + h; }
-      else { stacks.push([i]); used = n <= rows ? h : Infinity; }
-    });
-    const cols = stacks.reduce((c, st) => c + Math.max(...st.map(i => Math.ceil(ns[i] / rows))), 0);
-    return { rows, stacks, cols, width: cols * COL_W + GROUP_GAP * (stacks.length - 1) };
+// Check in layout: lists hold as many rows as fit between the top of the board and the bottom of
+// the screen, and each board column takes as many lists as it needs. If those lists would come out
+// too narrow, they get longer instead, so the page scrolls down, never sideways. Done for the night
+// shares the third column. A phone stacks everything (see the styles).
+function rosterLayout(n) {
+  const r = $('roster');
+  const spread = rows => {
+    let arrive = 1, arrivePer = rows;
+    for (; arrive < 9; arrive++) {
+      arrivePer = rows - (n.done ? Math.ceil(n.done / arrive) + 1 : 0); // Done takes its rows and a header
+      if (arrivePer >= 1 && Math.ceil(n.arrive / arrive) <= arrivePer) break;
+    }
+    return { rows, arrive, arrivePer, here: Math.max(1, Math.ceil(n.here / rows)), court: 1 };
   };
-  for (let rows = Math.max(4, Math.floor((H - HEAD_H) / ROW_H)); rows < most; rows++) {
-    const l = pack(rows);
-    if (l.width <= r.clientWidth) return l;
+  if ($('checkin').hidden || r.clientWidth < 600) return spread(Infinity); // laid out again when the tab shows
+  const H = Math.floor(innerHeight - (r.getBoundingClientRect().top + scrollY) - 24);
+  r.style.setProperty('--kh', `${H}px`);
+  const most = Math.max(6, n.here, n.arrive + n.done + 1);
+  for (let rows = Math.max(6, Math.floor((H - HEAD_H) / ROW_H)); ; rows++) {
+    const l = spread(rows), cols = l.court + l.here + l.arrive;
+    if (rows >= most || cols * COL_MIN + (cols - 3) * 8 + 2 * 12 + 3 * 24 <= r.clientWidth) return l;
   }
-  return pack(most);
 }
 window.addEventListener('resize', () => renderTonight());
 
@@ -773,13 +793,13 @@ const tag = name => (avgText(name) ? ` · ${avgText(name)}` : '');
 // Team marker for labels: a filled square for Home, an outlined one for Away.
 const mk = team => `<i class="mk ${team}" aria-hidden="true"></i>`;
 
-// Check in: tonight's list and everyone here, as grouped lists in the Apple style: one group per
-// status (Home, Away, Here, To arrive, Done) with a small header and count, quiet one-line rows in
-// rounded cards, color only in the headers. Each group fills down to the bottom of the screen,
-// then starts another column; short groups stack (Home over Away), and groups never mix. A row shows its details
+// Check in: a board of numbered, full-height columns: 01 On court (one column split in the middle,
+// Home above Away, with their team bands), 02 Here, 03 To arrive, with Done for the night at the foot of 03. Players are
+// quiet one-line rows in rounded cards. Each list fills down to the bottom of the screen, then
+// starts another column, and the board's columns share the page's width. A row shows its details
 // (games tonight) until it is hovered or focused, then its button: Done, Undo, or the x that takes
 // a name off the list. Check in, the main action, always shows; touch screens show every button.
-const ROW_H = 40, HEAD_H = 30, COL_W = 220, GROUP_GAP = 28; // px: .rrow height, .sech height, .rows width + 8px gap, .roster gap
+const ROW_H = 40, HEAD_H = 70, COL_MIN = 175; // px: .rrow height, a column's header and padding, the narrowest list
 const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); // Test 2 before Test 10
 function renderTonight() {
   const people = new Map(state.expected.map(n => [n.toLowerCase(), { n, name: profileOf(n)?.name ?? n }]));
@@ -799,24 +819,28 @@ function renderTonight() {
     const trail = key === 'arrive'
       ? btn('checkIn', name, 'Check in', { cls: 's' }) + `<button type="button" class="xbtn" data-action="removeName"
         data-name="${esc(n)}" data-arg="" aria-label="Remove ${esc(name)} from tonight's list">&times;</button>`
-      : key === 'here' ? games + btn('done', name, 'Done') : key === 'done' ? games + btn('undoDone', name, 'Undo') : games;
+      : key === 'here' ? games + btn('done', name, 'Done') + (canUncheck(p) ? `<button type="button" class="xbtn" data-action="uncheck"
+        data-name="${esc(name)}" data-arg="" title="Back to To arrive" aria-label="Move ${esc(name)} back to To arrive">&larr;</button>` : '')
+        : key === 'done' ? games + btn('undoDone', name, 'Undo') : games;
     return `<div class="rrow" title="${esc(name)}${type}${p ? ` · ${plural(p.games, 'game')} tonight` : ''}${record}">${kindBtn(name)}<b>${esc(name)}</b>${trail}</div>${
       kindPick === name ? kindPicker(name) : ''}`;
   };
-  const heads = { home: [mk('home'), g.homeName], away: [mk('away'), g.awayName], here: ['<i class="sdot" aria-hidden="true"></i>', 'Here'],
-    arrive: ['', 'To arrive'], done: ['', 'Done for the night'] };
-  const keys = Object.keys(groups).filter(k => groups[k].length);
-  const { rows, stacks, cols: colCount } = rosterLayout(keys.map(k => groups[k].length));
-  // Columns share any spare width, up to 260px, so names stay readable with their type tag.
-  const spare = colCount ? ($('roster').clientWidth - GROUP_GAP * (stacks.length - 1)) / colCount - 8 : 0;
-  $('roster').style.setProperty('--colw', `${Math.max(212, Math.min(260, Math.floor(spare)))}px`);
-  const sec = i => {
-    const k = keys[i], list = groups[k].sort((a, b) => byName(a.name, b.name)), cols = [];
-    for (let j = 0; j < list.length; j += rows) cols.push(`<div class="rows">${list.slice(j, j + rows).map(x => row(x, k)).join('')}</div>`);
-    return `<div class="sec s-${k}"><p class="sech">${heads[k][0]}${esc(heads[k][1])}<span>${list.length}</span></p><div class="cols">${cols.join('')}</div></div>`;
+  for (const k in groups) groups[k].sort((a, b) => byName(a.name, b.name));
+  const count = k => groups[k].length, onCourt = count('home') + count('away');
+  const L = rosterLayout({ court: onCourt, here: count('here'), arrive: count('arrive'), done: count('done') });
+  // A list of players in columns of `per` rows, under an optional small header.
+  const list = (k, per, cols, head = '') => {
+    const cards = [];
+    for (let j = 0; j < groups[k].length; j += per) cards.push(`<div class="rows">${groups[k].slice(j, j + per).map(x => row(x, k)).join('')}</div>`);
+    return `<div class="sec s-${k}">${head && `<p class="sech">${head}<span>${count(k)}</span></p>`}<div class="cols" style="--c:${cols}">${cards.join('')}</div></div>`;
   };
-  $('roster').innerHTML = stacks.map(st => `<div class="stack">${st.map(sec).join('')}</div>`).join('')
-    || '<p class="empty">Nobody on the list yet. Add players above, or paste this week\'s list.</p>';
+  const panel = (n, title, total, cols, body, empty) => `<div class="kcol" style="--c:${cols}"><div class="khead"><span class="kn">0${n}.</span><h3>${title}</h3><span class="kc">${total}</span></div>
+    <div class="kbody">${body || `<p class="kempty">${empty}</p>`}</div></div>`;
+  $('roster').innerHTML = !people.size ? '<p class="empty">Nobody on the list yet. Add players above, or paste this week\'s list.</p>'
+    : panel(1, 'On court', onCourt, L.court, onCourt ? `<div class="kteams">${list('home', 99, 1, `${mk('home')}${esc(g.homeName)}`)}${list('away', 99, 1, `${mk('away')}${esc(g.awayName)}`)}</div>` : '', 'Nobody on court yet.')
+      + panel(2, 'Here', count('here'), L.here, count('here') ? list('here', L.rows, L.here) : '', 'Nobody waiting.')
+      + panel(3, 'To arrive', count('arrive'), L.arrive, (count('arrive') ? list('arrive', L.arrivePer, L.arrive) : '')
+        + (count('done') ? list('done', L.rows, L.arrive, 'Done for the night') : ''), 'Everyone is here.');
 
   $('choices').innerHTML = needsChoice.map(c => `<div class="notice">
       <b>${esc(c.query)} matches ${c.choices.length} players. Which one is coming?</b>
@@ -918,6 +942,7 @@ async function signOut() {
 // Keeps the page opening with no connection once it has loaded here (sw.js).
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 
+themeLabel();
 route();
 render();
 sync();
