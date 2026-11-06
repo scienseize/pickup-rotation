@@ -515,8 +515,8 @@ function renderHome() {
 // has open spots, Up next is who Fill calls now; once it is full, it is the next game's lineup in
 // its own Home and Away (nextLineup).
 // Click a box to select it and its buttons appear inside it: on court, Sit out and Remove;
-// waiting, Pick and Done; done, Undo. Clicking a second box pairs them: a waiting player and
-// someone on court (a sub), a waiting player and someone in the lineup (a replacement), or two
+// waiting, Pick and Done; done, Undo. Clicking a second box pairs them: someone waiting or in the
+// lineup and someone on court (a sub), a waiting player and someone in the lineup (a replacement), or two
 // players on opposite teams (they swap). Or drag one box onto the other. Dragging onto a team's
 // area moves a player there (calling them, if waiting); onto the waiting side undoes a call.
 // Teams change only this way. Nothing asks to confirm: each action has a way back.
@@ -528,7 +528,7 @@ function renderMap(order, now) {
   const acts = (name, src) => {
     const p = player(name), seat = seatOf(name);
     if (!p.present) return btn('undoDone', name, 'Undo');
-    if (src === 'next') return (seat ? '' : btn('done', name, 'Done')) + '<small class="hint">click or drag a waiting player here to swap them in</small>';
+    if (src === 'next') return (seat ? '' : btn('done', name, 'Done')) + '<small class="hint">click someone on court to sub in, or a waiting player to swap</small>';
     if (seat) return (lock ? '' : btn('sitOut', name, 'Sit out') + btn('remove', name, 'Remove')) + '<small class="hint">drag onto the other team to switch</small>';
     return (open ? btn('pick', name, 'Pick', { cls: 's' }) : '') + btn('done', name, 'Done')
       + (g.onCourt.length ? `<small class="hint">or click someone on court${full ? ' or up next' : ''} to swap in</small>` : '');
@@ -579,6 +579,7 @@ const hit = (e, s) => (e.target.nodeType === 1 ? e.target : e.target.parentEleme
 const run = fn => { fn(); commit(); };
 const teamIn = (src, name) => (src === 'court' ? seatOf(name)?.team : nextLineup(Date.now()).find(x => x.name === name)?.team);
 // Two boxes, one after the other (drag one onto the other, or click both): sub, replace or swap.
+// A sub can come from the waiting side or from the lineup.
 // Returns false when the pair means nothing, so a drop can fall back to the area underneath.
 function pair(a, aSrc, b, bSrc) {
   if (a === b || !player(a)?.present || !player(b)?.present) return false;
@@ -588,6 +589,10 @@ function pair(a, aSrc, b, bSrc) {
     if (oSrc === 'court' && !seatOf(w)) return run(() => actions.sub(other, w));
     if (oSrc === 'next' && !nextLineup(Date.now()).some(x => x.name === w)) return planSwap(other, w);
     return false;
+  }
+  if (aSrc !== bSrc && [aSrc, bSrc].every(s => s === 'court' || s === 'next')) { // someone in the lineup and someone on court: sub in now
+    const [inn, out] = aSrc === 'next' ? [a, b] : [b, a];
+    return seatOf(inn) ? false : run(() => actions.sub(out, inn));
   }
   if (aSrc !== bSrc || waits(aSrc)) return false;
   const ta = teamIn(aSrc, a), tb = teamIn(bSrc, b);
@@ -604,7 +609,7 @@ function dropOn(name, src, t) {
   if (zone.startsWith('next-')) { if (src === 'next') planMove(name, zone.slice(5)); return; } // lineup: switch team
   const seat = seatOf(name);
   if (zone === 'line') { if (seat && src === 'court' && actions.remove(name) !== false) commit(); return; } // back in line
-  if (src === 'next') return; // lineup players reach the court when the game ends
+  if (src === 'next') return; // onto a team's area: a lineup player subs in by landing on someone
   if (seat?.team !== zone && teamFull(zone)) return;
   if (!seat) { if (actions.pick(name) === false || !seatOf(name)) return; } // onto a team: call them
   run(() => { seatOf(name).team = zone; });

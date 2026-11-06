@@ -111,6 +111,20 @@ run(`choose('Player A', 'wait'); choose('Player M', 'court');`);
 assert.ok(court().startsWith('Player A,'));
 assert.deepEqual(run(`state.game.subbedOut`), []);
 
+// A substitute can come straight from the lineup, by drag or by click: K (in Up next) onto C,
+// then back. K scored nothing, so swapping back leaves no trace.
+run(`dropOn('Player K', 'next', { dataset: { p: 'Player C', src: 'court' }, closest: () => null })`);
+assert.ok(court().includes('Player K') && !court().includes('Player C'));
+run(`choose('Player C', 'next'); choose('Player K', 'court');`);
+assert.ok(court().includes('Player C') && !court().includes('Player K'));
+assert.deepEqual(run(`state.game.subbedOut`), []);
+// Someone in the lineup who is already on court can't sub in for a teammate.
+const both = run(`nextLineup(Date.now()).map(x => x.name).find(n => seatOf(n))`);
+const before2 = court();
+run(`choose(${JSON.stringify(both)}, 'next'); choose('Player J', 'court');`);
+assert.equal(court(), before2);
+run(`sel = null;`);
+
 // Replace someone in the lineup with a waiting player (drag M onto them), and switch a lineup
 // player's team by dragging them onto someone on the other team.
 const homeNext = run(`nextLineup(Date.now()).find(x => x.team === 'home').name`);

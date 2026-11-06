@@ -318,14 +318,14 @@ so it reads from across the gym. Phones keep a stacked layout.
 - **Click a box** to select it; its buttons appear inside it. On court:
   *Sit out*, *Remove* (no team buttons: teams change by dragging). Waiting: *Pick* (while a spot is open)
   and *Done*. Done for the night: *Undo*. Clicking a second box pairs the
-  two: a waiting player and someone on court is a substitution; a waiting
-  player and someone in Up next swaps the waiting player into the lineup;
+  two: a waiting or Up next player and someone on court is a substitution; a
+  waiting player and someone in Up next swaps the waiting player into the lineup;
   two players on opposite teams (both on court, or both in Up next) swap
   sides. Clicking
   the box again, clicking empty space or pressing Esc clears the selection.
   Boxes work with the keyboard too (Tab, then Enter).
 - **Drag a box:** a waiting player onto Home or Away calls them onto that
-  team; onto a player on court subs them in. A player on court onto the other
+  team; a waiting or Up next player onto a player on court subs them in. A player on court onto the other
   team switches sides, and onto a player on the other team swaps the two
   (for when both teams are full); onto Up next or Waiting undoes the call.
   In Up next, a waiting player onto a lineup player replaces them; a lineup
