@@ -33,6 +33,14 @@ export function playersBody(body) {
   return body.names.map(cleanName);
 }
 
+// POST /api/kind { name, kind }: a player's type, or null to clear it.
+export const KINDS = ['UG', 'SHS', 'Alumni', 'Outsider'];
+export function kindBody(body) {
+  const name = cleanName(body?.name), kind = body?.kind ?? null;
+  if (kind !== null && !KINDS.includes(kind)) throw new Invalid(`kind must be one of ${KINDS.join(', ')}, or null`);
+  return { name, kind };
+}
+
 // POST /api/results { session, date, game, rows: [{ name, points, fgm?, fga?, won? }] }
 // fgm and fga (field goals made and attempted) are optional, as 0, and won (1 a win, 0 a loss,
 // null a tie) is optional, as null, so games saved by an older version of the app still sync.

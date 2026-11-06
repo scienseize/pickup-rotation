@@ -68,6 +68,15 @@ const insert = db.find(q => q.sql.includes('INTO results'));
 assert.match(insert.sql, /\(session, played_on, game, name, points, fgm, fga, won\)/);
 assert.deepEqual(insert.v, [1793700000000, '2026-11-06', 1, 'Ana', 7, 3, 8, 1]);
 
+// A player's type: passcode and session both needed; adds the player if new, then updates them.
+assert.equal((await post('/api/kind', { name: 'Ana', kind: 'UG' }, { Cookie: session })).status, 401);
+assert.equal((await post('/api/kind', { name: 'Ana', kind: 'Staff' }, { Cookie: session, Authorization: `Bearer ${PASS}` })).status, 400);
+db.length = 0;
+assert.equal((await post('/api/kind', { name: 'Ana', kind: 'UG' }, { Cookie: session, Authorization: `Bearer ${PASS}` })).status, 200);
+assert.match(db[0].sql, /INSERT OR IGNORE INTO players \(name, added_on\)/);
+assert.match(db[1].sql, /UPDATE players SET kind = \? WHERE name = \?/);
+assert.deepEqual(db[1].v, ['UG', 'Ana']);
+
 // A cookie from before a passcode change no longer works.
 env.ORGANIZER_PASSCODE = 'new-passcode-7';
 assert.equal((await at('/app', { headers: { Cookie: session } })).status, 302);

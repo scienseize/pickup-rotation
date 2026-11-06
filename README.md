@@ -36,7 +36,7 @@ npm install
 | Put changes online | `npm run deploy` |
 | Backups | Automatic: every day the live database is exported and, if it changed, committed to the `backups` branch (`.github/workflows/backup.yml`). Run one now: `gh workflow run backup.yml`. Manual copy: `npx wrangler d1 export pickup --remote --output backup-YYYY-MM-DD.sql` |
 | Restore a backup | `git show backups:pickup.sql > restore.sql`, then `npx wrangler d1 execute pickup --remote --file restore.sql` (into an empty database) |
-| Update an existing database (after a schema change) | `npx wrangler d1 execute pickup --remote --file migrations/0002_wins.sql` (each file in `migrations/` once, in order; `--local` for local testing) |
+| Update an existing database (after a schema change) | `npx wrangler d1 execute pickup --remote --file migrations/0003_kind.sql` (each file in `migrations/` once, in order; `--local` for local testing) |
 | Change the organizer passcode | `npx wrangler secret put ORGANIZER_PASSCODE` (signs every device out; use a long passcode, it opens the whole site) |
 
 Local testing reads the passcode from `.dev.vars` (`ORGANIZER_PASSCODE=...`),

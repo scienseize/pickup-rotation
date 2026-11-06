@@ -15,7 +15,7 @@ const newGame = number => ({
   number, onCourt: [], subbedOut: [], satOut: [], homeName: 'Home', awayName: 'Away',
   remainingMs: GAME_MS, endsAt: null, started: false,
 });
-const newSession = () => ({ players: [], game: newGame(1), expected: [], unsynced: [], startedAt: Date.now() });
+const newSession = () => ({ players: [], game: newGame(1), expected: [], unsynced: [], kinds: [], startedAt: Date.now() });
 
 let state = load();
 let saved = true;
@@ -25,6 +25,8 @@ const stored = key => { try { return localStorage.getItem(key); } catch { return
 // lowercase name -> { name, games, points, avg }; the last copy is kept so profiles still show offline
 let profiles = new Map((JSON.parse(stored(PROFILES_KEY)) || []).map(p => [p.name.toLowerCase(), p]));
 let leaderMode = 'tonight'; // 'tonight' | 'alltime', the leaderboard toggle
+let leaderKind = 'all'; // 'all' or a player type, the leaderboard filter
+let kindPick = null; // the player whose type picker is open
 let db = 'connecting'; // 'online' | 'offline' | 'locked' (needs the organizer passcode)
 
 function load() {
@@ -33,7 +35,7 @@ function load() {
     if (s) {
       delete s.roster; // replaced by the database
       delete s.log; // never read
-      const st = { expected: [], unsynced: [], startedAt: Date.now(), ...s };
+      const st = { expected: [], unsynced: [], kinds: [], startedAt: Date.now(), ...s };
       seatTeams(st.game); // saved before every called player had a team
       // Saved before shots were tracked: start everyone's shots at 0.
       for (const c of [...st.game.onCourt, ...(st.game.subbedOut ?? [])]) Object.assign(c, { fgm: c.fgm ?? 0, fga: c.fga ?? 0, log: c.log ?? [] });
@@ -77,6 +79,20 @@ function seatTeams(g = state.game) {
 }
 const cleanName = Names.clean;
 const profileOf = name => profiles.get(name.toLowerCase());
+// Player types live on the person in the database. A change waits in state.kinds until the
+// database has it, so it also works offline. Tags use the short label; hover gives the full one.
+const KINDS = ['UG', 'SHS', 'Alumni', 'Outsider'];
+const KIND_SHORT = { UG: 'UG', SHS: 'SHS', Alumni: 'Alum', Outsider: 'Out' };
+const kindOf = name => { const k = state.kinds.find(x => x.name === name); return k ? k.kind : profileOf(name)?.kind ?? null; };
+const kindShort = name => KIND_SHORT[kindOf(name)] ?? '';
+const kindTag = name => (kindOf(name) ? `<span class="kt" title="${kindOf(name)}">${kindShort(name)}</span>` : '');
+// A tag that opens the picker; a player with no type shows a faint "Type".
+const kindBtn = name => `<button type="button" class="kt${kindOf(name) ? '' : ' unset'}" data-action="pickKind" data-name="${esc(name)}" data-arg=""
+  title="${kindOf(name) ?? 'Set type'}" aria-label="${kindOf(name) ? `${esc(name)} is ${kindOf(name)}. Change type` : `Set type for ${esc(name)}`}">${kindShort(name) || 'Type'}</button>`;
+const kindPicker = name => `<div class="kpick" role="group" aria-label="Type for ${esc(name)}">${KINDS.map(k =>
+  btn('setKind', name, k, { arg: k, pressed: kindOf(name) === k, cls: kindOf(name) === k ? 's' : 'o s' })).join('')}${
+  kindOf(name) ? `<button type="button" class="xbtn" data-action="setKind" data-name="${esc(name)}" data-arg="" aria-label="Clear type">&times;</button>` : ''}</div>`;
+function closeKindPick() { kindPick = null; renderTonight(); renderLeaders(); }
 const playerNamed = name => state.players.find(p => p.name.toLowerCase() === name.toLowerCase());
 const pct = (made, tried) => `${Math.round((made / tried) * 100)}%`;
 const avgText = name => {
@@ -175,6 +191,13 @@ async function sync() {
       try { await api('/api/results', state.unsynced[0]); }
       catch (e) { if (!(e instanceof Rejected)) throw e; flash(`The database rejected a game: ${e.message}`); }
       state.unsynced.shift();
+      save();
+    }
+    while (state.kinds.length) {
+      const k = state.kinds[0];
+      try { await api('/api/kind', k); }
+      catch (e) { if (!(e instanceof Rejected)) throw e; flash(`The database rejected a player type: ${e.message}`); }
+      state.kinds = state.kinds.filter(x => x !== k); // a newer tap for this player may have replaced it
       save();
     }
   } catch (e) {
@@ -281,6 +304,7 @@ const actions = {
   done: name => { player(name).present = false; }, // no confirm: Undo puts them back
   undoDone: name => { player(name).present = true; },
   leaderMode(_, mode) { leaderMode = mode; keepFocus(renderLeaders); return false; }, // a view choice, not saved
+  leaderKind(_, kind) { leaderKind = kind; keepFocus(renderLeaders); return false; }, // so is the filter
   checkIn: name => { checkIn(name); return false; },
   removeName: name => { state.expected = state.expected.filter(n => n !== name); },
   choose: (name, query) => { needsChoice = needsChoice.filter(c => c.query !== query); addToList(name); saveList(); },
@@ -348,7 +372,7 @@ const actions = {
 
   newSession() {
     if (!confirm('Start a new session? This clears tonight\'s players, list and points. The database keeps every result.')) return false;
-    state = { ...newSession(), unsynced: state.unsynced };
+    state = { ...newSession(), unsynced: state.unsynced, kinds: state.kinds };
     needsChoice = [];
   },
 
@@ -356,6 +380,14 @@ const actions = {
   sub: (outName, inName) => { Queue.sub(state.game, outName, inName, locked()); },
 
   flip() { state.flipped = !state.flipped; }, // Switch sides: which team shows on the left
+
+  // Player type: a tag opens the picker under that row; picking saves it, and sync sends it.
+  pickKind(name) { kindPick = kindPick === name ? null : name; keepFocus(() => { renderTonight(); renderLeaders(); }); return false; },
+  setKind(name, kind) {
+    state.kinds = [...state.kinds.filter(k => k.name !== name), { name, kind: kind || null }];
+    kindPick = null;
+    setTimeout(sync);
+  },
 
   fullscreen(_, arg) {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -366,6 +398,7 @@ const actions = {
 
 document.addEventListener('click', e => {
   try { audio ??= new AudioContext(); } catch {}
+  if (kindPick && !e.target.closest('.kpick,[data-action="pickKind"]')) closeKindPick(); // a click elsewhere
   const b = e.target.closest('[data-action]');
   if (b && actions[b.dataset.action](b.dataset.name, b.dataset.arg) !== false) commit();
 });
@@ -404,6 +437,7 @@ for (const t of ['home', 'away']) {
   };
 }
 
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && kindPick) closeKindPick(); });
 document.addEventListener('keydown', e => {
   if (e.code !== 'Space' || active !== 'board' || ['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
   e.preventDefault();
@@ -500,7 +534,7 @@ function renderMap(order, now) {
   };
   const node = (name, src, cls = '') => {
     const p = player(name), on = !!seatOf(name), picked = sel?.name === name && sel.src === src;
-    const notes = [plural(p.games, 'game')];
+    const notes = [kindShort(name), plural(p.games, 'game')].filter(Boolean);
     if (!on && p.present) notes.push(`${Math.floor((now - p.readyAt) / 60000)} min`); // on court: not waiting
     if (g.satOut.includes(name)) notes.push('sitting out');
     if (passed.has(name)) notes.push('passed over');
@@ -624,9 +658,13 @@ function renderLeaders() {
     : 'Tonight, ranked by points.';
   $('leaderMode').innerHTML = [['tonight', 'Tonight'], ['alltime', 'All-time']]
     .map(([m, label]) => btn('leaderMode', '', label, { arg: m, pressed: leaderMode === m, cls: leaderMode === m ? 's' : 'o s' })).join('');
-  // All-time players come from the database profiles, in the shape Queue.leaderboard takes.
-  const list = !all ? state.players : [...profiles.values()].filter(p => p.games).map(p => ({
-    name: p.name, games: p.games, totalPoints: p.points, fgm: p.fgm ?? 0, fga: p.fga ?? 0, wins: p.wins ?? 0, losses: p.losses ?? 0 }));
+  $('leaderKinds').innerHTML = [['all', 'All'], ...KINDS.map(k => [k, k])]
+    .map(([k, label]) => btn('leaderKind', '', label, { arg: k, pressed: leaderKind === k, cls: leaderKind === k ? 's' : 'o s' })).join('');
+  // All-time players come from the database profiles, in the shape Queue.leaderboard takes. The
+  // type filter comes first, so ranks start at 1 within the type.
+  const list = (!all ? state.players : [...profiles.values()].filter(p => p.games).map(p => ({
+    name: p.name, games: p.games, totalPoints: p.points, fgm: p.fgm ?? 0, fga: p.fga ?? 0, wins: p.wins ?? 0, losses: p.losses ?? 0 })))
+    .filter(p => leaderKind === 'all' || kindOf(p.name) === leaderKind);
   const rows = Queue.leaderboard(list, all ? 'perGame' : 'total', all ? MIN_ALLTIME_GAMES : MIN_RANKED_GAMES);
   const played = rows.filter(r => r.player.games), notYet = all ? [] : rows.filter(r => !r.player.games);
   const when = all ? 'every week' : 'tonight';
@@ -640,9 +678,10 @@ function renderLeaders() {
   const cell = (v, cls = 'r mono') => `<td class="${cls}">${v}</td>`;
   const big = v => cell(v, 'r pts');
   const row = ({ player: p, perGame: pg, fgPct, rank }) => `<tr class="${!rank ? 'un' : rank <= 3 ? `top p${rank}` : ''}">
-      <td class="n">${rank ?? ''}</td><td class="who"><b title="${esc(p.name)}">${esc(p.name)}</b></td>${cell(p.games, 'r mono gm')}${all
+      <td class="n">${rank ?? ''}</td><td class="who"><div><b title="${esc(p.name)}">${esc(p.name)}</b>${all ? kindBtn(p.name) : kindTag(p.name)}</div></td>${cell(p.games, 'r mono gm')}${all
       ? big(pg.toFixed(1)) + cell(p.totalPoints, 'r mono sub') + fgCell(p, fgPct) + cell(wl(p), 'r mono sub') + cell(decided(p) ? pct(p.wins, decided(p)) : '')
-      : big(p.totalPoints) + cell(pg === null ? '' : pg.toFixed(1), 'r mono sub') + fgCell(p, fgPct) + cell(wl(p))}</tr>`;
+      : big(p.totalPoints) + cell(pg === null ? '' : pg.toFixed(1), 'r mono sub') + fgCell(p, fgPct) + cell(wl(p))}</tr>${
+      all && kindPick === p.name ? `<tr class="pickrow"><td colspan="8">${kindPicker(p.name)}</td></tr>` : ''}`;
   const th = (label, title, cls = 'r') => `<th class="${cls}" title="${title}">${label}</th>`;
   const head = `<tr><th>#</th><th>Player</th>${th('Games', `Games ${when}`, 'r gm')}${all
     ? th('PPG', 'Points per game, every week') + th('Points', 'Total points, every week', 'r sub') + th('FG%', 'Field goals made / attempted, every week')
@@ -656,7 +695,7 @@ function renderLeaders() {
   lb.className = `wide lb${k > 1 ? ' split' : ''}${k > 2 ? ' split3' : ''}`;
   lb.style.setProperty('--k', k);
   lb.innerHTML = all && !profiles.size ? '<p class="empty">All-time stats need the database. Check the dot in the top bar.</p>'
-    : !rows.length ? `<p class="empty">${all ? 'No games in the database yet.' : 'No players yet.'}</p>`
+    : !rows.length ? `<p class="empty">${leaderKind !== 'all' ? `No ${leaderKind} players here yet.` : all ? 'No games in the database yet.' : 'No players yet.'}</p>`
     : (!played.length ? '<p class="empty">No games played yet.</p>' : parts.map(table).join(''))
       + (notYet.length ? `<p class="rest">Not played yet: ${notYet.map(r => esc(r.player.name)).join(', ')}</p>` : '');
   fitLeaders();
@@ -706,8 +745,8 @@ function rosterLayout(ns) {
       if (n <= rows && used + STACK_GAP + h <= H) { stacks.at(-1).push(i); used += STACK_GAP + h; }
       else { stacks.push([i]); used = n <= rows ? h : Infinity; }
     });
-    const width = stacks.reduce((w, st) => w + Math.max(...st.map(i => Math.ceil(ns[i] / rows))) * COL_W, 0) + GROUP_GAP * (stacks.length - 1);
-    return { rows, stacks, width };
+    const cols = stacks.reduce((c, st) => c + Math.max(...st.map(i => Math.ceil(ns[i] / rows))), 0);
+    return { rows, stacks, cols, width: cols * COL_W + GROUP_GAP * (stacks.length - 1) };
   };
   for (let rows = Math.max(4, Math.floor((H - HEAD_H) / ROW_H)); rows < most; rows++) {
     const l = pack(rows);
@@ -742,17 +781,22 @@ function renderTonight() {
     const record = !profiles.size ? '' : pr?.games
       ? ` · ${plural(pr.games, 'game')} · AVG ${pr.avg.toFixed(1)}${pr.fga ? ` · FG ${pct(pr.fgm, pr.fga)}` : ''}${
         pr.wins || pr.losses ? ` · ${pr.wins}-${pr.losses}` : ''}` : ' · First game';
-    const games = p ? `<small>${plural(p.games, 'game')}</small>` : '';
+    const type = kindOf(name) ? ` · ${kindOf(name)}` : '';
+    const games = p ? `<small>${p.games}g</small>` : ''; // short, so the name and type have room
     const trail = key === 'arrive'
       ? btn('checkIn', name, 'Check in', { cls: 's' }) + `<button type="button" class="xbtn" data-action="removeName"
         data-name="${esc(n)}" data-arg="" aria-label="Remove ${esc(name)} from tonight's list">&times;</button>`
       : key === 'here' ? games + btn('done', name, 'Done') : key === 'done' ? games + btn('undoDone', name, 'Undo') : games;
-    return `<div class="rrow" title="${esc(name)}${p ? ` · ${plural(p.games, 'game')} tonight` : ''}${record}"><b>${esc(name)}</b>${trail}</div>`;
+    return `<div class="rrow" title="${esc(name)}${type}${p ? ` · ${plural(p.games, 'game')} tonight` : ''}${record}">${kindBtn(name)}<b>${esc(name)}</b>${trail}</div>${
+      kindPick === name ? kindPicker(name) : ''}`;
   };
   const heads = { home: [mk('home'), g.homeName], away: [mk('away'), g.awayName], here: ['<i class="sdot" aria-hidden="true"></i>', 'Here'],
     arrive: ['', 'To arrive'], done: ['', 'Done for the night'] };
   const keys = Object.keys(groups).filter(k => groups[k].length);
-  const { rows, stacks } = rosterLayout(keys.map(k => groups[k].length));
+  const { rows, stacks, cols: colCount } = rosterLayout(keys.map(k => groups[k].length));
+  // Columns share any spare width, up to 260px, so names stay readable with their type tag.
+  const spare = colCount ? ($('roster').clientWidth - GROUP_GAP * (stacks.length - 1)) / colCount - 8 : 0;
+  $('roster').style.setProperty('--colw', `${Math.max(212, Math.min(260, Math.floor(spare)))}px`);
   const sec = i => {
     const k = keys[i], list = groups[k].sort((a, b) => byName(a.name, b.name)), cols = [];
     for (let j = 0; j < list.length; j += rows) cols.push(`<div class="rows">${list.slice(j, j + rows).map(x => row(x, k)).join('')}</div>`);
@@ -786,7 +830,7 @@ function renderBoard() {
     $(t + 'Lbl').textContent = g[t + 'Name'];
     $(t + 'Count').textContent = plural(team.length, 'player').toUpperCase();
     $(t + 'Players').innerHTML = team.map(c => `<div class="pl">
-        <span><b>${esc(c.name)}</b><small class="mono">${[avgText(c.name), `FG ${c.fgm}/${c.fga}`].filter(Boolean).join(' · ')}</small></span><span class="pts">${c.points}</span>
+        <span><b>${esc(c.name)}</b><small class="mono">${[kindShort(c.name), avgText(c.name), `FG ${c.fgm}/${c.fga}`].filter(Boolean).join(' · ')}</small></span><span class="pts">${c.points}</span>
         <span class="pt">${btn('miss', c.name, 'Miss', { cls: 'o' })}${btn('make', c.name, '+2', { arg: 2, cls: 'o' })}${
           btn('make', c.name, '+3', { arg: 3, cls: 'o' })}${btn('undo', c.name, 'Undo', { cls: 'o', disabled: !c.log.length })}</span>
       </div>`).join('') || '<p class="empty">No players on this team.</p>';

@@ -130,6 +130,7 @@ state = {
   },
   expected: [ names ],              // tonight's list, pasted each week
   unsynced: [ game payloads ],      // finished games the database doesn't have yet
+  kinds: [ { name, kind } ],        // player types the database doesn't have yet
   startedAt                         // session start; also the session id in the database
 }
 ```
@@ -263,6 +264,15 @@ laptop screen and still works at phone width.
   someone is saved under just that first name. A name nobody has used shows a
   *New player* row. *Paste a list* opens a dialog for the weekly names, and
   shared first names wait in a "Which one is coming?" callout.
+- **Player types** (UG, SHS, Alumni, Outsider): each row starts with a small
+  tag, or a faint "Type" when none is set. Clicking it opens the four types
+  under the row; × clears a type, and Esc or a click elsewhere closes it. The
+  type lives on the person in the database, so it covers their past games too.
+  Changes wait in `state.kinds` until the database has them, so this works
+  offline. Players who aren't here tonight can be marked from the All-time
+  leaderboard. Tags use short labels (UG, SHS, Alum, Out); hover gives the full
+  one. Types also show on the Tonight leaderboard, the queue diagram and the
+  scoreboard, where they can't be edited.
 - **Tonight, as grouped lists:** everyone on tonight's list plus walk-ins, in
   one group per status, in the Apple grouped-list style: a small header with
   the group's count, then its players as quiet one-line rows in rounded cards,
@@ -275,7 +285,7 @@ laptop screen and still works at phone width.
   3. **To arrive:** *Check in*, and a × to take them off the list.
   4. **Done for the night:** *Undo* puts them back in line.
 
-  A row shows its details (games tonight) until it is hovered or focused,
+  A row shows its details (games tonight, as "3g") until it is hovered or focused,
   then its button. *Check in*, the main action, always shows, and touch
   screens show every button. Each group fills down to the bottom of the
   screen, then starts another column; short groups stack (Home over Away)
@@ -335,6 +345,8 @@ rows are numbered, and ties share a rank (1, 2, 2, 4).
   listed after, unranked. Columns: Games, **PPG** (the big number), Points,
   FG%, W-L, Win%. FG% and wins only count games played since each was tracked.
   It needs the database; without it the view says so.
+- **Type filter:** chips for All, UG, SHS, Alumni and Outsider, in both views.
+  The filter comes before the ranking, so ranks start at 1 within the type.
 - **FG%** shows makes, attempts and the percentage ("6/10 60%"), blank with no
   attempts. Under 5 attempts (`MIN_FG_SHOTS`) it is greyed out, since 1 of 1
   isn't 100% shooting; hovering says why. **W-L** is the record ("3-1"); ties
@@ -514,7 +526,8 @@ Every player and every game result across weeks, in Cloudflare D1 (SQLite).
 The Worker in `worker/index.js` serves the app's files and this API.
 
 ```sql
-players (name TEXT PRIMARY KEY COLLATE NOCASE, added_on TEXT)
+players (name TEXT PRIMARY KEY COLLATE NOCASE, added_on TEXT,
+         kind TEXT CHECK (kind IN ('UG', 'SHS', 'Alumni', 'Outsider'))) -- NULL until set
 results (session INTEGER, played_on TEXT, game INTEGER, name TEXT,
          points INTEGER CHECK (points BETWEEN 0 AND 200),
          fgm INTEGER DEFAULT 0, fga INTEGER DEFAULT 0, -- field goals made / attempted
@@ -526,8 +539,9 @@ results (session INTEGER, played_on TEXT, game INTEGER, name TEXT,
   per database with `npx wrangler d1 execute pickup --remote --file ...` (and
   `--local` for local testing). `schema.sql` always has the full current
   tables for a new database. `0001_fg.sql` added `fgm` and `fga`, and
-  `0002_wins.sql` added `won`; each must run on the live database before the
-  Worker that writes it is deployed.
+  `0002_wins.sql` added `won`, and `0003_kind.sql` added `players.kind`; each
+  must run on the live database before the Worker that uses it is deployed.
+  After 0003, deploy right away: until then the old Worker can't add new names.
   Otherwise saves fail and games wait on the laptop until it has run.
 
 - **One row per player per game.** Averages are computed by a query and never
@@ -546,8 +560,9 @@ Every call except sign-in needs the session cookie (section 13).
 | `POST /api/login {passcode}` | Signs this device in for 30 days (cookie), returns the profiles | The passcode itself |
 | `POST /api/logout` | Clears this device's session cookie | No |
 | `GET /api/session` | 204 when this device is signed in, else 401 | No (session only) |
-| `GET /api/profiles` | Every player with games, points, average, all-time `fgm` / `fga`, and `wins` / `losses` | No (session only) |
+| `GET /api/profiles` | Every player with type (`kind`), games, points, average, all-time `fgm` / `fga`, and `wins` / `losses` | No (session only) |
 | `POST /api/players {names}` | Adds new names from tonight's list | Yes |
+| `POST /api/kind {name, kind}` | Sets a player's type, or clears it with null; adds the player if new | Yes |
 | `POST /api/results {session, date, game, rows: [{name, points, fgm, fga, won}]}` | Saves one finished game | Yes |
 
 The Worker validates every input: names are 1 to 60 characters, points are

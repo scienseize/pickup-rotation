@@ -1,6 +1,6 @@
 // Run: node worker/rules.test.mjs
 import assert from 'node:assert';
-import { Invalid, cleanName, playersBody, gameBody, isJson, passcodeOk, signSession, sessionOk, SESSION_DAYS } from './rules.js';
+import { Invalid, cleanName, playersBody, gameBody, kindBody, isJson, passcodeOk, signSession, sessionOk, SESSION_DAYS } from './rules.js';
 
 const rejects = (fn, why) => assert.throws(fn, Invalid, why);
 const req = type => ({ headers: new Headers(type ? { 'Content-Type': type } : {}) });
@@ -36,6 +36,14 @@ rejects(() => gameBody({ ...ok, rows: { name: 'Ana', points: 1 } }));
 rejects(() => gameBody({ ...ok, rows: ['Ana'] }));
 rejects(() => gameBody({ ...ok, date: '2026-02-31' }));
 rejects(() => gameBody({ ...ok, game: 0 }));
+
+// A player's type: one of the four, or null to clear it; nothing else, and a real name.
+assert.deepEqual(kindBody({ name: 'Ana', kind: 'UG' }), { name: 'Ana', kind: 'UG' });
+assert.deepEqual(kindBody({ name: 'Ana', kind: null }), { name: 'Ana', kind: null });
+assert.deepEqual(kindBody({ name: 'Ana' }), { name: 'Ana', kind: null });
+for (const kind of ['ug', 'Staff', 1, true, '']) rejects(() => kindBody({ name: 'Ana', kind }), `kind ${kind}`);
+rejects(() => kindBody({ kind: 'UG' }));
+rejects(() => kindBody(null));
 
 // JSON only, whatever the charset.
 assert.ok(isJson(req('application/json; charset=utf-8')));

@@ -2,7 +2,7 @@
 // Every request reaches this first (run_worker_first): only the home page (with the sign-in),
 // the logo, the tab icon and POST /api/login are open. Everything else, the app at /app
 // included, needs a valid session cookie.
-import { Invalid, isJson, playersBody, gameBody, passcodeOk, signSession, sessionOk, SESSION_DAYS } from './rules.js';
+import { Invalid, isJson, playersBody, gameBody, kindBody, passcodeOk, signSession, sessionOk, SESSION_DAYS } from './rules.js';
 
 const MAX_BODY = 1_000_000;
 const OPEN = new Set(['/', '/index.html', '/logo.png', '/favicon.png']);
@@ -14,7 +14,7 @@ const json = (status, body) => new Response(JSON.stringify(body), {
 
 async function profiles(db) {
   const { results } = await db.prepare(`
-    SELECT p.name AS name, COUNT(r.points) AS games, COALESCE(SUM(r.points), 0) AS points, AVG(r.points) AS avg,
+    SELECT p.name AS name, p.kind AS kind, COUNT(r.points) AS games, COALESCE(SUM(r.points), 0) AS points, AVG(r.points) AS avg,
       COALESCE(SUM(r.fgm), 0) AS fgm, COALESCE(SUM(r.fga), 0) AS fga,
       COALESCE(SUM(r.won = 1), 0) AS wins, COALESCE(SUM(r.won = 0), 0) AS losses
     FROM players p LEFT JOIN results r ON r.name = p.name
@@ -23,7 +23,13 @@ async function profiles(db) {
 }
 
 async function write(db, path, body) {
-  const addPlayer = (name, on) => db.prepare('INSERT OR IGNORE INTO players VALUES (?, ?)').bind(name, on);
+  const addPlayer = (name, on) => db.prepare('INSERT OR IGNORE INTO players (name, added_on) VALUES (?, ?)').bind(name, on);
+  if (path === '/api/kind') { // a player's type; adds the player first if the database doesn't have them yet
+    const { name, kind } = kindBody(body);
+    await db.batch([addPlayer(name, new Date().toISOString().slice(0, 10)),
+      db.prepare('UPDATE players SET kind = ? WHERE name = ?').bind(kind, name)]);
+    return;
+  }
   if (path === '/api/players') {
     const today = new Date().toISOString().slice(0, 10);
     const names = playersBody(body);
@@ -80,7 +86,7 @@ export default {
     if (request.method === 'GET' && path === '/api/session') return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } }); // the home page asks: signed in?
 
     if (request.method === 'GET' && path === '/api/profiles') return json(200, await profiles(env.DB));
-    if (request.method !== 'POST' || !['/api/players', '/api/results'].includes(path)) {
+    if (request.method !== 'POST' || !['/api/players', '/api/results', '/api/kind'].includes(path)) {
       return json(404, { error: 'not found' });
     }
     if (!isJson(request)) return json(415, { error: 'send JSON' });

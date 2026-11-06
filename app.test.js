@@ -66,10 +66,10 @@ const heads = [...roster.matchAll(/<p class="sech">(?:<[^>]+>)*(?:<\/i>)?([^<]+)
 assert.deepEqual(heads, ['Home 4', 'Away 6', 'Here 1', 'To arrive 2', 'Done for the night 1']);
 assert.equal((roster.match(/class="rrow"/g) || []).length, 14); // Player A appears once, not twice
 const section = k => { const i = roster.indexOf(`s-${k}"`), j = roster.indexOf('<div class="sec ', i); return roster.slice(i, j < 0 ? undefined : j); };
-assert.match(section('away'), /<b>Player A<\/b><small>0 games<\/small><\/div>/); // on court: details only
-assert.match(section('here'), /<b>Player K<\/b><small>0 games<\/small><button class="btn o s" data-action="done"/);
+assert.match(section('away'), /class="kt unset"[\s\S]*?Type<\/button><b>Player A<\/b><small>0g<\/small><\/div>/); // on court: details only
+assert.match(section('here'), /<b>Player K<\/b><small>0g<\/small><button class="btn o s" data-action="done"/);
 assert.match(section('arrive'), /<b>Abe New<\/b><button class="btn s" data-action="checkIn"[\s\S]*<b>Zed New<\/b>/); // A to Z
-assert.match(section('done'), /<b>Player L<\/b><small>0 games<\/small><button class="btn o s" data-action="undoDone"/);
+assert.match(section('done'), /<b>Player L<\/b><small>0g<\/small><button class="btn o s" data-action="undoDone"/);
 run(`seatOf('Player A').team = 'home';`);
 assert.equal(run(`byName('Test 2', 'Test 10')`) < 0, true); // numbers sort in order
 // Done takes a player out of the queue; Undo puts them back.
@@ -181,12 +181,40 @@ run(`profiles = new Map([
   ['dee', { name: 'Dee', games: 0, points: 0, avg: null, fgm: 0, fga: 0, wins: 0, losses: 0 }],
 ]); renderLeaders();`);
 const allHtml = els.leaderBoard.innerHTML;
-const allRows = [...allHtml.matchAll(/<td class="n">(\d*)<\/td><td class="who"><b title="([^"]+)"/g)].map(m => `${m[1] || '-'}${m[2]}`);
+const allRows = [...allHtml.matchAll(/<td class="n">(\d*)<\/td><td class="who"><div><b title="([^"]+)"/g)].map(m => `${m[1] || '-'}${m[2]}`);
 assert.deepEqual(allRows, ['1Ben', '2Ana', '-Cy']); // Cy has 1 game: listed, not ranked; Dee never played
-assert.match(allHtml, /Ana<\/b><\/td><td class="r mono gm">4<\/td><td class="r pts">10\.0<\/td><td class="r mono sub">40<\/td><td class="r mono fg" title="15 of 30 every week"><small>15\/30<\/small> 50%<\/td><td class="r mono sub">3-1<\/td><td class="r mono">75%<\/td>/);
+assert.match(allHtml, /Ana<\/b>[\s\S]*?<\/button><\/div><\/td><td class="r mono gm">4<\/td><td class="r pts">10\.0<\/td><td class="r mono sub">40<\/td><td class="r mono fg" title="15 of 30 every week"><small>15\/30<\/small> 50%<\/td><td class="r mono sub">3-1<\/td><td class="r mono">75%<\/td>/);
 assert.match(allHtml, /Ben<\/b>[\s\S]*?<td class="r mono fg few"/); // 2 of 4: too few attempts
 for (const h of ['PPG', 'Points', 'FG%', 'W-L', 'Win%']) assert.match(allHtml, new RegExp(`>${h}</th>`));
-run(`actions.leaderMode('', 'tonight')`);
+// Types work for anyone in the database, not just tonight's players: mark Ana from All-time.
+assert.match(allHtml, /data-action="pickKind" data-name="Ana"/);
+run(`actions.pickKind('Ana')`);
+assert.match(els.leaderBoard.innerHTML, /class="kpick"[\s\S]*data-action="setKind" data-name="Ana" data-arg="Alumni"/);
+run(`actions.setKind('Ana', 'Alumni'); commit();`);
+assert.equal(run('kindPick'), null);
+assert.equal(run(`kindOf('Ana')`), 'Alumni');
+assert.match(els.leaderBoard.innerHTML, /Ana<\/b><button[^>]*class="kt"[\s\S]*?Alum<\/button>/);
+// It waits in state.kinds until the database confirms it (offline here), and is saved.
+assert.deepEqual(JSON.parse(storage.get('pickup-rotation-v1')).kinds, [{ name: 'Ana', kind: 'Alumni' }]);
+// A second tap replaces the first; clearing it is a null.
+run(`actions.setKind('Ana', 'UG'); actions.setKind('Ana', ''); commit();`);
+assert.deepEqual(run(`state.kinds`), [{ name: 'Ana', kind: null }]);
+assert.equal(run(`kindOf('Ana')`), null);
+// The filter ranks from 1 within a type and leaves everyone else out.
+run(`actions.setKind('Ana', 'UG'); actions.setKind('Cy', 'SHS'); commit(); actions.leaderKind('', 'UG');`);
+const ugRows = [...els.leaderBoard.innerHTML.matchAll(/<td class="n">(\d*)<\/td><td class="who"><div><b title="([^"]+)"/g)].map(m => `${m[1] || '-'}${m[2]}`);
+assert.deepEqual(ugRows, ['1Ana']);
+assert.match(els.leaderKinds.innerHTML, /data-arg="UG" aria-pressed="true">UG</);
+run(`actions.leaderKind('', 'Alumni');`);
+assert.match(els.leaderBoard.innerHTML, /No Alumni players here yet/);
+run(`actions.leaderKind('', 'all'); actions.leaderMode('', 'tonight');`);
+// A type shows on every screen for someone playing: Check in, leaderboard, diagram, scoreboard.
+const onCourt1 = run(`state.game.onCourt[0].name`);
+run(`actions.setKind(${JSON.stringify(onCourt1)}, 'Outsider'); commit();`);
+assert.match(els.roster.innerHTML, new RegExp(`class="kt"[^>]*>?[\\s\\S]{0,200}?Out</button><b>${onCourt1}</b>`));
+assert.match(els.leaderBoard.innerHTML, new RegExp(`${onCourt1}</b><span class="kt" title="Outsider">Out</span>`));
+assert.match(els.qmap.innerHTML, new RegExp(`data-p="${onCourt1}" data-src="court"[\\s\\S]*?<small>Out · `));
+assert.match(els.homePlayers.innerHTML + els.awayPlayers.innerHTML, new RegExp(`<b>${onCourt1}</b><small class="mono">Out · `));
 assert.equal(run(`state.game.onCourt.map(c => c.name + ':' + c.team).join()`), planned);
 assert.doesNotMatch(els.qmap.innerHTML, /data-action="fill"/); // already full
 
@@ -219,5 +247,11 @@ assert.equal(JSON.parse(storage.get('pickup-rotation-v1')).flipped, true);
 assert.equal(score(), before);
 run(`actions.flip(); commit();`);
 assert.equal(JSON.parse(storage.get('pickup-rotation-v1')).flipped, false);
+
+// Pending types survive a new session.
+context.confirm = () => true;
+const pendingBefore = run(`state.kinds.length`);
+run(`actions.newSession(); render();`);
+assert.equal(run(`state.kinds.length`), pendingBefore);
 
 console.log('app.test.js: all checks passed');

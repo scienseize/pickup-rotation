@@ -2,7 +2,8 @@
 -- Averages are queried, never stored, and the same rows will feed over/under lines later.
 CREATE TABLE IF NOT EXISTS players (
   name TEXT PRIMARY KEY COLLATE NOCASE,
-  added_on TEXT NOT NULL
+  added_on TEXT NOT NULL,
+  kind TEXT CHECK (kind IN ('UG', 'SHS', 'Alumni', 'Outsider')) -- player type; NULL until set
 );
 CREATE TABLE IF NOT EXISTS results (
   session INTEGER NOT NULL,
