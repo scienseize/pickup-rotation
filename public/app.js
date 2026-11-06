@@ -82,16 +82,18 @@ const profileOf = name => profiles.get(name.toLowerCase());
 // Player types live on the person in the database. A change waits in state.kinds until the
 // database has it, so it also works offline. Tags use the short label; hover gives the full one.
 const KINDS = ['UG', 'SHS', 'Alumni', 'Outsider'];
-const KIND_SHORT = { UG: 'UG', SHS: 'SHS', Alumni: 'Alum', Outsider: 'Out' };
+const KIND_SHORT = { UG: 'UG', SHS: 'SHS', Alumni: 'Alum', Outsider: 'Vis' };
+// Shown as Visitor; the database keeps the value Outsider, since its rule allows only the original four.
+const kindLabel = k => (k === 'Outsider' ? 'Visitor' : k);
 const kindOf = name => { const k = state.kinds.find(x => x.name === name); return k ? k.kind : profileOf(name)?.kind ?? null; };
 const kindShort = name => KIND_SHORT[kindOf(name)] ?? '';
 const kindClass = name => (kindOf(name) ? `k-${kindOf(name).toLowerCase()}` : 'unset');
-const kindTag = name => (kindOf(name) ? `<span class="kt ${kindClass(name)}" title="${kindOf(name)}">${kindShort(name)}</span>` : '');
+const kindTag = name => (kindOf(name) ? `<span class="kt ${kindClass(name)}" title="${kindLabel(kindOf(name))}">${kindShort(name)}</span>` : '');
 // A tag that opens the picker; a player with no type shows a faint "Type".
 const kindBtn = name => `<button type="button" class="kt ${kindClass(name)}" data-action="pickKind" data-name="${esc(name)}" data-arg=""
-  title="${kindOf(name) ?? 'Set type'}" aria-label="${kindOf(name) ? `${esc(name)} is ${kindOf(name)}. Change type` : `Set type for ${esc(name)}`}">${kindShort(name) || 'Type'}</button>`;
+  title="${kindLabel(kindOf(name)) ?? 'Set type'}" aria-label="${kindOf(name) ? `${esc(name)} is ${kindLabel(kindOf(name))}. Change type` : `Set type for ${esc(name)}`}">${kindShort(name) || 'Type'}</button>`;
 const kindPicker = name => `<div class="kpick" role="group" aria-label="Type for ${esc(name)}">${KINDS.map(k =>
-  btn('setKind', name, k, { arg: k, pressed: kindOf(name) === k, cls: kindOf(name) === k ? 's' : 'o s' })).join('')}${
+  btn('setKind', name, kindLabel(k), { arg: k, pressed: kindOf(name) === k, cls: kindOf(name) === k ? 's' : 'o s' })).join('')}${
   kindOf(name) ? `<button type="button" class="xbtn" data-action="setKind" data-name="${esc(name)}" data-arg="" aria-label="Clear type">&times;</button>` : ''}</div>`;
 function closeKindPick() { kindPick = null; renderTonight(); renderLeaders(); }
 const playerNamed = name => state.players.find(p => p.name.toLowerCase() === name.toLowerCase());
@@ -664,7 +666,7 @@ function renderLeaders() {
     : 'Tonight, ranked by points.';
   $('leaderMode').innerHTML = [['tonight', 'Tonight'], ['alltime', 'All-time']]
     .map(([m, label]) => btn('leaderMode', '', label, { arg: m, pressed: leaderMode === m, cls: leaderMode === m ? 's' : 'o s' })).join('');
-  $('leaderKinds').innerHTML = [['all', 'All'], ...KINDS.map(k => [k, k])]
+  $('leaderKinds').innerHTML = [['all', 'All'], ...KINDS.map(k => [k, kindLabel(k)])]
     .map(([k, label]) => btn('leaderKind', '', label, { arg: k, pressed: leaderKind === k, cls: leaderKind === k ? 's' : 'o s' })).join('');
   // All-time players come from the database profiles, in the shape Queue.leaderboard takes. The
   // type filter comes first, so ranks start at 1 within the type.
@@ -701,7 +703,7 @@ function renderLeaders() {
   lb.className = `wide lb${k > 1 ? ' split' : ''}${k > 2 ? ' split3' : ''}`;
   lb.style.setProperty('--k', k);
   lb.innerHTML = all && !profiles.size ? '<p class="empty">All-time stats need the database. Check the dot in the top bar.</p>'
-    : !rows.length ? `<p class="empty">${leaderKind !== 'all' ? `No ${leaderKind} players here yet.` : all ? 'No games in the database yet.' : 'No players yet.'}</p>`
+    : !rows.length ? `<p class="empty">${leaderKind !== 'all' ? `No ${kindLabel(leaderKind)} players here yet.` : all ? 'No games in the database yet.' : 'No players yet.'}</p>`
     : (!played.length ? '<p class="empty">No games played yet.</p>' : parts.map(table).join(''))
       + (notYet.length ? `<p class="rest">Not played yet: ${notYet.map(r => esc(r.player.name)).join(', ')}</p>` : '');
   fitLeaders();
@@ -787,7 +789,7 @@ function renderTonight() {
     const record = !profiles.size ? '' : pr?.games
       ? ` · ${plural(pr.games, 'game')} · AVG ${pr.avg.toFixed(1)}${pr.fga ? ` · FG ${pct(pr.fgm, pr.fga)}` : ''}${
         pr.wins || pr.losses ? ` · ${pr.wins}-${pr.losses}` : ''}` : ' · First game';
-    const type = kindOf(name) ? ` · ${kindOf(name)}` : '';
+    const type = kindOf(name) ? ` · ${kindLabel(kindOf(name))}` : '';
     const games = p ? `<small>${p.games}g</small>` : ''; // short, so the name and type have room
     const trail = key === 'arrive'
       ? btn('checkIn', name, 'Check in', { cls: 's' }) + `<button type="button" class="xbtn" data-action="removeName"

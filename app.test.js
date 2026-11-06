@@ -222,13 +222,19 @@ assert.match(els.leaderKinds.innerHTML, /data-arg="UG" aria-pressed="true">UG</)
 run(`actions.leaderKind('', 'Alumni');`);
 assert.match(els.leaderBoard.innerHTML, /No Alumni players here yet/);
 run(`actions.leaderKind('', 'all'); actions.leaderMode('', 'tonight');`);
+// The app says Visitor everywhere; only the stored value stays Outsider.
+assert.match(els.leaderKinds.innerHTML, /data-arg="Outsider"[^>]*>Visitor</);
+assert.doesNotMatch(els.leaderKinds.innerHTML, />Outsider</);
+run(`actions.pickKind('Ana')`);
+assert.match(run(`kindPicker('Ana')`), /data-arg="Outsider"[^>]*>Visitor</);
+run(`actions.pickKind('Ana')`);
 // A type shows on every screen for someone playing: Check in, leaderboard, diagram, scoreboard.
 const onCourt1 = run(`state.game.onCourt[0].name`);
 run(`actions.setKind(${JSON.stringify(onCourt1)}, 'Outsider'); commit();`);
-assert.match(els.roster.innerHTML, new RegExp(`class="kt k-outsider"[^>]*>?[\\s\\S]{0,200}?Out</button><b>${onCourt1}</b>`));
-assert.match(els.leaderBoard.innerHTML, new RegExp(`${onCourt1}</b><span class="kt k-outsider" title="Outsider">Out</span>`));
-assert.match(els.qmap.innerHTML, new RegExp(`data-p="${onCourt1}" data-src="court"[^]*?<span class="qsub"><span class="kt k-outsider" title="Outsider">Out</span><small>`));
-assert.match(els.homePlayers.innerHTML + els.awayPlayers.innerHTML, new RegExp(`<b>${onCourt1}</b><span class="kt k-outsider" title="Outsider">Out</span><small class="mono">`));
+assert.match(els.roster.innerHTML, new RegExp(`class="kt k-outsider"[^>]*>?[\\s\\S]{0,200}?Vis</button><b>${onCourt1}</b>`));
+assert.match(els.leaderBoard.innerHTML, new RegExp(`${onCourt1}</b><span class="kt k-outsider" title="Visitor">Vis</span>`));
+assert.match(els.qmap.innerHTML, new RegExp(`data-p="${onCourt1}" data-src="court"[^]*?<span class="qsub"><span class="kt k-outsider" title="Visitor">Vis</span><small>`));
+assert.match(els.homePlayers.innerHTML + els.awayPlayers.innerHTML, new RegExp(`<b>${onCourt1}</b><span class="kt k-outsider" title="Visitor">Vis</span><small class="mono">`));
 assert.equal(run(`state.game.onCourt.map(c => c.name + ':' + c.team).join()`), planned);
 assert.doesNotMatch(els.qmap.innerHTML, /data-action="fill"/); // already full
 

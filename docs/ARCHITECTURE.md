@@ -264,15 +264,15 @@ laptop screen and still works at phone width.
   someone is saved under just that first name. A name nobody has used shows a
   *New player* row. *Paste a list* opens a dialog for the weekly names, and
   shared first names wait in a "Which one is coming?" callout.
-- **Player types** (UG, SHS, Alumni, Outsider): each row starts with a small
+- **Player types** (UG, SHS, Alumni, Visitor): each row starts with a small
   tag, or a faint "Type" when none is set. Clicking it opens the four types
   under the row; × clears a type, and Esc or a click elsewhere closes it. The
   type lives on the person in the database, so it covers their past games too.
   Changes wait in `state.kinds` until the database has them, so this works
   offline. Players who aren't here tonight can be marked from the All-time
-  leaderboard. Tags use short labels (UG, SHS, Alum, Out); hover gives the full
+  leaderboard. Tags use short labels (UG, SHS, Alum, Vis); hover gives the full
   one. Each type has a muted tint per theme (`--k-*` tokens): sage UG, gold SHS,
-  plum Alumni, warm grey Outsider. There is no orange or blue, which mean the
+  plum Alumni, dusty rose Visitor. There is no orange or blue, which mean the
   teams. The same colored tags show on the Tonight leaderboard
   and beside names on the queue diagram and the scoreboard, where they can't be
   edited.
@@ -348,7 +348,7 @@ rows are numbered, and ties share a rank (1, 2, 2, 4).
   listed after, unranked. Columns: Games, **PPG** (the big number), Points,
   FG%, W-L, Win%. FG% and wins only count games played since each was tracked.
   It needs the database; without it the view says so.
-- **Type filter:** chips for All, UG, SHS, Alumni and Outsider, in both views.
+- **Type filter:** chips for All, UG, SHS, Alumni and Visitor, in both views.
   The filter comes before the ranking, so ranks start at 1 within the type.
 - **FG%** shows makes, attempts and the percentage ("6/10 60%"), blank with no
   attempts. Under 5 attempts (`MIN_FG_SHOTS`) it is greyed out, since 1 of 1
@@ -530,7 +530,7 @@ The Worker in `worker/index.js` serves the app's files and this API.
 
 ```sql
 players (name TEXT PRIMARY KEY COLLATE NOCASE, added_on TEXT,
-         kind TEXT CHECK (kind IN ('UG', 'SHS', 'Alumni', 'Outsider'))) -- NULL until set
+         kind TEXT CHECK (kind IN ('UG', 'SHS', 'Alumni', 'Outsider'))) -- NULL until set; the app shows Outsider as Visitor
 results (session INTEGER, played_on TEXT, game INTEGER, name TEXT,
          points INTEGER CHECK (points BETWEEN 0 AND 200),
          fgm INTEGER DEFAULT 0, fga INTEGER DEFAULT 0, -- field goals made / attempted
