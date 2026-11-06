@@ -193,7 +193,7 @@ assert.match(els.leaderBoard.innerHTML, /class="kpick"[\s\S]*data-action="setKin
 run(`actions.setKind('Ana', 'Alumni'); commit();`);
 assert.equal(run('kindPick'), null);
 assert.equal(run(`kindOf('Ana')`), 'Alumni');
-assert.match(els.leaderBoard.innerHTML, /Ana<\/b><button[^>]*class="kt"[\s\S]*?Alum<\/button>/);
+assert.match(els.leaderBoard.innerHTML, /Ana<\/b><button[^>]*class="kt k-alumni"[\s\S]*?Alum<\/button>/);
 // It waits in state.kinds until the database confirms it (offline here), and is saved.
 assert.deepEqual(JSON.parse(storage.get('pickup-rotation-v1')).kinds, [{ name: 'Ana', kind: 'Alumni' }]);
 // A second tap replaces the first; clearing it is a null.
@@ -211,8 +211,8 @@ run(`actions.leaderKind('', 'all'); actions.leaderMode('', 'tonight');`);
 // A type shows on every screen for someone playing: Check in, leaderboard, diagram, scoreboard.
 const onCourt1 = run(`state.game.onCourt[0].name`);
 run(`actions.setKind(${JSON.stringify(onCourt1)}, 'Outsider'); commit();`);
-assert.match(els.roster.innerHTML, new RegExp(`class="kt"[^>]*>?[\\s\\S]{0,200}?Out</button><b>${onCourt1}</b>`));
-assert.match(els.leaderBoard.innerHTML, new RegExp(`${onCourt1}</b><span class="kt" title="Outsider">Out</span>`));
+assert.match(els.roster.innerHTML, new RegExp(`class="kt k-outsider"[^>]*>?[\\s\\S]{0,200}?Out</button><b>${onCourt1}</b>`));
+assert.match(els.leaderBoard.innerHTML, new RegExp(`${onCourt1}</b><span class="kt k-outsider" title="Outsider">Out</span>`));
 assert.match(els.qmap.innerHTML, new RegExp(`data-p="${onCourt1}" data-src="court"[\\s\\S]*?<small>Out · `));
 assert.match(els.homePlayers.innerHTML + els.awayPlayers.innerHTML, new RegExp(`<b>${onCourt1}</b><small class="mono">Out · `));
 assert.equal(run(`state.game.onCourt.map(c => c.name + ':' + c.team).join()`), planned);

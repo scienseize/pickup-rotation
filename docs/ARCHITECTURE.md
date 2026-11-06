@@ -271,7 +271,9 @@ laptop screen and still works at phone width.
   Changes wait in `state.kinds` until the database has them, so this works
   offline. Players who aren't here tonight can be marked from the All-time
   leaderboard. Tags use short labels (UG, SHS, Alum, Out); hover gives the full
-  one. Types also show on the Tonight leaderboard, the queue diagram and the
+  one. Each type has a muted tint per theme (`--k-*` tokens): sage UG, gold SHS,
+  plum Alumni, warm grey Outsider. There is no orange or blue, which mean the
+  teams. Types also show on the Tonight leaderboard, the queue diagram and the
   scoreboard, where they can't be edited.
 - **Tonight, as grouped lists:** everyone on tonight's list plus walk-ins, in
   one group per status, in the Apple grouped-list style: a small header with

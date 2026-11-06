@@ -85,9 +85,10 @@ const KINDS = ['UG', 'SHS', 'Alumni', 'Outsider'];
 const KIND_SHORT = { UG: 'UG', SHS: 'SHS', Alumni: 'Alum', Outsider: 'Out' };
 const kindOf = name => { const k = state.kinds.find(x => x.name === name); return k ? k.kind : profileOf(name)?.kind ?? null; };
 const kindShort = name => KIND_SHORT[kindOf(name)] ?? '';
-const kindTag = name => (kindOf(name) ? `<span class="kt" title="${kindOf(name)}">${kindShort(name)}</span>` : '');
+const kindClass = name => (kindOf(name) ? `k-${kindOf(name).toLowerCase()}` : 'unset');
+const kindTag = name => (kindOf(name) ? `<span class="kt ${kindClass(name)}" title="${kindOf(name)}">${kindShort(name)}</span>` : '');
 // A tag that opens the picker; a player with no type shows a faint "Type".
-const kindBtn = name => `<button type="button" class="kt${kindOf(name) ? '' : ' unset'}" data-action="pickKind" data-name="${esc(name)}" data-arg=""
+const kindBtn = name => `<button type="button" class="kt ${kindClass(name)}" data-action="pickKind" data-name="${esc(name)}" data-arg=""
   title="${kindOf(name) ?? 'Set type'}" aria-label="${kindOf(name) ? `${esc(name)} is ${kindOf(name)}. Change type` : `Set type for ${esc(name)}`}">${kindShort(name) || 'Type'}</button>`;
 const kindPicker = name => `<div class="kpick" role="group" aria-label="Type for ${esc(name)}">${KINDS.map(k =>
   btn('setKind', name, k, { arg: k, pressed: kindOf(name) === k, cls: kindOf(name) === k ? 's' : 'o s' })).join('')}${

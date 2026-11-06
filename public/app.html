@@ -14,6 +14,7 @@
   --bg:#faf8f5; --panel:#f1ede8; --card:#ffffff; --line:#e6e1dc; --ink:#1c1a19; --tx:#3d3936; --mu:#77706a; --faint:#d6d0ca;
   --btn:#1c1a19; --btn-tx:#faf8f5; --btn-mu:rgba(250,248,245,.6); --tag:#dfe4ef; --tag-tx:#273044; --ember:#de4a26;
   --home:#b8461a; --away:#2f6db3; --on-team:#ffffff; /* team colors: orange and blue, colorblind-safe pair */
+  --k-ug:#e3efe4; --k-ug-tx:#2f6b3f; --k-shs:#f5ecc9; --k-shs-tx:#75590f; --k-alum:#eee3f1; --k-alum-tx:#6a3f7c; --k-out:#ece8e3; --k-out-tx:#5f5952; /* player type tags */
   --shadow:0 12px 32px rgba(28,26,25,.18); --dot:rgba(28,26,25,.13); --ok:#5fc27a; --bad:#f0625a;
   --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
   --sans:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
@@ -24,11 +25,13 @@
   --bg:#1b1a19; --panel:#252321; --card:#2b2927; --line:#36332f; --ink:#f3efea; --tx:#d9d3cd; --mu:#a39c95; --faint:#4a4642;
   --btn:#f3efea; --btn-tx:#1b1a19; --btn-mu:rgba(27,26,25,.62); --tag:#323a4d; --tag-tx:#dfe4ef; --ember:#ef6a47;
   --home:#f0803c; --away:#5b9be0; --on-team:#1b1a19;
+  --k-ug:#2c3a2f; --k-ug-tx:#8fce9f; --k-shs:#3d3620; --k-shs-tx:#e3c566; --k-alum:#382d3e; --k-alum-tx:#cfa6e0; --k-out:#383431; --k-out-tx:#bdb6ae;
   --shadow:0 12px 32px rgba(0,0,0,.45); --dot:rgba(243,239,234,.1); --ok:#2f8a4c; --bad:#c8372d; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#1b1a19; --panel:#252321; --card:#2b2927; --line:#36332f; --ink:#f3efea; --tx:#d9d3cd; --mu:#a39c95; --faint:#4a4642;
   --btn:#f3efea; --btn-tx:#1b1a19; --btn-mu:rgba(27,26,25,.62); --tag:#323a4d; --tag-tx:#dfe4ef; --ember:#ef6a47;
   --home:#f0803c; --away:#5b9be0; --on-team:#1b1a19;
+  --k-ug:#2c3a2f; --k-ug-tx:#8fce9f; --k-shs:#3d3620; --k-shs-tx:#e3c566; --k-alum:#382d3e; --k-alum-tx:#cfa6e0; --k-out:#383431; --k-out-tx:#bdb6ae;
   --shadow:0 12px 32px rgba(0,0,0,.45); --dot:rgba(243,239,234,.1); --ok:#2f8a4c; --bad:#c8372d; color-scheme:dark}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -384,13 +387,17 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .rrow .btn.o{border:0;background:var(--panel);color:var(--ink)}
 .rrow .xbtn{width:26px;height:26px}
 .s-done .rrow b{color:var(--mu)}
-/* Player type: a small neutral tag (no new colors: orange and blue mean the teams). As a button it
-   opens the picker, a strip of the four types under the row; a player with no type shows a faint
-   dashed "Type". */
+/* Player type: a small tinted tag, muted so it stays quiet: sage UG, gold SHS, plum Alumni, warm
+   grey Outsider. No orange or blue: those mean the teams. As a button it opens the picker, a strip
+   of the four types under the row; a player with no type shows a faint dashed "Type". */
 .kt{flex-shrink:0;display:inline-block;font-family:var(--mono);font-size:10px;line-height:1.4;letter-spacing:.04em;text-transform:uppercase;color:var(--mu);border:1px solid var(--faint);border-radius:5px;padding:0 4px;background:none}
 button.kt{cursor:pointer}
-button.kt:hover{color:var(--ink);border-color:var(--mu)}
+button.kt:hover{border-color:var(--mu)}
 .kt.unset{border-style:dashed;opacity:.7}
+.kt.k-ug{background:var(--k-ug);color:var(--k-ug-tx);border-color:transparent}
+.kt.k-shs{background:var(--k-shs);color:var(--k-shs-tx);border-color:transparent}
+.kt.k-alumni{background:var(--k-alum);color:var(--k-alum-tx);border-color:transparent}
+.kt.k-outsider{background:var(--k-out);color:var(--k-out-tx);border-color:transparent}
 .kpick{display:flex;align-items:center;gap:4px;min-height:40px;padding:0 6px}
 .kpick .btn{padding:4px 6px;font-size:12px;border-radius:999px}
 .kpick .btn.o{border:0;background:var(--panel);color:var(--ink)}
