@@ -75,9 +75,9 @@ const db = [];
 // an in-memory table, matched by their SQL.
 const sessions = new Map(), saved = [];
 const sql = {
-  'UPDATE sessions': ([state, at, id, version]) => {
+  'UPDATE sessions': ([state, played_on, at, id, version]) => {
     const row = sessions.get(id), ok = row?.version === version;
-    if (ok) Object.assign(row, { state, version: version + 1, updated_at: at });
+    if (ok) Object.assign(row, { state, played_on, version: version + 1, updated_at: at });
     return { meta: { changes: ok ? 1 : 0 } };
   },
   'INSERT OR IGNORE INTO sessions': ([id, played_on, state, updated_at]) => {
@@ -186,6 +186,10 @@ assert.deepEqual(await (await get(`/api/sessions/${SID}`)).json(), { id: SID, da
 // A night from before sessions were stored: players are those who played, and no team.
 assert.deepEqual(await (await get(`/api/sessions/${OLD}`)).json(), { id: OLD, date: '2026-10-30', participants: ['Cy'], games: [{ game: 1, rows: [
   { name: 'Cy', points: 4, fgm: 0, fga: 0, won: null, team: null }] }] });
+// An accepted push also corrects the date: a session made with a non-Thursday date fixes itself.
+res = await post('/api/live', { id: SID + 1, date: '2026-11-12', version: 1, state: { players: [{ name: 'Ana' }], game: { number: 1 } } }, org);
+assert.deepEqual(await res.json(), { version: 2 });
+assert.equal((await (await get('/api/sessions')).json())[0].date, '2026-11-12');
 assert.equal((await get('/api/sessions/12345')).status, 404);
 for (const bad of ['abc', '1;DROP', '-1', '1.5']) assert.equal((await get(`/api/sessions/${bad}`)).status, 400, bad);
 

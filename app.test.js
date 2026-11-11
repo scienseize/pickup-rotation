@@ -18,6 +18,12 @@ const fake = () => {
 const els = {};
 // The History list: keep its listeners so the test can open a session the way a click would.
 const histListeners = [];
+// The new-session dialog: its close handler and what the app does to open it.
+const dlg = { close: null, opened: 0 };
+els.sessionDlg = fake();
+els.sessionDate = fake();
+els.sessionDlg.addEventListener = (type, fn) => { if (type === 'close') dlg.close = fn; };
+els.sessionDlg.showModal = () => { dlg.opened++; };
 els.historyList = fake();
 els.historyList.addEventListener = (type, fn) => histListeners.push([type, fn]);
 const storage = new Map();
@@ -308,7 +314,8 @@ assert.equal(storage.get('pickup-flipped'), '');
 // Pending types survive a new session.
 context.confirm = () => true;
 const pendingBefore = run(`state.kinds.length`);
-run(`actions.newSession(); render();`);
+const answer = (value, date) => { els.sessionDlg.returnValue = value; els.sessionDate.value = date; dlg.close(); };
+answer('start', '2026-11-19');
 assert.equal(run(`state.kinds.length`), pendingBefore);
 
 // The light / dark switch flips the page and remembers the choice on this device.
@@ -324,13 +331,52 @@ assert.equal(storage.get('pickup-theme'), 'dark');
 const P = name => ({ name, games: 0, readyAt: 1, present: true, totalPoints: 0, fgm: 0, fga: 0, wins: 0, losses: 0 });
 const seat = (name, team) => ({ name, team, points: 0, fgm: 0, fga: 0, log: [] });
 const night = (startedAt, number = 1) => ({
-  players: [P('Ann'), P('Bo')], expected: [], unsynced: [], kinds: [], startedAt,
+  players: [P('Ann'), P('Bo')], expected: [], unsynced: [], kinds: [], startedAt, date: '2099-01-01', // a session that is never over
   game: { number, onCourt: [seat('Ann', 'home'), seat('Bo', 'away')], subbedOut: [], satOut: [], homeName: 'Home', awayName: 'Away', remainingMs: 1200000, endsAt: null, started: false },
 });
 const use = n => run(`state = tidy(${JSON.stringify(n)}); pending = []; liveId = null; liveVer = 0; needsChoice = []; fresh = false;`);
 const take = (n, version = 5) => run(`adopt(${JSON.stringify({ id: n.startedAt, version, state: n })})`);
 const ops = () => run(`pending.map(c => c[0])`).join();
 const ann = () => run(`seatOf('Ann').points`);
+
+// Sessions are on Thursdays: a session's date is the Thursday on or after the day it is created, in local time.
+const at = (y, m, d, h = 12, min = 0) => new Date(y, m - 1, d, h, min).getTime();
+const when = ms => run(`sessionDate(${ms})`);
+assert.equal(when(at(2026, 11, 11)), '2026-11-12'); // Wednesday
+assert.equal(when(at(2026, 11, 12)), '2026-11-12'); // Thursday
+assert.equal(when(at(2026, 11, 12, 23, 59)), '2026-11-12'); // Thursday night
+assert.equal(when(at(2026, 11, 13)), '2026-11-19'); // Friday
+assert.equal(when(at(2026, 11, 14)), '2026-11-19'); // Saturday
+assert.equal(run(`newSession(${at(2026, 11, 13)}).date`), '2026-11-19');
+// A saved state from before sessions had a date gets one from when it started.
+const undated = JSON.parse(JSON.stringify({ players: [], game: { number: 1, onCourt: [], subbedOut: [], satOut: [] }, startedAt: at(2026, 11, 13) }));
+assert.equal(run(`tidy(${JSON.stringify(undated)}).date`), '2026-11-19');
+assert.equal(run(`tidy(${JSON.stringify({ ...undated, date: '2026-11-12' })}).date`), '2026-11-12');
+assert.equal(run(`dateLabel('2026-11-12')`).startsWith('Thursday'), true);
+
+// Start a new session opens the dialog with the Thursday on or after today; Start takes the date chosen
+// there (any date), Cancel changes nothing, and a date that isn't a real YYYY-MM-DD is refused.
+run(`actions.askSession()`);
+assert.equal(dlg.opened, 1);
+assert.equal(els.sessionDate.value, run(`sessionDate(Date.now())`));
+const [py, pm, pd] = els.sessionDate.value.split('-').map(Number);
+const offered = new Date(py, pm - 1, pd, 12), days = Math.floor((offered - new Date().setHours(0, 0, 0, 0)) / 864e5);
+assert.equal(offered.getDay(), 4); // a Thursday, today or within the next 6 days
+assert.ok(days >= 0 && days <= 6, `${days} days ahead`);
+run(`state.startedAt = 1`); // so a new session's id differs, however fast the test runs
+const keep = 1;
+answer('cancel', '2026-12-01');
+assert.equal(run(`state.startedAt`), keep);
+for (const bad of ['', 'soon', '2026-02-31', '2026-13-01', '26-11-19', '2026-11-19 ']) {
+  answer('start', bad);
+  assert.equal(run(`state.startedAt`), keep, `date ${bad}`);
+}
+assert.equal(run(`actions.newSession(undefined)`), false);
+answer('start', '2026-12-01'); // a Tuesday: Thursday is only the default
+assert.equal(run(`state.date`), '2026-12-01');
+assert.notEqual(run(`state.startedAt`), keep);
+assert.equal(run(`pending.length`), 0);
+run(`actions.newSession('2026-11-19')`);
 
 // A change is queued with its game number and a sequence number, and saved on its own, so a reload
 // while offline keeps it. The sequence is also recorded in the shared state, under this laptop's id.
@@ -391,7 +437,7 @@ assert.equal(run(`state.unsynced.map(u => u.game).join()`), '2'); // a game the 
 assert.equal(run(`needsChoice.length`), 0);
 assert.match(els.msg.textContent, /new session/);
 // Starting one here clears what was waiting: it belonged to the old session.
-run(`act('newSession')`);
+run(`act('newSession', '2026-11-19')`);
 assert.equal(ops(), '');
 assert.notEqual(run(`state.startedAt`), 200);
 
@@ -531,10 +577,13 @@ assert.notEqual(run(`state.startedAt`), 200);
   assert.equal(run(`fresh`), false);
   // New session on any laptop is meant: it becomes the current one even though a session exists.
   use(night(100));
-  run(`fresh = true; act('newSession')`);
+  run(`fresh = true; act('newSession', '2026-11-19')`);
   assert.equal(run(`fresh`), false);
   await settle();
-  assert.equal(calls().filter(c => c.post).length, 1);
+  const posts = calls().filter(c => c.post);
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].body.date, '2026-11-19'); // the chosen date is what the server gets
+  assert.equal(posts[0].body.state.date, '2026-11-19');
 
   // A push the server accepted but whose reply was lost: the next copy already holds the change, so it
   // is not applied a second time.
@@ -552,6 +601,25 @@ assert.notEqual(run(`state.startedAt`), 200);
   assert.equal(ann(), 2); // once, not 4
   assert.equal(ops(), '');
   assert.deepEqual(calls().map(c => c.post), [false]); // and nothing left to push
+
+  // A finished game carries the session's date, including one chosen in the dialog.
+  context.confirm = () => true;
+  reply = (path, init) => (init.method === 'POST' ? { status: 200, json: { version: 1 } } : { status: 204 });
+  use(night(100));
+  run(`state.date = '2026-11-12'; actions.endGame();`);
+  assert.equal(run(`state.unsynced[0].date`), '2026-11-12');
+  answer('start', '2026-12-03');
+  await settle();
+  const [chosen] = calls().filter(c => c.post);
+  assert.equal(chosen.body.date, '2026-12-03');
+  assert.equal(run(`state.date`), '2026-12-03');
+  run(`state.players.push(...${JSON.stringify([P('Ann'), P('Bo')])}); state.game.onCourt = ${JSON.stringify([seat('Ann', 'home'), seat('Bo', 'away')])}; actions.endGame();`);
+  assert.equal(run(`state.unsynced.at(-1).date`), '2026-12-03');
+  run(`render()`);
+  assert.match(els.homeDate.textContent, /^Session: Thursday, December 3$/);
+  run(`state.date = '2026-11-12'; render()`);
+  assert.match(els.homeDate.textContent, /^Session: Thursday, November 12$/);
+  use(night(100));
 
   // Games and types go to the database only once the shared copy holds them, then come off as a change.
   use(night(100));

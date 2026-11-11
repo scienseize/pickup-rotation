@@ -94,8 +94,8 @@ async function liveGet(db, url) {
 async function livePush(db, body, now) {
   const { id, date, version, state } = liveBody(body), at = new Date(now).toISOString(), text = JSON.stringify(state);
   const moved = r => r.meta.changes === 1;
-  if (moved(await db.prepare('UPDATE sessions SET state = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?')
-    .bind(text, at, id, version).run())) return json(200, { version: version + 1 });
+  if (moved(await db.prepare('UPDATE sessions SET state = ?, played_on = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?')
+    .bind(text, date, at, id, version).run())) return json(200, { version: version + 1 });
   if (moved(await db.prepare('INSERT OR IGNORE INTO sessions (id, played_on, version, state, updated_at) VALUES (?, ?, 1, ?, ?)')
     .bind(id, date, text, at).run())) return json(200, { version: 1 });
   return json(409, liveRow(await db.prepare(`${LIVE} WHERE id = ?`).bind(id).first()));

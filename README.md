@@ -16,7 +16,9 @@ basketball sessions. Design and rules: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.
    home page opens.
 3. Green dot: saving to the database. Red dot: no connection or passcode needed.
    Hover over it for details. Finished games are kept and saved later.
-4. Every laptop signed in sees the same night: check-ins, queue, court and score
+4. *Start a new session* (Check in tab) asks for the session's date, suggesting the
+   coming Thursday; Home says which session it is.
+5. Every laptop signed in sees the same night: check-ins, queue, court and score
    show on the others within a few seconds, and anyone can edit. A laptop that
    loses the connection keeps working and catches up. The *History* tab lists
    past sessions by date with their players and box scores.

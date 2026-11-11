@@ -663,8 +663,14 @@ highest id.
   changes; `state.seen[device]` records the highest number the shared copy
   holds. `adopt()` drops waiting changes the copy already has, so a push that
   arrived but whose reply was lost is not applied twice.
-- **New session** creates the state locally and pushes it as a new row with its
-  date (`localDate(startedAt)`); the others switch on their next poll.
+- **Session date.** A session has a date (`state.date`, YYYY-MM-DD), sent with
+  every push; an accepted push also sets `sessions.played_on` to it. *Start a new
+  session* asks for the date in a small dialog. It defaults to the coming
+  Thursday (the Thursday on or after today, in the laptop's local time:
+  `sessionDate`), since sessions are on Thursdays, but any date can be chosen.
+  The app never starts a session by itself. The Home tab shows the date.
+- **New session** (with the date chosen) creates the state locally and pushes it as a new row with its
+  date; the others switch on their next poll.
 - **Results and types** are posted to `/api/results` and `/api/kind` only once
   the shared copy holds them (nothing waiting in `pending`), by any laptop, and
   taking one off the list is itself a change (`posted`, `kindPosted`), so the

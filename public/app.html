@@ -547,6 +547,7 @@ button.kt:hover{border-color:var(--mu)}
     <div class="hero home-hero">
       <img class="home-logo" src="logo.png" alt="" aria-hidden="true">
       <h1>Hexagames</h1>
+      <p class="date" id="homeDate"></p>
       <div class="btns">
         <button class="btn" id="homeNext" data-action="goTab" data-arg="checkin">Check in players</button>
         <button class="btn o" data-action="standby">Standby on TV</button>
@@ -574,7 +575,7 @@ button.kt:hover{border-color:var(--mu)}
             <ul class="sug" id="listSug" role="listbox" aria-label="Matching players" hidden></ul>
           </div>
           <button class="btn o" type="button" data-action="pasteList">Paste a list</button>
-          <button class="btn o" type="button" data-action="newSession">Start a new session</button>
+          <button class="btn o" type="button" data-action="askSession">Start a new session</button>
         </div>
         <p class="note" id="msg" role="status" style="margin-top:12px;max-width:none"></p>
         <div id="choices"></div>
@@ -655,6 +656,18 @@ button.kt:hover{border-color:var(--mu)}
     <div class="btns left">
       <button class="btn o s" value="cancel">Cancel</button>
       <button class="btn s" value="add">Add names</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="sessionDlg" aria-labelledby="sessionTitle">
+  <form method="dialog">
+    <h3 id="sessionTitle">Start a new session</h3>
+    <p class="tl">Pick its date; the coming Thursday is suggested. This clears tonight's players, list and points. The database keeps every result.</p>
+    <input class="in" id="sessionDate" type="date" required aria-label="Session date">
+    <div class="btns left">
+      <button class="btn o s" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn s" value="start">Start</button>
     </div>
   </form>
 </dialog>

@@ -11,11 +11,24 @@ const MIN_FG_SHOTS = 5; // fewer attempts than this and FG% is greyed out: 1 of 
 const MIN_ALLTIME_GAMES = 3; // the all-time leaderboard ranks players with at least this many games
 
 const $ = id => document.getElementById(id);
+const SESSION_DAY = 4; // sessions are on Thursdays (Sunday is 0)
+const localDate = ms => new Date(ms).toLocaleDateString('en-CA'); // YYYY-MM-DD
+// The session day on or after the day of ms, in local time, as YYYY-MM-DD.
+function sessionDate(ms) {
+  const d = new Date(ms);
+  d.setDate(d.getDate() + (SESSION_DAY - d.getDay() + 7) % 7);
+  return localDate(d.getTime());
+}
+// "Thursday, November 12" from YYYY-MM-DD, read as a local date (not UTC).
+function dateLabel(date) {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+}
 const newGame = number => ({
   number, onCourt: [], subbedOut: [], satOut: [], homeName: 'Home', awayName: 'Away',
   remainingMs: GAME_MS, endsAt: null, started: false,
 });
-const newSession = () => ({ players: [], game: newGame(1), expected: [], unsynced: [], kinds: [], seen: {}, startedAt: Date.now() });
+const newSession = (now = Date.now()) => ({ players: [], game: newGame(1), expected: [], unsynced: [], kinds: [], seen: {}, startedAt: now, date: sessionDate(now) });
 
 let fresh = true; // nothing was saved here: this laptop must join the server's session, never replace it
 let state = load();
@@ -56,6 +69,7 @@ function tidy(s) {
   delete s.log; // never read
   delete s.flipped; // per laptop now
   const st = { expected: [], unsynced: [], kinds: [], seen: {}, startedAt: Date.now(), ...s };
+  st.date ??= sessionDate(st.startedAt); // saved before sessions had a date
   seatTeams(st.game); // saved before every called player had a team
   // Saved before shots were tracked: start everyone's shots at 0.
   for (const c of [...st.game.onCourt, ...(st.game.subbedOut ?? [])]) Object.assign(c, { fgm: c.fgm ?? 0, fga: c.fga ?? 0, log: c.log ?? [] });
@@ -126,7 +140,6 @@ const avgText = name => {
   const p = profileOf(name);
   return p?.games ? `AVG ${p.avg.toFixed(1)}` : 'NEW';
 };
-const localDate = ms => new Date(ms).toLocaleDateString('en-CA'); // YYYY-MM-DD
 const btn = (action, name, label, { arg = '', pressed, cls = 'o s', disabled } = {}) =>
   `<button class="btn ${cls}" data-action="${action}" data-name="${esc(name)}" data-arg="${arg}"` +
   `${pressed === undefined ? '' : ` aria-pressed="${pressed}"`}${disabled ? ' disabled' : ''}>${label}</button>`;
@@ -295,7 +308,7 @@ async function pushLive() {
       pushAgain = false;
       inflight = pending.length;
       const id = state.startedAt;
-      const r = await liveFetch('/api/live', { id, date: localDate(id), version: id === liveId ? liveVer : 0, state });
+      const r = await liveFetch('/api/live', { id, date: state.date, version: id === liveId ? liveVer : 0, state });
       if (id === state.startedAt) { // else a new session started meanwhile; the rerun pushes it
         if (r.status === 409) adopt(r.data); // someone got there first: take theirs, lay ours back on top
         else { liveId = id; liveVer = r.data.version; fresh = false; pending.splice(0, inflight); save(); }
@@ -541,7 +554,7 @@ const actions = {
     const lineup = nextLineup(Date.now()); // before the game is counted, as Up next showed it
     Queue.endGame(state.players, g, Date.now());
     state.unsynced.push({
-      session: state.startedAt, date: localDate(state.startedAt), game: g.number,
+      session: state.startedAt, date: state.date, game: g.number,
       rows: Queue.played(g).map(c => ({ name: c.name, points: c.points, fgm: c.fgm, fga: c.fga, won: Queue.won(g, c), team: { home: 0, away: 1 }[c.team] ?? null })),
     });
     state.game = newGame(g.number + 1);
@@ -583,9 +596,19 @@ const actions = {
     return false;
   },
 
-  newSession() {
-    if (!ask('Start a new session? This clears tonight\'s players, list and points. The database keeps every result.')) return false;
-    state = { ...newSession(), unsynced: state.unsynced, kinds: state.kinds };
+  // Start a new session opens a dialog for its date, Thursday by default; any date will do.
+  askSession() {
+    $('sessionDate').value = sessionDate(Date.now());
+    $('sessionDlg').returnValue = '';
+    $('sessionDlg').showModal();
+    return false;
+  },
+  // The dialog's answer. It also runs with whatever other code passes in, so a date that isn't a real
+  // YYYY-MM-DD is refused: the server would reject it, and the push would never get through.
+  newSession(date) {
+    const [y, m, d] = String(date).split('-').map(Number);
+    if (!/^\d{4}-\d\d-\d\d$/.test(date) || localDate(new Date(y, m - 1, d).getTime()) !== date) return false;
+    state = { ...newSession(), date, unsynced: state.unsynced, kinds: state.kinds };
     needsChoice = [];
   },
 
@@ -642,6 +665,11 @@ autosuggest($('listAdd'), $('listSug'), name => {
   if (onList(name)) return flash(`${name} is already on the list.`);
   act('addNames', [name]);
 }, flash);
+
+// Start a new session: the date picked in the dialog.
+$('sessionDlg').addEventListener('close', () => {
+  if ($('sessionDlg').returnValue === 'start') act('newSession', $('sessionDate').value);
+});
 
 // Paste: each line resolves like typing does; names shared by several players wait for a choice.
 $('pasteDlg').addEventListener('close', () => {
@@ -728,6 +756,7 @@ function renderHome() {
   $('homeNext').textContent = !present ? 'Check in players'
     : started ? `Back to game ${g.number}` : ready() ? `Start game ${g.number}` : 'Fill the court';
   $('homeNext').dataset.arg = !present ? 'checkin' : started || ready() ? 'board' : 'queue';
+  $('homeDate').textContent = `Session: ${dateLabel(state.date)}`;
 }
 
 // The Queue tab is this diagram, for the TV and the organizer alike: On court (Home, Away), then
