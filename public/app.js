@@ -984,6 +984,7 @@ window.addEventListener('resize', fitLeaders);
 
 // History: every session in the database, newest first, each a <details> that fetches its box
 // scores the first time it opens. Online only; a failed fetch says so in one line.
+const PER_COLUMN = 10; // rows in a column of a session's players table
 const histNote = text => `<p class="empty">${esc(text)}</p>`;
 async function renderHistory() {
   const box = $('historyList');
@@ -995,17 +996,23 @@ async function renderHistory() {
   } catch { box.innerHTML = histNote('History needs a connection.'); }
 }
 // A session opens to its players (a table, with each one's totals for the night) and its games, each a
-// <details> headed by the result. With teams (0 home, 1 away) a game lists both sides with their total;
-// games saved before teams were kept have one list.
+// <details> headed by the result. A game lists its two sides, each sorted by points then name, with their
+// totals: Home and Away when rows have a team (0 home, 1 away); for games saved before teams were kept,
+// Winners and Losers from each row's won. With neither (a tie, very old data) it is one list.
 function sessionHtml(d) {
   const sum = rows => rows.reduce((t, r) => t + r.points, 0);
   const table = (label, rows, total) => `<div class="tw"><table class="box"><thead><tr><th>${esc(label)}</th><th class="r">PTS</th><th class="r">FG</th></tr></thead><tbody>${
     rows.map(r => `<tr><td>${esc(r.name)}${kindTag(r.name)}</td><td class="r mono">${esc(r.points)}</td><td class="r mono">${esc(r.fgm)}/${esc(r.fga)}</td></tr>`).join('')}${
     total ? `<tr><td><b>Total</b></td><td class="r mono"><b>${esc(sum(rows))}</b></td><td></td></tr>` : ''}</tbody></table></div>`;
+  const top = rows => [...rows].sort((a, b) => b.points - a.points || byName(a.name, b.name));
   const game = g => {
-    const teamed = g.rows.every(r => r.team === 0 || r.team === 1), side = t => g.rows.filter(r => r.team === t);
-    return `<details class="dd"><summary>Game ${esc(g.game)} · ${teamed ? `Home ${esc(sum(side(0)))}, Away ${esc(sum(side(1)))}` : esc(plural(g.rows.length, 'player'))}</summary>${
-      teamed ? [[0, 'Home'], [1, 'Away']].map(([t, label]) => table(label, side(t), true)).join('') : table('Player', g.rows, false)}</details>`;
+    const rows = g.rows, of = (key, v) => top(rows.filter(r => r[key] === v));
+    const teamed = rows.length && rows.every(r => r.team === 0 || r.team === 1);
+    const decided = rows.length && rows.every(r => r.won === 0 || r.won === 1) && of('won', 1).length && of('won', 0).length;
+    const sides = teamed ? [['Home', of('team', 0)], ['Away', of('team', 1)]] : decided ? [['Winners', of('won', 1)], ['Losers', of('won', 0)]] : null;
+    const result = !sides ? plural(rows.length, 'player') : teamed ? `Home ${sum(sides[0][1])}, Away ${sum(sides[1][1])}` : `${sum(sides[0][1])}-${sum(sides[1][1])}`;
+    return `<details class="dd"><summary>Game ${esc(g.game)} · ${esc(result)}</summary>${
+      sides ? sides.map(([label, list]) => table(label, list, true)).join('') : table('Player', top(rows), false)}</details>`;
   };
   // Everyone who checked in, plus anyone in the results; one who never played has 0 games and dashes.
   const who = new Map([...d.participants, ...d.games.flatMap(g => g.rows.map(r => r.name))].map(n => [n, { games: 0, points: 0, fgm: 0, fga: 0, won: 0, lost: 0 }]));
@@ -1019,8 +1026,12 @@ function sessionHtml(d) {
     s.fga ? `<td class="r mono fg${s.fga < MIN_FG_SHOTS ? ' few' : ''}"><small>${esc(s.fgm)}/${esc(s.fga)}</small> ${esc(pct(s.fgm, s.fga))}</td>` : dash}${
     s.won + s.lost ? `<td class="r mono">${esc(s.won)}-${esc(s.lost)}</td>` : dash}</tr>`;
   const ranked = [...who].sort(([an, a], [bn, b]) => b.points - a.points || b.games - a.games || byName(an, bn));
-  const players = who.size ? `<details class="dd"><summary>Players · ${esc(who.size)}</summary><div class="lb"><div class="tw"><table><thead><tr><th>Player</th><th class="r gm">Games</th><th class="r">Points</th><th class="r">FG</th><th class="r">W-L</th></tr></thead><tbody>${
-    ranked.map(row).join('')}</tbody></table></div></div></details>` : histNote('No players on file.');
+  // Columns of PER_COLUMN rows, side by side as on the leaderboard (.lb.split; stacked on a narrow page).
+  const k = Math.ceil(ranked.length / PER_COLUMN);
+  const column = i => `<div class="tw"><table><thead><tr><th>Player</th><th class="r gm">Games</th><th class="r">Points</th><th class="r">FG</th><th class="r">W-L</th></tr></thead><tbody>${
+    ranked.slice(i * PER_COLUMN, (i + 1) * PER_COLUMN).map(row).join('')}</tbody></table></div>`;
+  const players = who.size ? `<details class="dd"><summary>Players · ${esc(who.size)}</summary><div class="lb${k > 1 ? ' split' : ''}${k > 2 ? ' split3' : ''}" style="--k:${k}">${
+    Array.from({ length: k }, (_, i) => column(i)).join('')}</div></details>` : histNote('No players on file.');
   return players + (d.games.map(game).join('') || histNote('No games saved.'));
 }
 // toggle doesn't bubble, so listen while it travels down. Only a session's own <details> (it has an id)
