@@ -324,6 +324,12 @@ td.empty{color:var(--mu)}
 .pl b{color:var(--ink);font-weight:600;overflow-wrap:anywhere}
 .pl small{display:block;font-size:12px;letter-spacing:.06em}
 details.dd summary .mono{margin-left:auto;margin-right:8px}
+/* History: a session per row, opening to its box scores. */
+.hist details.dd{padding-block:14px 12px}
+.hist h4{font:600 15px/1.3 var(--sans);color:var(--ink);margin:18px 0 2px}
+.hist .who,.hist .empty{color:var(--mu);font-size:15px;margin:12px 0 0}
+.hist table{font-size:15px}
+.hist th,.hist td{padding-block:8px}
 .pl .pts{font-family:var(--serif);font-size:32px;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums;min-width:2ch;text-align:right}
 .pl .pt{display:flex;gap:6px}
 .pl .pt .btn{min-width:54px;min-height:50px;padding:8px 10px;font-size:17px;font-variant-numeric:tabular-nums}
@@ -530,6 +536,7 @@ button.kt:hover{border-color:var(--mu)}
     <button role="tab" id="tab-queue" data-tab="queue" aria-controls="queue" aria-selected="false" tabindex="-1">Queue</button>
     <button role="tab" id="tab-board" data-tab="board" aria-controls="board" aria-selected="false" tabindex="-1">Scoreboard</button>
     <button role="tab" id="tab-leaders" data-tab="leaders" aria-controls="leaders" aria-selected="false" tabindex="-1">Leaderboard</button>
+    <button role="tab" id="tab-history" data-tab="history" aria-controls="history" aria-selected="false" tabindex="-1">History</button>
   </div>
   <span class="clk" id="islandClock"></span>
 </nav>
@@ -599,6 +606,18 @@ button.kt:hover{border-color:var(--mu)}
 
     <section>
       <div class="wide lb" id="leaderBoard"></div>
+    </section>
+
+  </div>
+
+  <div class="tabpanel" id="history" role="tabpanel" aria-labelledby="tab-history" hidden>
+    <div class="hero sm">
+      <h1>History</h1>
+      <p class="date">Every session, newest first. Open one for its players and box scores.</p>
+    </div>
+
+    <section>
+      <div class="wide hist" id="historyList"></div>
     </section>
 
   </div>

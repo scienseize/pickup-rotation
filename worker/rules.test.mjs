@@ -1,6 +1,6 @@
 // Run: node worker/rules.test.mjs
 import assert from 'node:assert';
-import { Invalid, cleanName, playersBody, gameBody, kindBody, isJson, passcodeOk, signSession, sessionOk, SESSION_DAYS } from './rules.js';
+import { Invalid, cleanName, playersBody, gameBody, kindBody, liveBody, isJson, passcodeOk, signSession, sessionOk, SESSION_DAYS } from './rules.js';
 
 const rejects = (fn, why) => assert.throws(fn, Invalid, why);
 const req = type => ({ headers: new Headers(type ? { 'Content-Type': type } : {}) });
@@ -18,12 +18,12 @@ assert.equal(playersBody({ names: Array(1000).fill('Ana') }).length, 1000);
 
 // A finished game: whole points 0 to 200, rows as objects, a real date.
 const ok = { session: 1793700000000, date: '2026-11-04', game: 1, rows: [{ name: 'Ana', points: 10 }] };
-// A row from before FG and results were tracked gets 0 of 0 and no result.
-assert.deepEqual(gameBody(ok), { ...ok, rows: [{ name: 'Ana', points: 10, fgm: 0, fga: 0, won: null }] });
+// A row from before FG, results and teams were tracked gets 0 of 0, no result and no team.
+assert.deepEqual(gameBody(ok), { ...ok, rows: [{ name: 'Ana', points: 10, fgm: 0, fga: 0, won: null, team: null }] });
 // Field goals: whole numbers, made no more than attempted, attempts at most 200.
 const shots = (fgm, fga) => gameBody({ ...ok, rows: [{ name: 'Ana', points: 10, fgm, fga }] }).rows[0];
-assert.deepEqual(shots(4, 9), { name: 'Ana', points: 10, fgm: 4, fga: 9, won: null });
-assert.deepEqual(shots(0, 3), { name: 'Ana', points: 10, fgm: 0, fga: 3, won: null });
+assert.deepEqual(shots(4, 9), { name: 'Ana', points: 10, fgm: 4, fga: 9, won: null, team: null });
+assert.deepEqual(shots(0, 3), { name: 'Ana', points: 10, fgm: 0, fga: 3, won: null, team: null });
 for (const [fgm, fga] of [[5, 4], [-1, 3], [1, -1], [1.5, 3], [1, '3'], [0, 201], [1, undefined]]) {
   rejects(() => shots(fgm, fga), `fgm ${fgm} fga ${fga}`);
 }
@@ -33,6 +33,13 @@ assert.equal(result(1), 1);
 assert.equal(result(0), 0);
 assert.equal(result(null), null);
 for (const won of [2, -1, true, '1', 0.5]) rejects(() => result(won), `won ${won}`);
+// team: 0 home, 1 away, null (or missing) unknown; nothing else.
+const side = team => gameBody({ ...ok, rows: [{ name: 'Ana', points: 10, team }] }).rows[0].team;
+assert.equal(side(0), 0);
+assert.equal(side(1), 1);
+assert.equal(side(null), null);
+assert.equal(side(undefined), null);
+for (const team of [2, -1, true, '1', 0.5]) rejects(() => side(team), `team ${team}`);
 for (const points of [-1, 201, 2.5, '3', true]) rejects(() => gameBody({ ...ok, rows: [{ name: 'Ana', points }] }), `points ${points}`);
 rejects(() => gameBody({ ...ok, rows: { name: 'Ana', points: 1 } }));
 rejects(() => gameBody({ ...ok, rows: ['Ana'] }));
@@ -48,6 +55,14 @@ assert.deepEqual(kindBody({ name: 'Ana' }), { name: 'Ana', kind: null });
 for (const kind of ['ug', 'Staff', 1, true, '']) rejects(() => kindBody({ name: 'Ana', kind }), `kind ${kind}`);
 rejects(() => kindBody({ kind: 'UG' }));
 rejects(() => kindBody(null));
+
+// The shared session: a whole id, a real date, a version from 0, and a state object with a players list.
+const live = { id: 1793700000000, date: '2026-11-04', version: 0, state: { players: [], game: { number: 1 } } };
+assert.deepEqual(liveBody(live), live);
+assert.equal(liveBody({ ...live, version: 7 }).version, 7);
+for (const bad of [{ id: 1.5 }, { id: -1 }, { id: '1' }, { date: '2026-02-31' }, { date: undefined }, { version: -1 }, { version: 1.5 }, { version: '0' },
+  { state: null }, { state: [] }, { state: 'x' }, { state: {} }, { state: { players: 'Ana' } }]) rejects(() => liveBody({ ...live, ...bad }), JSON.stringify(bad));
+rejects(() => liveBody(null));
 
 // JSON only, whatever the charset.
 assert.ok(isJson(req('application/json; charset=utf-8')));

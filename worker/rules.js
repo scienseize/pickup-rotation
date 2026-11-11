@@ -20,7 +20,7 @@ export function whole(value, low, high, what) {
   return value;
 }
 
-function isoDate(value) {
+export function isoDate(value) {
   const ok = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
     && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value; // rejects 2026-02-31
   if (!ok) throw new Invalid('date must be YYYY-MM-DD');
@@ -42,9 +42,10 @@ export function kindBody(body) {
   return { name, kind };
 }
 
-// POST /api/results { session, date, game, rows: [{ name, points, fgm?, fga?, won? }] }
+// POST /api/results { session, date, game, rows: [{ name, points, fgm?, fga?, won?, team? }] }
 // fgm and fga (field goals made and attempted) are optional, as 0, and won (1 a win, 0 a loss,
 // null a tie) is optional, as null, so games saved by an older version of the app still sync.
+// team (0 home, 1 away) is optional, as null.
 export function gameBody(body) {
   const session = whole(body?.session, 0, 2 ** 53, 'session');
   const game = whole(body.game, 1, 1000, 'game');
@@ -56,9 +57,22 @@ export function gameBody(body) {
     const fga = whole(r.fga ?? 0, 0, MAX_POINTS, 'fga'), fgm = whole(r.fgm ?? 0, 0, fga, 'fgm (no more than fga)');
     const won = r.won ?? null;
     if (won !== null && won !== 0 && won !== 1) throw new Invalid('won must be 1, 0 or null');
-    return { name: cleanName(r.name), points: whole(r.points, 0, MAX_POINTS, 'points'), fgm, fga, won };
+    const team = r.team ?? null;
+    if (team !== null && team !== 0 && team !== 1) throw new Invalid('team must be 0, 1 or null');
+    return { name: cleanName(r.name), points: whole(r.points, 0, MAX_POINTS, 'points'), fgm, fga, won, team };
   });
   return { session, date, game, rows };
+}
+
+// POST /api/live { id, date, version, state }: the shared session as one laptop last saw it.
+// version is the one the laptop built on (0 for a new session); state is the app's session object.
+export function liveBody(body) {
+  const id = whole(body?.id, 0, 2 ** 53, 'id');
+  const date = isoDate(body.date);
+  const version = whole(body.version, 0, 2 ** 31, 'version');
+  const state = body.state;
+  if (!state || typeof state !== 'object' || !Array.isArray(state.players)) throw new Invalid('state must be an object with a players list');
+  return { id, date, version, state };
 }
 
 // JSON only: a cross-site form can't send it without a CORS preflight, which we don't answer.

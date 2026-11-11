@@ -16,6 +16,10 @@ const fake = () => {
   });
 };
 const els = {};
+// The History list: keep its listeners so the test can open a session the way a click would.
+const histListeners = [];
+els.historyList = fake();
+els.historyList.addEventListener = (type, fn) => histListeners.push([type, fn]);
 const storage = new Map();
 const t0 = Date.now();
 const players = [...'ABCDEFGHIJKL'].map((n, i) => ({ name: `Player ${n}`, games: 0, readyAt: t0 - 1000 * (20 - i), present: true, totalPoints: 0 }));
@@ -179,8 +183,10 @@ const sent = JSON.parse(storage.get('pickup-rotation-v1')).unsynced[0].rows;
 assert.equal(sent.length, 10);
 assert.equal(sent.find(r => r.name === 'Player A').points, 6);
 // Home (A's 6, B's 2) beat Away (nothing): Home's rows say won 1, Away's won 0.
-assert.deepEqual(sent.find(r => r.name === 'Player B'), { name: 'Player B', points: 2, fgm: 1, fga: 2, won: 1 });
-assert.deepEqual(sent.find(r => r.name === 'Player A'), { name: 'Player A', points: 6, fgm: 0, fga: 0, won: 1 });
+// Each row also says which side the player was on: 0 home, 1 away.
+assert.deepEqual(sent.find(r => r.name === 'Player B'), { name: 'Player B', points: 2, fgm: 1, fga: 2, won: 1, team: 0 });
+assert.deepEqual(sent.find(r => r.name === 'Player A'), { name: 'Player A', points: 6, fgm: 0, fga: 0, won: 1, team: 0 });
+assert.equal(sent.find(r => r.name === 'Player F').team, 1);
 assert.equal(sent.find(r => r.name === 'Player F').won, 0);
 assert.equal(run(`[player('Player A').wins, player('Player A').losses, player('Player F').wins, player('Player F').losses].join()`), '1,0,0,1');
 // The leaderboard shows tonight's FG%: B made 1 of 2; A took no shots, so A's cell is blank.
@@ -288,14 +294,16 @@ if (veteran) {
 const seated = run(`state.game.onCourt[0]?.name`);
 if (seated) assert.equal(run(`actions.uncheck(${JSON.stringify(seated)})`), false);
 
-// Switch sides: the board mirrors, saved across a refresh; the teams' scores don't move.
+// Switch sides: the board mirrors, saved on this laptop only (not in the shared session); the teams'
+// scores don't move.
 const score = () => [els.homeScore.textContent, els.awayScore.textContent].join();
 const before = score();
 run(`actions.flip(); commit();`);
-assert.equal(JSON.parse(storage.get('pickup-rotation-v1')).flipped, true);
+assert.equal(storage.get('pickup-flipped'), '1');
+assert.equal('flipped' in JSON.parse(storage.get('pickup-rotation-v1')), false);
 assert.equal(score(), before);
 run(`actions.flip(); commit();`);
-assert.equal(JSON.parse(storage.get('pickup-rotation-v1')).flipped, false);
+assert.equal(storage.get('pickup-flipped'), '');
 
 // Pending types survive a new session.
 context.confirm = () => true;
@@ -312,4 +320,235 @@ assert.equal(els.themeBtn.title, 'Switch to dark mode');
 run(`actions.theme()`);
 assert.equal(storage.get('pickup-theme'), 'dark');
 
-console.log('app.test.js: all checks passed');
+// ---- Sharing: act() queues each change, adopt() lays the unsent ones back on the server's copy ----
+const P = name => ({ name, games: 0, readyAt: 1, present: true, totalPoints: 0, fgm: 0, fga: 0, wins: 0, losses: 0 });
+const seat = (name, team) => ({ name, team, points: 0, fgm: 0, fga: 0, log: [] });
+const night = (startedAt, number = 1) => ({
+  players: [P('Ann'), P('Bo')], expected: [], unsynced: [], kinds: [], startedAt,
+  game: { number, onCourt: [seat('Ann', 'home'), seat('Bo', 'away')], subbedOut: [], satOut: [], homeName: 'Home', awayName: 'Away', remainingMs: 1200000, endsAt: null, started: false },
+});
+const use = n => run(`state = tidy(${JSON.stringify(n)}); pending = []; liveId = null; liveVer = 0; needsChoice = [];`);
+const take = (n, version = 5) => run(`adopt(${JSON.stringify({ id: n.startedAt, version, state: n })})`);
+const ops = () => run(`pending.map(c => c[0])`).join();
+const ann = () => run(`seatOf('Ann').points`);
+
+// A change is queued with its game number and saved on its own, so a reload while offline keeps it.
+context.confirm = () => true;
+use(night(100));
+run(`act('make', 'Ann', '2')`);
+assert.deepEqual(run(`pending`), [['make', 'Ann', '2', 1]]);
+assert.deepEqual(JSON.parse(storage.get('pickup-pending')), [['make', 'Ann', '2', 1]]);
+assert.equal(run(`act('make', 'Ann', '1')`), false); // an action that did nothing is not queued
+assert.equal(ops(), 'make');
+// Another laptop checked in Zoe meanwhile; its copy lacks our +2. Taking it keeps the +2, once.
+const theirs = night(100);
+theirs.players.push(P('Zoe'));
+take(theirs);
+assert.equal(ann(), 2);
+assert.equal(run(`player('Zoe').present`), true);
+assert.equal(run(`liveVer`), 5);
+assert.equal(ops(), 'make'); // still waiting for the server to accept it
+
+// Replay shows no dialog and doesn't leave the tab. End game recorded on game 3 runs again on the
+// server's game 3, but is skipped when the server has already gone on to game 4; a check-in, a change
+// to the night as a whole, still applies.
+use(night(100, 3));
+run(`act('checkIn', 'Late Larry'); act('endGame'); active = 'board';`);
+assert.equal(run(`state.game.number`), 4);
+assert.equal(ops(), 'checkIn,endGame');
+context.confirm = () => { throw new Error('a replayed change asked to confirm'); };
+take(night(100, 3));
+assert.equal(run(`state.game.number`), 4); // the game ended again, once
+assert.equal(run(`state.unsynced.length`), 1);
+assert.equal(run(`active`), 'board'); // End game would have moved to the Queue tab
+assert.equal(run(`player('Late Larry').present`), true);
+use(night(100, 3));
+context.confirm = () => true;
+run(`act('checkIn', 'Late Larry'); act('endGame');`);
+take(night(100, 4)); // the other laptop already ended game 3
+assert.equal(run(`state.game.number`), 4);
+assert.equal(run(`state.unsynced.length`), 0);
+assert.equal(ops(), 'checkIn');
+assert.equal(run(`player('Late Larry').present`), true);
+
+// Another laptop started a new session: switch to it, drop game changes, keep the check-in, say so.
+use(night(100, 3));
+run(`act('checkIn', 'Late Larry'); act('make', 'Ann', '2'); state.unsynced.push({ session: 100, game: 2, date: '2026-11-06', rows: [] }); needsChoice = [{ query: 'x', choices: [] }];`);
+take(night(200), 1);
+assert.equal(run(`state.startedAt`), 200);
+assert.equal(ann(), 0);
+assert.equal(ops(), 'checkIn');
+assert.equal(run(`player('Late Larry').present`), true);
+assert.equal(run(`state.unsynced.map(u => u.game).join()`), '2'); // a game the server never saw rides along
+assert.equal(run(`needsChoice.length`), 0);
+assert.match(els.msg.textContent, /new session/);
+// Starting one here clears what was waiting: it belonged to the old session.
+run(`act('newSession')`);
+assert.equal(ops(), '');
+assert.notEqual(run(`state.startedAt`), 200);
+
+(async () => {
+  const settle = () => new Promise(r => setImmediate(r));
+  const fetched = [];
+  let reply = () => ({ status: 204 });
+  context.fetch = async (path, init = {}) => {
+    fetched.push({ path, post: init.method === 'POST', body: init.body && JSON.parse(init.body) });
+    const r = reply(path, init);
+    return { status: r.status, ok: r.status < 400, json: async () => r.json };
+  };
+  const calls = () => fetched.splice(0);
+
+  // Opened as a file, nothing reaches the network: changes just wait.
+  use(night(100));
+  run(`act('make', 'Ann', '2')`);
+  await settle();
+  assert.equal(fetched.length, 0);
+  assert.equal(ops(), 'make');
+  assert.equal(run(`db`), 'offline');
+  assert.match(els.dbDot.title, /1 change waiting/);
+
+  context.location.protocol = 'http:';
+  // A push carries the whole session at the version this laptop knows (0 for a new one); once the
+  // server accepts it the queue is empty. The per-laptop flip stays out of it.
+  const live = n => ({ id: n.startedAt, date: '2026-11-06', state: n });
+  use(night(100));
+  reply = () => ({ status: 200, json: { version: 8 } });
+  run(`act('make', 'Ann', '2')`);
+  await settle();
+  const [push] = calls();
+  assert.deepEqual([push.path, push.post, push.body.id, push.body.version], ['/api/live', true, 100, 0]);
+  assert.match(push.body.date, /^\d{4}-\d\d-\d\d$/);
+  assert.equal(push.body.state.game.onCourt[0].points, 2);
+  assert.equal('flipped' in push.body.state, false);
+  assert.equal(ops(), '');
+  assert.deepEqual(run(`[liveId, liveVer, db]`), [100, 8, 'online']);
+  assert.match(els.dbDot.title, /online, live/);
+
+  // Refused (409) because another laptop got there first: take its copy, lay ours on top, push again.
+  const server = night(100);
+  Object.assign(server.game.onCourt[0], { points: 2, fgm: 1, fga: 1, log: [2] });
+  server.players.push(P('Zoe'));
+  let n = 0;
+  reply = () => (n++ === 0 ? { status: 409, json: { ...live(server), version: 10 } } : { status: 200, json: { version: 11 } });
+  run(`act('make', 'Ann', '3')`);
+  await settle();
+  const [first, second] = calls();
+  assert.equal(first.body.version, 8);
+  assert.equal(second.body.version, 10);
+  assert.equal(second.body.state.game.onCourt[0].points, 5); // their 2 and our 3
+  assert.ok(second.body.state.players.some(p => p.name === 'Zoe'));
+  assert.deepEqual(run(`[pending.length, liveVer]`), [0, 11]);
+
+  // Typing a team name keeps the last key, not one change per key; the one in the air is left alone.
+  reply = () => ({ status: 500 });
+  run(`act('teamName', 'home', 'T')`);
+  await settle();
+  run(`act('teamName', 'home', 'Tw'); act('teamName', 'home', 'Twi');`);
+  assert.deepEqual(run(`pending.map(c => c[2])`), ['Tw', 'Twi']); // 'Tw' replaced 'T'; it is now out, so 'Twi' follows it
+  calls();
+
+  // The poll: nothing new (204), a newer version (adopted), and a reply that is not newer (ignored).
+  await settle();
+  use(night(100));
+  run(`liveId = 100; liveVer = 11; db = 'connecting';`);
+  reply = () => ({ status: 204 });
+  await run(`poll()`);
+  assert.equal(calls()[0].path, '/api/live?id=100&v=11');
+  assert.equal(run(`db`), 'online');
+  const newer = night(100);
+  newer.players.push(P('Cy'));
+  reply = () => ({ status: 200, json: { ...live(newer), version: 12 } });
+  await run(`poll()`);
+  assert.equal(run(`player('Cy').present`), true);
+  assert.equal(run(`liveVer`), 12);
+  calls();
+  run(`state.players = state.players.filter(p => p.name !== 'Cy')`);
+  await run(`poll()`);
+  assert.equal(run(`player('Cy')`), undefined); // same version again: ignored
+  calls();
+  // Not while the tab is hidden.
+  context.document.hidden = true;
+  await run(`poll()`);
+  context.document.hidden = false;
+  assert.equal(calls().length, 0);
+
+  // Joining on load. The server has no session: share this laptop's. The server's is newer: take it.
+  // This laptop's is newer (first run after deploy): share it too.
+  use(night(100));
+  reply = (path, init) => (init.method === 'POST' ? { status: 200, json: { version: 1 } } : { status: 204 });
+  await run(`poll()`);
+  await settle();
+  let [get, post] = calls();
+  assert.deepEqual([get.post, post.post, post.body.id, post.body.version], [false, true, 100, 0]);
+  assert.equal(run(`liveId`), 100);
+  use(night(100));
+  reply = () => ({ status: 200, json: { ...live(night(300)), version: 4 } });
+  await run(`poll()`);
+  assert.deepEqual(run(`[state.startedAt, liveId, liveVer]`), [300, 300, 4]);
+  calls();
+  use(night(100));
+  reply = (path, init) => (init.method === 'POST' ? { status: 200, json: { version: 1 } } : { status: 200, json: { ...live(night(50)), version: 9 } });
+  await run(`poll()`);
+  await settle();
+  [get, post] = calls();
+  assert.deepEqual([post.post, post.body.id, post.body.version, run(`state.startedAt`)], [true, 100, 0, 100]);
+
+  // Games and types go to the database only once the shared copy holds them, then come off as a change.
+  use(night(100));
+  reply = () => ({ status: 200, json: [] });
+  run(`state.unsynced.push({ session: 100, date: '2026-11-06', game: 1, rows: [] }); state.kinds.push({ name: 'Ann', kind: 'UG' });`);
+  await run(`sync()`);
+  assert.deepEqual(calls().map(c => c.path), ['/api/profiles']); // not shared yet: nothing posted
+  run(`liveId = 100; liveVer = 3;`);
+  reply = path => (path === '/api/live' ? { status: 200, json: { version: 4 } } : { status: 200, json: [] });
+  await run(`sync()`);
+  await settle();
+  // Each post is followed by the push that takes it off the list; the last profiles is sync running again.
+  assert.deepEqual(calls().map(c => c.path), ['/api/profiles', '/api/results', '/api/live', '/api/kind', '/api/live', '/api/profiles']);
+  assert.deepEqual(run(`[state.unsynced.length, state.kinds.length, pending.length]`), [0, 0, 0]);
+
+  // A 401 asks for the passcode once and stops polling until it is entered.
+  reply = () => ({ status: 401 });
+  await run(`poll()`);
+  assert.equal(run(`db`), 'locked');
+  calls();
+  await run(`poll()`);
+  assert.equal(calls().length, 0);
+  run(`db = 'connecting'`);
+
+  // History: the list, then a session's box scores fetched when it first opens.
+  reply = () => ({ status: 200, json: [{ id: 5, date: '2026-11-06', players: 12, games: 1 }, { id: 4, date: '2026-10-30', players: 1, games: 2 }] });
+  await run(`renderHistory()`);
+  assert.match(els.historyList.innerHTML, /<details class="dd" data-id="5"><summary>2026-11-06<span class="mono">12 players · 1 game<\/span>/);
+  assert.match(els.historyList.innerHTML, /1 player · 2 games/);
+  const detail = {
+    id: 5, date: '2026-11-06', participants: ['Ana', 'Ben <b>'], games: [
+      { game: 1, rows: [{ name: 'Ana', points: 7, fgm: 3, fga: 8, won: 1, team: 0 }, { name: 'Cy', points: 3, fgm: 1, fga: 2, won: 1, team: 0 }, { name: 'Ben <b>', points: 2, fgm: 1, fga: 4, won: 0, team: 1 }] },
+      { game: 2, rows: [{ name: 'Old Timer', points: 4, fgm: 0, fga: 0, won: null, team: null }] },
+    ],
+  };
+  const body = { innerHTML: '' }, details = { open: true, dataset: { id: '5' }, querySelector: () => body };
+  reply = path => ({ status: 200, json: path === '/api/sessions/5' ? detail : [] });
+  const [, onToggle] = histListeners.find(([type]) => type === 'toggle');
+  await onToggle({ target: details });
+  assert.equal(calls().at(-1).path, '/api/sessions/5');
+  assert.match(body.innerHTML, /Players: Ana, Ben &#60;b&#62;/); // names go through esc
+  assert.doesNotMatch(body.innerHTML, /Ben <b>/);
+  assert.match(body.innerHTML, /<h4>Game 1<\/h4><div class="tw"><table><thead><tr><th>Home<\/th>[\s\S]*?<td>Ana<\/td>[\s\S]*?<td><b>Total<\/b><\/td><td class="r mono"><b>10<\/b><\/td>[\s\S]*?<th>Away<\/th>[\s\S]*?<td><b>Total<\/b><\/td><td class="r mono"><b>2<\/b>/);
+  assert.match(body.innerHTML, /<h4>Game 2<\/h4>[^]*?<th>Player<\/th>[^]*?<td>Old Timer<\/td>/); // no teams stored: one list, no totals
+  assert.equal((body.innerHTML.match(/Total/g) || []).length, 2);
+  assert.equal(details.dataset.shown, '1'); // opened once: not fetched again
+  await onToggle({ target: details });
+  assert.equal(fetched.length, 0);
+  // Offline: one line, and it tries again next time.
+  const shut = { open: true, dataset: { id: '5' }, querySelector: () => body };
+  reply = () => ({ status: 500 });
+  await onToggle({ target: shut });
+  assert.match(body.innerHTML, /<p class="empty">Could not load this session\. History needs a connection\.<\/p>/);
+  assert.equal(shut.dataset.shown, undefined);
+  await run(`renderHistory()`);
+  assert.match(els.historyList.innerHTML, /<p class="empty">History needs a connection\.<\/p>/);
+
+  context.location.protocol = 'file:';
+  console.log('app.test.js: all checks passed');
+})();

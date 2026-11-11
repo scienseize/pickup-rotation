@@ -22,8 +22,10 @@ Goals:
    readable from the court, with a buzzer at 0:00.
 4. **Per-player scoring.** The attendant credits each basket (+1, +2, +3) to
    the player who scored it. Team scores are the sum of their players' points.
-5. **Low-stress operation.** One person runs everything from one laptop.
-   Nothing is lost if the page is refreshed or the laptop sleeps.
+5. **Low-stress operation.** Up to three organizers each run the app on their
+   own laptop, and all of them see and edit the same night (section 12,
+   *Shared sessions*). Nothing is lost if a page is refreshed, a laptop sleeps
+   or the Wi-Fi drops.
 
 ## 2. Constraints
 
@@ -36,7 +38,8 @@ Goals:
   tooling is Cloudflare's `wrangler`, used to run it locally and deploy.
 - **One court.** One game at a time.
 - **Survives refresh.** All state is saved to the browser's `localStorage`
-  after every change and reloaded on open.
+  after every change and reloaded on open. The shared copy on the server is
+  taken on top of it when the page joins.
 - **Optional TV.** Mirroring the laptop to a TV or projector works with no
   extra support from the app. The scoreboard has a full-screen button.
 
@@ -105,7 +108,10 @@ Edge rules:
 
 ## 4. Data model
 
-The entire app state is one JSON object, saved under one `localStorage` key.
+The entire app state is one JSON object, saved under one `localStorage` key
+and shared through the server (section 12). Which team shows on the left of
+the scoreboard (*Switch sides*) is not part of it: each laptop keeps its own
+(`pickup-flipped`).
 
 ```js
 state = {
@@ -126,7 +132,7 @@ state = {
     started                         // clock has run; locks Fill, Pick, Sit out
   },
   expected: [ names ],              // tonight's list, pasted each week
-  unsynced: [ game payloads ],      // finished games the database doesn't have yet
+  unsynced: [ game payloads ],      // finished games the database doesn't have yet (rows carry team: 0 home, 1 away)
   kinds: [ { name, kind } ],        // player types the database doesn't have yet
   startedAt                         // session start; also the session id in the database
 }
@@ -224,12 +230,13 @@ and the floating island tab bar. The fonts come from Google Fonts when the lapto
 is online. Offline, the page falls back to Georgia and the system font, and
 everything still works.
 
-One page with five tabs in the island: Home, Check in, Queue, Scoreboard and
-Leaderboard. Each tab is a whole view, and its name is kept in the
+One page with six tabs in the island: Home, Check in, Queue, Scoreboard,
+Leaderboard and History. Each tab is a whole view, and its name is kept in the
 URL (`#checkin`, `#queue`, ...) so a refresh returns to it. A small dot beside
-the mark in the island shows the database: green when online, red when
-offline. Hovering over it (or a screen reader) gives the state and any games
-not saved yet. Clicking it asks for the passcode only when the database
+the mark in the island shows the database: green when online and live (this
+laptop shares the session), red when offline. Hovering over it (or a screen
+reader) gives the state, how many changes are waiting to reach the other
+laptops, and any games not saved yet. Clicking it asks for the passcode only when the database
 refused it, and retries when offline; when online it does nothing. The half-filled circle in the top right corner, outside the island, switches between light and dark. The choice is saved per device (`pickup-theme`), and the sign-in page follows it. Dark is the default. On a laptop the island folds to a small notch (the mark and
 the database dot) and opens when the pointer is over it or it has keyboard
 focus. Touch screens keep the full bar. The layout targets a
@@ -370,6 +377,16 @@ rows are numbered, and ties share a rank (1, 2, 2, 4).
   width and the height allow, or smaller when a big night would not fit, so
   nothing is cut off. Esc leaves.
 
+### History tab
+
+Past sessions, newest first, each a native `<details>` headed by its date with
+the player and game counts. The list is fetched from `GET /api/sessions` when
+the tab opens; a session's players and box scores are fetched from
+`GET /api/sessions/<id>` the first time it is opened. Each game shows both teams
+with their points total when the games were saved with teams (`results.team`),
+and one list for older games. Sessions from before sessions were stored show
+the players who played. It needs the connection: offline it says so in one line.
+
 ### Scoreboard view (for the court; full screen)
 
 ```
@@ -462,7 +479,7 @@ the scoreboard code.
 | Not included                      | Add it when                                              |
 |-----------------------------------|----------------------------------------------------------|
 | Accounts, logins                  | Several organizers need separate permissions.           |
-| Live sync of tonight's queue      | The queue needs to run on a phone while a TV shows the score, or a laptop dies mid-night. Profiles and results already live on the server; this adds a session snapshot table. |
+| Instant updates between laptops (WebSockets / Durable Objects), per-field merging | The 2-second poll feels slow, or two people regularly change the same thing at once (the later change wins today). |
 | Stats beyond points (rebounds, assists, fouls) | Someone is actually available to track them during play. |
 | Season leaderboards, CSV export   | The organization wants them. The `results` table already has the rows. |
 | Over/under for spectators (imaginary money) | The group wants it. Lines come from `results` (a player's average and spread, recent form). The hosted Worker is already in place; it needs a `bets` ledger table and spectator sign-in. Nothing in today's schema has to change. |
@@ -481,7 +498,8 @@ public/app.html     the app (served at /app): markup and styles
 public/logo.png     the ISO logo from iso.jpg: transparent background, in the app's
                     warm black and white (ink #1c1a19 to paper #faf8f5)
 public/favicon.png  the tab icon, the same logo at 64px
-public/app.js       state, saving, rendering, scoreboard, clock, buzzer, sync, passcode
+public/app.js       state, saving, rendering, scoreboard, clock, buzzer, sharing (act, pending,
+                    push, adopt, poll), history, sync, passcode
 public/queue.js     fairness rules, no DOM: waitingOrder, nextInLine, fill, pick, remove,
                     sitOut, passedOver, endGame
 public/names.js     name matching, no DOM: suggest (ranked prefix match), resolve
@@ -489,6 +507,7 @@ public/sw.js        service worker: opens the page offline once it has loaded
 worker/index.js     Cloudflare Worker: the sign-in gate, files and the API on D1
 worker/rules.js     API input rules, the passcode check and the session cookie, no I/O
 schema.sql          the D1 tables
+migrations/         one SQL file per change to an existing database
 wrangler.toml       Worker, assets (Worker first), D1 and the sign-in rate limit
 package.json        pins wrangler; `npm test`, `npm run dev`, `npm run deploy`
 queue.test.js       node queue.test.js
@@ -511,8 +530,11 @@ small `module.exports` guard so Node can load them for the tests.
   points to totals.
 - `node names.test.js` covers the name matching rules.
 - `node worker/rules.test.mjs` covers the API rules: names, points, rows,
-  dates, the JSON-only check and the passcode compare. `npm test` runs all
-  three files.
+  teams, dates, the shared-session body, the JSON-only check and the passcode
+  compare. `node worker/index.test.mjs` also covers the shared session: create,
+  accepted push, stale push (409), poll, and the history list and detail.
+  `node app.test.js` covers replay (`adopt`), push and poll against a fake
+  server, and the History markup. `npm test` runs all of them.
 - `npm run dev` runs the real Worker against a local D1 at
   http://localhost:8787, separate from the live database, for trying changes.
 - Manual run in a browser. Check in 13 players and run two games, confirming
@@ -535,17 +557,25 @@ results (session INTEGER, played_on TEXT, game INTEGER, name TEXT,
          points INTEGER CHECK (points BETWEEN 0 AND 200),
          fgm INTEGER DEFAULT 0, fga INTEGER DEFAULT 0, -- field goals made / attempted
          won INTEGER CHECK (won IN (0, 1)),           -- 1 a win, 0 a loss, NULL a tie
+         team INTEGER CHECK (team IN (0, 1)),         -- 0 home, 1 away; NULL on older rows
          UNIQUE (session, game, name))
+sessions (id INTEGER PRIMARY KEY,   -- the session id, as in results.session
+          played_on TEXT,           -- YYYY-MM-DD, set when the session starts
+          version INTEGER,          -- +1 on every accepted push
+          state TEXT,               -- the shared session (section 4) as JSON
+          updated_at TEXT)
 ```
 
 - **Changes to existing databases** are SQL files in `migrations/`, run once
   per database with `npx wrangler d1 execute pickup --remote --file ...` (and
   `--local` for local testing). `schema.sql` always has the full current
   tables for a new database. `0001_fg.sql` added `fgm` and `fga`, and
-  `0002_wins.sql` added `won`, and `0003_kind.sql` added `players.kind`; each
+  `0002_wins.sql` added `won`, and `0003_kind.sql` added `players.kind`, and
+  `0004_sessions.sql` added the `sessions` table and `results.team`; each
   must run on the live database before the Worker that uses it is deployed.
   After 0003, deploy right away: until then the old Worker can't add new names.
-  Otherwise saves fail and games wait on the laptop until it has run.
+  Otherwise saves fail and games wait on the laptop until it has run. The same
+  holds for 0004: the new Worker's result inserts name the `team` column.
 
 - **One row per player per game.** Averages are computed by a query and never
   stored. The same rows will set over/under lines later.
@@ -566,21 +596,81 @@ Every call except sign-in needs the session cookie (section 13).
 | `GET /api/profiles` | Every player with type (`kind`), games, points, average, all-time `fgm` / `fga`, and `wins` / `losses` | No (session only) |
 | `POST /api/players {names}` | Adds new names from tonight's list | Yes |
 | `POST /api/kind {name, kind}` | Sets a player's type, or clears it with null; adds the player if new | Yes |
-| `POST /api/results {session, date, game, rows: [{name, points, fgm, fga, won}]}` | Saves one finished game | Yes |
+| `POST /api/results {session, date, game, rows: [{name, points, fgm, fga, won, team}]}` | Saves one finished game (`team`: 0 home, 1 away, optional) | Yes |
+| `GET /api/live?id=&v=` | The current session (the highest id): 204 if the caller already holds that id and version, or there is no session; else `{id, date, version, state}` | No (session only) |
+| `POST /api/live {id, date, version, state}` | Pushes the shared session: 200 `{version}` if `version` is the current one (a new id is created at version 1), else 409 with the current `{id, date, version, state}` | Yes |
+| `GET /api/sessions` | Every session, newest first: `[{id, date, players, games}]`, from `sessions` and `results` together | No (session only) |
+| `GET /api/sessions/<id>` | `{id, date, participants, games: [{game, rows: [{name, points, fgm, fga, won, team}]}]}`; 404 if unknown, 400 if the id is not a number | No (session only) |
 
 The Worker validates every input: names are 1 to 60 characters, points are
 whole numbers from 0 to 200, field goals are whole numbers with made no more
 than attempted (both optional, as 0), `won` is 1, 0 or null (optional, as
-null), so older saved games still sync, rows are a list of objects, and the date is real.
+null) and `team` is 0, 1 or null (optional, as null), so older saved games
+still sync, rows are a list of objects, and the date is real. A pushed session
+needs a whole id, a real date, a version from 0 and a state object with a
+`players` list.
 POSTs must be JSON, so other websites can't write. Only the files in `public/`
 are served.
 
 **When the connection drops:** the queue and scoreboard work as before.
-Finished games wait in `unsynced` in the browser and are sent when the
-database is back (on page load and after every End game). The last profiles
-list is kept in the browser, so suggestions and averages still show. The
-database dot in the island turns red; hovering over it shows how many games are
-waiting.
+Changes wait in `pending` and finished games in `unsynced`, both in the browser,
+and are sent when the server is back (the 2-second poll notices). The last
+profiles list is kept in the browser, so suggestions and averages still show.
+The database dot in the island turns red; hovering over it shows how many
+changes and games are waiting.
+
+### Shared sessions
+
+All laptops see one night. The server keeps it in `sessions`: the state of
+section 4 as JSON, with a version. The current session is the row with the
+highest id.
+
+- **One entry point.** Every change to the session goes through `act(op, a, b)`,
+  which runs `actions[op](a, b)`, appends `[op, a, b, game number]` to `pending`
+  (saved in `localStorage` under `pickup-pending`), saves, redraws and calls
+  `pushLive()`. Views (leaderboard mode, the type picker, full screen, Switch
+  sides) return `false` and are not shared. An op carries everything it needs as
+  plain data, so it can be replayed. Ops about the night as a whole are
+  `checkIn`, `uncheck`, `removeName`, `addNames`, `done`, `undoDone`, `setKind`,
+  `posted` and `kindPosted`; everything else belongs to the current game
+  (`fill`, `pick`, `sitOut`, `remove`, `miss`, `make`, `undo`, `startPause`,
+  `clockEnd`, `resetClock`, `endGame`, `sub`, `swapTeams`, `setTeam`,
+  `teamName`, `planSwap`, `planTeams`, `planMove`).
+- **Push.** One at a time (a second request sets a rerun flag, as `sync()`
+  does): `POST /api/live` with the whole state and the last version this laptop
+  knew. 200: the version is recorded and the changes that were sent leave
+  `pending`. 409: another laptop got there first, so `adopt()` the copy in the
+  reply and push again.
+- **Adopt.** `state` becomes the server's copy, then `pending` is replayed on
+  top in order, each change in a `try`, with `confirm` answered yes and no
+  dialogs, messages, sound, tab switches or full-screen exits (`replaying`). A
+  game's change recorded on another game number is dropped, so a second
+  laptop's End game cannot end the next game; so is one that fails or finds
+  nothing to do. A team-name box that has focus is left alone.
+- **Poll.** Every 2 seconds while the page is visible: `GET /api/live?id=&v=`.
+  204 means nothing changed (and, with changes waiting, they are pushed: this is
+  how an offline laptop catches up); a newer copy is adopted. If its id is
+  higher, another laptop started a new session: this one switches to it, game
+  changes still waiting here are dropped (check-ins, list changes and types
+  carry over), games ended here that the server never saw ride along in
+  `unsynced`, and a message says so.
+- **Joining.** A page that loads asks for the current session. The server's is
+  taken unless this laptop holds a newer one that was never shared (the first
+  run after this was deployed), which is then pushed as a new row.
+- **New session** creates the state locally and pushes it as a new row with its
+  date (`localDate(startedAt)`); the others switch on their next poll.
+- **Results and types** are posted to `/api/results` and `/api/kind` only once
+  the shared copy holds them (nothing waiting in `pending`), by any laptop, and
+  taking one off the list is itself a change (`posted`, `kindPosted`), so the
+  others see it done. `UNIQUE (session, game, name)` makes a repeat harmless.
+
+Known limits, on purpose: two people changing the same thing within 2 seconds,
+the later one wins; the game clock is an end timestamp from the laptop that
+started it, so countdowns can differ by the laptops' clock difference, and the
+buzzer sounds on each laptop that sees it reach zero; a push whose reply is lost
+is replayed on top of itself by the next adopt; a laptop offline through a whole
+game loses its changes to that game; sessions from before this feature show
+games in History but only the players who played.
 
 ## 13. Hosting, passcode and backups
 
@@ -621,6 +711,6 @@ waiting.
   `CLOUDFLARE_API_TOKEN`) and the account id (repo variable). GitHub emails the
   owner if a run fails. D1 Time Travel also restores to any point in the last
   few days.
-- **Still in one browser:** tonight's queue order. If a laptop dies mid-night,
-  finished games are safe on the server, but the queue is rebuilt by checking
-  people in again.
+- **Shared, and kept in each browser too:** tonight's session lives on the
+  server (section 12, *Shared sessions*), so if a laptop dies mid-night another
+  one has the queue, the court and the score.

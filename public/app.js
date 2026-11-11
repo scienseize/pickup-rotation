@@ -21,7 +21,15 @@ let state = load();
 let saved = true;
 let audio; // created on the first click; browsers block sound before one
 const PASS_KEY = 'pickup-passcode', PROFILES_KEY = 'pickup-profiles', THEME_KEY = 'pickup-theme';
+const PENDING_KEY = 'pickup-pending', FLIP_KEY = 'pickup-flipped';
 const stored = key => { try { return localStorage.getItem(key); } catch { return null; } };
+let flipped = stored(FLIP_KEY) === '1'; // which team shows on the left: this laptop only, never shared
+// Sharing: every change to the session goes through act(), which also queues it here as
+// [op, a, b, game number] until a push to the server has taken it. Saved in its own key so a reload
+// while offline keeps it. liveId and liveVer are the session and version the server last told us.
+let pending = JSON.parse(stored(PENDING_KEY)) || [];
+let liveId = null, liveVer = 0;
+let replaying = false; // adopt() is laying pending changes back on: no dialogs, messages, sound or saves to the database
 // lowercase name -> { name, games, points, avg }; the last copy is kept so profiles still show offline
 let profiles = new Map();
 try { profiles = new Map(JSON.parse(stored(PROFILES_KEY)).map(p => [p.name.toLowerCase(), p])); } catch {} // corrupt copy: start empty
@@ -33,28 +41,33 @@ let db = 'connecting'; // 'online' | 'offline' | 'locked' (needs the organizer p
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s) {
-      delete s.roster; // replaced by the database
-      delete s.log; // never read
-      const st = { expected: [], unsynced: [], kinds: [], startedAt: Date.now(), ...s };
-      seatTeams(st.game); // saved before every called player had a team
-      // Saved before shots were tracked: start everyone's shots at 0.
-      for (const c of [...st.game.onCourt, ...(st.game.subbedOut ?? [])]) Object.assign(c, { fgm: c.fgm ?? 0, fga: c.fga ?? 0, log: c.log ?? [] });
-      for (const p of st.players) Object.assign(p, { fgm: p.fgm ?? 0, fga: p.fga ?? 0, wins: p.wins ?? 0, losses: p.losses ?? 0 });
-      return st;
-    }
+    if (s) return tidy(s);
   } catch {}
   return newSession();
 }
 
+// A saved or shared session, brought up to the current shape.
+function tidy(s) {
+  delete s.roster; // replaced by the database
+  delete s.log; // never read
+  delete s.flipped; // per laptop now
+  const st = { expected: [], unsynced: [], kinds: [], startedAt: Date.now(), ...s };
+  seatTeams(st.game); // saved before every called player had a team
+  // Saved before shots were tracked: start everyone's shots at 0.
+  for (const c of [...st.game.onCourt, ...(st.game.subbedOut ?? [])]) Object.assign(c, { fgm: c.fgm ?? 0, fga: c.fga ?? 0, log: c.log ?? [] });
+  for (const p of st.players) Object.assign(p, { fgm: p.fgm ?? 0, fga: p.fga ?? 0, wins: p.wins ?? 0, losses: p.losses ?? 0 });
+  return st;
+}
+
 function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(state)); saved = true; }
+  try { localStorage.setItem(KEY, JSON.stringify(state)); localStorage.setItem(PENDING_KEY, JSON.stringify(pending)); saved = true; }
   catch { saved = false; flash('Could not save. Changes will be lost if the page is refreshed.'); }
 }
 
 function commit() { save(); render(); }
 
-const flash = text => { $('msg').textContent = text; };
+const flash = text => { if (!replaying) $('msg').textContent = text; };
+const ask = text => replaying || confirm(text); // a replayed change was already confirmed
 const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const seatOf = name => state.game.onCourt.find(c => c.name === name);
@@ -116,7 +129,7 @@ const btn = (action, name, label, { arg = '', pressed, cls = 'o s', disabled } =
 
 // ---- tabs: the island. A tab hides every panel but its own and scrolls to the top ----
 
-const TABS = ['home', 'checkin', 'queue', 'board', 'leaders'];
+const TABS = ['home', 'checkin', 'queue', 'board', 'leaders', 'history'];
 const island = $('island'), thumb = island.querySelector('.island-thumb');
 const tabs = [...island.querySelectorAll('[role="tab"]')];
 let active = 'home';
@@ -138,6 +151,7 @@ function show(name) {
   if (changed) window.scrollTo(0, 0);
   if (name === 'checkin') renderTonight();
   if (name === 'leaders') renderLeaders();
+  if (name === 'history') renderHistory();
 }
 function route() {
   let name = '';
@@ -168,12 +182,14 @@ document.fonts?.ready.then(place);
 class Rejected extends Error {}
 class Locked extends Error {}
 
+const init = body => (body === undefined ? {} : {
+  method: 'POST', body: JSON.stringify(body),
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${stored(PASS_KEY) || ''}` },
+});
+
 async function api(path, body) {
   if (location.protocol === 'file:') throw new Error('opened as a file');
-  const res = await fetch(path, body === undefined ? {} : {
-    method: 'POST', body: JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${stored(PASS_KEY) || ''}` },
-  });
+  const res = await fetch(path, init(body));
   if (res.status === 401) { db = 'locked'; askPasscode(); throw new Locked(); }
   if (res.status === 400) throw new Rejected((await res.json()).error);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -192,6 +208,16 @@ function askPasscode() {
   dlg.showModal();
 }
 
+// /api/live and /api/sessions answer with their own JSON, not the profiles list api() expects.
+// Resolves { status, data }: 200 and 409 carry a session, 204 nothing.
+async function liveFetch(path, body) {
+  if (location.protocol === 'file:') throw new Error('opened as a file');
+  const res = await fetch(path, init(body));
+  if (res.status === 401) { db = 'locked'; askPasscode(); throw new Locked(); }
+  if (!res.ok && res.status !== 409) throw new Error(`HTTP ${res.status}`);
+  return { status: res.status, data: res.status === 204 ? null : await res.json() };
+}
+
 // Finished games wait in state.unsynced (saved in this browser) until the database has them.
 // One sync at a time: an overlapping one could send the same game twice or shift the wrong one.
 let syncing = false, syncAgain = false;
@@ -200,18 +226,20 @@ async function sync() {
   syncing = true;
   try {
     await api('/api/profiles');
-    while (state.unsynced.length) {
-      try { await api('/api/results', state.unsynced[0]); }
-      catch (e) { if (!(e instanceof Rejected)) throw e; flash(`The database rejected a game: ${e.message}`); }
-      state.unsynced.shift();
-      save();
-    }
-    while (state.kinds.length) {
-      const k = state.kinds[0];
-      try { await api('/api/kind', k); }
-      catch (e) { if (!(e instanceof Rejected)) throw e; flash(`The database rejected a player type: ${e.message}`); }
-      state.kinds = state.kinds.filter(x => x !== k); // a newer tap for this player may have replaced it
-      save();
+    // Games and types go up only once the shared copy holds them, then come off the list as a change
+    // (posted, kindPosted) so every laptop sees them done. Two laptops posting the same game is
+    // harmless: UNIQUE (session, game, name).
+    if (shared()) {
+      for (const g of [...state.unsynced]) {
+        try { await api('/api/results', g); }
+        catch (e) { if (!(e instanceof Rejected)) throw e; flash(`The database rejected a game: ${e.message}`); }
+        act('posted', g.session, g.game);
+      }
+      for (const k of [...state.kinds]) {
+        try { await api('/api/kind', k); }
+        catch (e) { if (!(e instanceof Rejected)) throw e; flash(`The database rejected a player type: ${e.message}`); }
+        act('kindPosted', k.name, k.kind);
+      }
     }
   } catch (e) {
     if (!(e instanceof Rejected || e instanceof Locked)) db = 'offline';
@@ -222,15 +250,112 @@ async function sync() {
   render();
 }
 
-function checkIn(raw) {
-  const typed = cleanName(raw);
-  if (!typed) return;
-  const p = playerNamed(typed);
-  if (p) return flash(p.present ? `${p.name} is already checked in.` : `${p.name} is done for the night.`);
-  const name = profileOf(typed)?.name ?? typed; // keep the database's spelling
-  state.players.push({ name, games: 0, readyAt: Date.now(), present: true, totalPoints: 0, fgm: 0, fga: 0, wins: 0, losses: 0 });
-  flash(`${name} checked in.`);
+// ---- sharing: the server keeps the session with a version; each laptop pushes after a change and
+// polls every 2 seconds, so a change shows on the others within about 3. ----
+// ponytail: whole-state pushes, a 2-second poll and last-write-wins on the same field; Durable Objects
+// or WebSockets if the night ever needs instant updates or per-field merging.
+// ponytail: a push whose reply is lost is replayed on top of itself by the next adopt; give each change
+// an id and keep the applied ones in the state if that ever shows.
+
+// Changes about the night as a whole: these still apply when the game has moved on, or a new session
+// started. A game's own changes (points, clock, lineup) are dropped by adopt() if the game number differs.
+const SESSION_OPS = new Set(['checkIn', 'uncheck', 'removeName', 'addNames', 'done', 'undoDone', 'setKind', 'posted', 'kindPosted']);
+// The shared copy holds everything this laptop has done (nothing waiting, and the server knows its session).
+const shared = () => liveId === state.startedAt && !pending.length;
+
+// The one way to change the session: run the action, queue it for the server, save, draw, push.
+// Returns false when the action did nothing, so nothing is queued. Args must be plain JSON: adopt()
+// replays them on a newer copy, from the data alone.
+function act(op, a, b) {
+  const game = state.game.number; // before the action: End game moves on to the next
+  if (actions[op](a, b) === false) return false;
+  if (op === 'newSession') pending = []; // the old session's changes mean nothing to the new one
+  else {
+    if (op === 'teamName' && pending.length > inflight && pending.at(-1)[0] === op && pending.at(-1)[1] === a) pending.pop(); // typing: keep the last
+    pending.push([op, a, b, game]);
+  }
   commit();
+  pushLive();
+}
+
+// One push at a time, rerun if more changes came while it was out (same pattern as sync).
+let pushing = false, pushAgain = false, inflight = 0; // inflight: how many pending changes the push in the air holds
+async function pushLive() {
+  if (pushing) { pushAgain = true; return; }
+  pushing = true;
+  try {
+    do {
+      pushAgain = false;
+      inflight = pending.length;
+      const id = state.startedAt;
+      const r = await liveFetch('/api/live', { id, date: localDate(id), version: id === liveId ? liveVer : 0, state });
+      if (id === state.startedAt) { // else a new session started meanwhile; the rerun pushes it
+        if (r.status === 409) adopt(r.data); // someone got there first: take theirs, lay ours back on top
+        else { liveId = id; liveVer = r.data.version; pending.splice(0, inflight); save(); }
+      }
+      inflight = 0;
+      if (db !== 'locked') db = 'online';
+    } while (pushAgain);
+    if (shared() && (state.unsynced.length || state.kinds.length)) sync();
+  } catch (e) {
+    if (!(e instanceof Locked)) db = 'offline'; // pending stays; the poll tries again
+  } finally {
+    pushing = false;
+    inflight = 0;
+    renderDot();
+  }
+}
+
+// Take the server's copy of the session, then lay this laptop's unsent changes back on top.
+function adopt(server) {
+  const old = state, switched = server.id !== old.startedAt;
+  state = tidy(server.state);
+  liveId = server.id;
+  liveVer = server.version;
+  if (switched) {
+    // Another laptop started a new session. ponytail: game changes made here are dropped and the
+    // list, check-ins and player types carry over; games ended here that the server never saw ride along.
+    pending = pending.filter(c => SESSION_OPS.has(c[0]));
+    state.unsynced.push(...old.unsynced.filter(u => !state.unsynced.some(x => x.session === u.session && x.game === u.game)));
+    needsChoice = [];
+    sel = null;
+  }
+  // Each change runs again with confirm answered yes. One recorded on another game is stale; one that
+  // fails or finds nothing to do is too. Both are dropped.
+  replaying = true;
+  pending = pending.filter(([op, a, b, game]) => {
+    if (!SESSION_OPS.has(op) && game !== state.game.number) return false;
+    try { return actions[op](a, b) !== false; } catch { return false; }
+  });
+  replaying = false;
+  save();
+  render(); // keepFocus; renderBoard leaves a team-name box that has focus alone
+  if (switched) flash('Another laptop started a new session. Switched to it.');
+  if (pending.length) pushLive();
+  else if (state.unsynced.length || state.kinds.length) sync();
+}
+
+// Every 2 seconds while the page is visible: has the server's session changed? It is also how a
+// laptop that was offline catches up, and how a fresh page joins (liveId is null until it has).
+let polling = false;
+async function poll() {
+  if (polling || pushing || document.hidden || db === 'locked') return;
+  polling = true;
+  const was = db;
+  try {
+    const { status, data } = await liveFetch(`/api/live?id=${liveId ?? 0}&v=${liveVer}`);
+    if (pushing) return; // a push started meanwhile and this reply may predate it
+    if (db !== 'locked') db = 'online';
+    if (status === 204 || data.id < state.startedAt) { // nothing newer; send what is waiting or a session the server lacks
+      if (pending.length || state.startedAt !== liveId) pushLive();
+    } else if (data.id !== liveId || data.version > liveVer) adopt(data);
+    if (was !== 'online' && shared() && (state.unsynced.length || state.kinds.length)) sync(); // back from offline
+  } catch (e) {
+    if (!(e instanceof Locked)) db = 'offline';
+  } finally {
+    polling = false;
+    renderDot();
+  }
 }
 
 // ---- name autosuggest (check-in and tonight's list) ----
@@ -308,7 +433,9 @@ function autosuggest(input, list, pick, say) {
   return { enter };
 }
 
-// ---- actions (each click handler; return false to skip saving) ----
+// ---- actions (each change to the session; return false when nothing changed or it is only a view).
+// Run them through act(), never directly, so every laptop sees the change. They take plain-data
+// arguments and read nothing but state, so adopt() can replay them. ----
 
 const actions = {
   fill() { if (locked()) return false; Queue.fill(state.players, state.game, SPOTS); seatTeams(); },
@@ -319,7 +446,15 @@ const actions = {
   undoDone: name => { player(name).present = true; },
   leaderMode(_, mode) { leaderMode = mode; keepFocus(renderLeaders); return false; }, // a view choice, not saved
   leaderKind(_, kind) { leaderKind = kind; keepFocus(renderLeaders); return false; }, // so is the filter
-  checkIn: name => { checkIn(name); return false; },
+  checkIn(raw) {
+    const typed = cleanName(raw);
+    if (!typed) return false;
+    const p = playerNamed(typed);
+    if (p) { flash(p.present ? `${p.name} is already checked in.` : `${p.name} is done for the night.`); return false; }
+    const name = profileOf(typed)?.name ?? typed; // keep the database's spelling
+    state.players.push({ name, games: 0, readyAt: Date.now(), present: true, totalPoints: 0, fgm: 0, fga: 0, wins: 0, losses: 0 });
+    flash(`${name} checked in.`);
+  },
   // Undo a mistaken check-in: back to To arrive. Only before they've played (canUncheck), since
   // it forgets the player for tonight, games and points included.
   uncheck(name) {
@@ -330,7 +465,19 @@ const actions = {
     flash(`${name} is back on To arrive.`);
   },
   removeName: name => { state.expected = state.expected.filter(n => n !== name); },
-  choose: (name, query) => { needsChoice = needsChoice.filter(c => c.query !== query); addToList(name); saveList(); },
+  // Names go on the list together; the database hears of them when this laptop makes the change.
+  addNames(names) {
+    const had = state.expected.length;
+    for (const n of names) addToList(n);
+    if (state.expected.length === had) return false;
+    if (!replaying) saveList();
+  },
+  // The answer to "which one is coming?": the choice is a view, adding the name is the change.
+  choose(name, query) {
+    needsChoice = needsChoice.filter(c => c.query !== query);
+    if (act('addNames', [name]) === false) render();
+    return false;
+  },
   pasteList() {
     $('pasteDlg').returnValue = '';
     $('pasteDlg').showModal();
@@ -352,32 +499,53 @@ const actions = {
     if (last) { c.fgm -= 1; c.points -= last; }
   },
 
-  startPause() {
+  // want is 'start' or 'pause' (the Start button says which), so replaying it can't flip a clock another
+  // laptop already started or paused; with none it toggles.
+  startPause(_, want) {
+    const g = state.game, start = (want || (g.endsAt ? 'pause' : 'start')) === 'start';
+    if (!start && g.endsAt) { g.remainingMs = remaining(); g.endsAt = null; }
+    else if (start && !g.endsAt && ready() && g.remainingMs > 0) { g.endsAt = Date.now() + g.remainingMs; g.started = true; }
+    else return false;
+  },
+
+  // The clock ran out (every laptop sees it, each sounds the buzzer). Nothing to do if it hasn't.
+  clockEnd() {
     const g = state.game;
-    if (g.endsAt) { g.remainingMs = remaining(); g.endsAt = null; }
-    else if (ready() && g.remainingMs > 0) { g.endsAt = Date.now() + g.remainingMs; g.started = true; }
+    if (!g.endsAt || g.endsAt > Date.now()) return false;
+    Object.assign(g, { endsAt: null, remainingMs: 0 });
   },
 
   resetClock() {
-    if (!confirm(`Reset the clock to ${GAME_MINUTES}:00?`)) return false;
+    if (!ask(`Reset the clock to ${GAME_MINUTES}:00?`)) return false;
     Object.assign(state.game, { remainingMs: GAME_MS, endsAt: null, started: false });
   },
 
   endGame() {
     const g = state.game;
     if (!g.onCourt.length) return false;
-    if (!confirm(`End game ${g.number}? ${g.homeName} ${score('home')}, ${g.awayName} ${score('away')}.`)) return false;
+    if (!ask(`End game ${g.number}? ${g.homeName} ${score('home')}, ${g.awayName} ${score('away')}.`)) return false;
     const lineup = nextLineup(Date.now()); // before the game is counted, as Up next showed it
     Queue.endGame(state.players, g, Date.now());
     state.unsynced.push({
       session: state.startedAt, date: localDate(state.startedAt), game: g.number,
-      rows: Queue.played(g).map(c => ({ name: c.name, points: c.points, fgm: c.fgm, fga: c.fga, won: Queue.won(g, c) })),
+      rows: Queue.played(g).map(c => ({ name: c.name, points: c.points, fgm: c.fgm, fga: c.fga, won: Queue.won(g, c), team: { home: 0, away: 1 }[c.team] ?? null })),
     });
     state.game = newGame(g.number + 1);
     state.game.onCourt = lineup.map(x => ({ ...Queue.seat(x.name), team: x.team })); // Up next takes the court
-    setTimeout(sync);
+    if (replaying) return; // the game ended on another laptop's screen; leave this one where it is
     if (document.fullscreenElement) document.exitFullscreen();
     go('queue');
+  },
+  // End game queued the result; once the database has it, any laptop's sync takes it off the list.
+  posted(session, game) {
+    const had = state.unsynced.length;
+    state.unsynced = state.unsynced.filter(u => !(u.session === session && u.game === game));
+    if (state.unsynced.length === had) return false;
+  },
+  kindPosted(name, kind) {
+    const had = state.kinds.length;
+    state.kinds = state.kinds.filter(k => !(k.name === name && k.kind === kind)); // a newer tap for this player stays
+    if (state.kinds.length === had) return false;
   },
 
   goTab(_, tab) { go(tab); return false; },
@@ -402,7 +570,7 @@ const actions = {
   },
 
   newSession() {
-    if (!confirm('Start a new session? This clears tonight\'s players, list and points. The database keeps every result.')) return false;
+    if (!ask('Start a new session? This clears tonight\'s players, list and points. The database keeps every result.')) return false;
     state = { ...newSession(), unsynced: state.unsynced, kinds: state.kinds };
     needsChoice = [];
   },
@@ -416,14 +584,28 @@ const actions = {
     if (g.plan) g.plan = g.plan.filter(x => x.name !== inName);
   },
 
-  flip() { state.flipped = !state.flipped; }, // Switch sides: which team shows on the left
+  // Switch sides: which team shows on the left. This laptop only, so a view, not a shared change.
+  flip() {
+    flipped = !flipped;
+    try { localStorage.setItem(FLIP_KEY, flipped ? '1' : ''); } catch {}
+    keepFocus(renderBoard);
+    return false;
+  },
+
+  // The Up next lineup: each edit freezes it as shown, then changes it (editPlan).
+  planSwap: (out, inn) => editPlan(l => { l.find(x => x.name === out).name = inn; }), // a waiting player in
+  planTeams: (a, b) => editPlan(l => { const x = l.find(y => y.name === a), y = l.find(z => z.name === b); [x.team, y.team] = [y.team, x.team]; }),
+  planMove: (name, team) => editPlan(l => { if (l.filter(x => x.team === team).length < TEAM_SIZE) l.find(x => x.name === name).team = team; }),
+  // On court: two players on opposite teams swap sides; a player goes to a team.
+  swapTeams(a, b) { const x = seatOf(a), y = seatOf(b); [x.team, y.team] = [y.team, x.team]; },
+  setTeam(name, team) { seatOf(name).team = team; },
+  teamName(side, value) { state.game[side + 'Name'] = value || (side === 'home' ? 'Home' : 'Away'); },
 
   // Player type: a tag opens the picker under that row; picking saves it, and sync sends it.
   pickKind(name) { kindPick = kindPick === name ? null : name; keepFocus(() => { renderTonight(); renderLeaders(); }); return false; },
   setKind(name, kind) {
     state.kinds = [...state.kinds.filter(k => k.name !== name), { name, kind: kind || null }];
     kindPick = null;
-    setTimeout(sync);
   },
 
   fullscreen(_, arg) {
@@ -437,49 +619,40 @@ document.addEventListener('click', e => {
   try { audio ??= new AudioContext(); } catch {}
   if (kindPick && !e.target.closest('.kpick,[data-action="pickKind"]')) closeKindPick(); // a click elsewhere
   const b = e.target.closest('[data-action]');
-  if (b && actions[b.dataset.action](b.dataset.name, b.dataset.arg) !== false) commit();
+  if (b) act(b.dataset.action, b.dataset.name, b.dataset.arg);
 });
 
 autosuggest($('listAdd'), $('listSug'), name => {
   const p = playerNamed(name);
   if (p) return flash(p.present ? `${p.name} is already checked in.` : `${p.name} is done for the night.`);
   if (onList(name)) return flash(`${name} is already on the list.`);
-  addToList(name);
-  commit();
-  saveList();
+  act('addNames', [name]);
 }, flash);
 
 // Paste: each line resolves like typing does; names shared by several players wait for a choice.
 $('pasteDlg').addEventListener('close', () => {
   if ($('pasteDlg').returnValue !== 'add') return;
-  const people = knownPeople();
+  const people = knownPeople(), names = [];
   for (const line of $('pasteText').value.split('\n')) {
     const r = Names.resolve(line, people);
-    if (r.name || r.fresh) addToList(r.name || r.fresh);
+    if (r.name || r.fresh) names.push(r.name || r.fresh);
     else if (r.choices && !needsChoice.some(c => Names.norm(c.query) === Names.norm(line))) {
       needsChoice.push({ query: cleanName(line), choices: r.choices });
     }
   }
   $('pasteText').value = '';
-  commit();
-  saveList();
+  if (act('addNames', names) === false) render(); // nothing new, but the names to choose between still show
 });
 
 for (const t of ['home', 'away']) {
-  $(t + 'Name').oninput = e => {
-    state.game[t + 'Name'] = e.target.value || (t === 'home' ? 'Home' : 'Away');
-    save();
-    renderQueue();
-    renderBoard();
-  };
+  $(t + 'Name').oninput = e => act('teamName', t, e.target.value);
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && kindPick) closeKindPick(); });
 document.addEventListener('keydown', e => {
   if (e.code !== 'Space' || active !== 'board' || ['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
   e.preventDefault();
-  actions.startPause();
-  commit();
+  act('startPause', '', state.game.endsAt ? 'pause' : 'start');
 });
 
 // ---- rendering ----
@@ -531,11 +704,8 @@ function nextLineup(now) {
   for (const x of list) if (!x.team) x.team = n('away') < n('home') ? 'away' : 'home';
   return list;
 }
-// An edit to Up next freezes the lineup as shown, then changes it.
-function editPlan(fn) { const g = state.game; g.plan = nextLineup(Date.now()); fn(g.plan); commit(); }
-const planSwap = (out, inn) => editPlan(l => { l.find(x => x.name === out).name = inn; }); // a waiting player in
-const planTeams = (a, b) => editPlan(l => { const x = l.find(y => y.name === a), y = l.find(z => z.name === b); [x.team, y.team] = [y.team, x.team]; });
-const planMove = (name, team) => editPlan(l => { if (l.filter(x => x.team === team).length < TEAM_SIZE) l.find(x => x.name === name).team = team; });
+// An edit to Up next freezes the lineup as shown, then changes it (the plan actions).
+function editPlan(fn) { const g = state.game; g.plan = nextLineup(Date.now()); fn(g.plan); }
 
 // Home: one button for the next step of the night (Check in players, Fill the court,
 // Start game N, Back to game N), next to Standby on TV.
@@ -611,7 +781,6 @@ function renderMap(order, now) {
 const qmap = $('qmap');
 // Drag events can target the text inside a box (Firefox), so look up from its element.
 const hit = (e, s) => (e.target.nodeType === 1 ? e.target : e.target.parentElement)?.closest(s);
-const run = fn => { fn(); commit(); };
 const teamIn = (src, name) => (src === 'court' ? seatOf(name)?.team : nextLineup(Date.now()).find(x => x.name === name)?.team);
 // Two boxes, one after the other (drag one onto the other, or click both): sub, replace or swap.
 // A sub can come from the waiting side or from the lineup.
@@ -621,19 +790,18 @@ function pair(a, aSrc, b, bSrc) {
   const waits = src => src === 'wait';
   if (waits(aSrc) !== waits(bSrc)) { // a waiting player and someone on court or in the lineup
     const [w, other, oSrc] = waits(aSrc) ? [a, b, bSrc] : [b, a, aSrc];
-    if (oSrc === 'court' && !seatOf(w)) return run(() => actions.sub(other, w));
-    if (oSrc === 'next' && !nextLineup(Date.now()).some(x => x.name === w)) return planSwap(other, w);
+    if (oSrc === 'court' && !seatOf(w)) return act('sub', other, w);
+    if (oSrc === 'next' && !nextLineup(Date.now()).some(x => x.name === w)) return act('planSwap', other, w);
     return false;
   }
   if (aSrc !== bSrc && [aSrc, bSrc].every(s => s === 'court' || s === 'next')) { // someone in the lineup and someone on court: sub in now
     const [inn, out] = aSrc === 'next' ? [a, b] : [b, a];
-    return seatOf(inn) ? false : run(() => actions.sub(out, inn));
+    return seatOf(inn) ? false : act('sub', out, inn);
   }
   if (aSrc !== bSrc || waits(aSrc)) return false;
   const ta = teamIn(aSrc, a), tb = teamIn(bSrc, b);
   if (!ta || !tb || ta === tb) return false;
-  if (aSrc === 'court') return run(() => { [seatOf(a).team, seatOf(b).team] = [tb, ta]; }); // swap sides
-  return planTeams(a, b);
+  return act(aSrc === 'court' ? 'swapTeams' : 'planTeams', a, b); // swap sides
 }
 // Drop a player (from box src) on a box or an area of the diagram.
 function dropOn(name, src, t) {
@@ -641,13 +809,13 @@ function dropOn(name, src, t) {
   if (t.dataset.p && pair(name, src, t.dataset.p, t.dataset.src) !== false) return;
   const zone = (t.dataset.p ? t.closest('[data-zone]') : t)?.dataset.zone;
   if (!zone) return;
-  if (zone.startsWith('next-')) { if (src === 'next') planMove(name, zone.slice(5)); return; } // lineup: switch team
+  if (zone.startsWith('next-')) { if (src === 'next') act('planMove', name, zone.slice(5)); return; } // lineup: switch team
   const seat = seatOf(name);
-  if (zone === 'line') { if (seat && src === 'court' && actions.remove(name) !== false) commit(); return; } // back in line
+  if (zone === 'line') { if (seat && src === 'court') act('remove', name); return; } // back in line
   if (src === 'next') return; // onto a team's area: a lineup player subs in by landing on someone
   if (seat?.team !== zone && teamFull(zone)) return;
-  if (!seat) { if (actions.pick(name) === false || !seatOf(name)) return; } // onto a team: call them
-  run(() => { seatOf(name).team = zone; });
+  if (!seat) { if (act('pick', name) === false || !seatOf(name)) return; } // onto a team: call them
+  act('setTeam', name, zone);
 }
 qmap.addEventListener('dragstart', e => {
   const n = hit(e, '[data-p][draggable="true"]');
@@ -769,6 +937,43 @@ function fitLeaders() {
 document.addEventListener('fullscreenchange', fitLeaders);
 window.addEventListener('resize', fitLeaders);
 
+// ---- history ----
+
+// History: every session in the database, newest first, each a <details> that fetches its box
+// scores the first time it opens. Online only; a failed fetch says so in one line.
+const histNote = text => `<p class="empty">${esc(text)}</p>`;
+async function renderHistory() {
+  const box = $('historyList');
+  try {
+    const { data } = await liveFetch('/api/sessions');
+    box.innerHTML = data.length ? data.map(s => `<details class="dd" data-id="${esc(s.id)}"><summary>${esc(s.date)}<span class="mono">${
+      esc(plural(s.players, 'player'))} · ${esc(plural(s.games, 'game'))}</span></summary><div class="hbody"></div></details>`).join('')
+      : histNote('No sessions yet.');
+  } catch { box.innerHTML = histNote('History needs a connection.'); }
+}
+// A session's box scores. With teams (0 home, 1 away) each game lists both sides with their total; games
+// saved before teams were kept have one list.
+function sessionHtml(d) {
+  const table = (label, rows, total) => `<div class="tw"><table><thead><tr><th>${esc(label)}</th><th class="r">PTS</th><th class="r">FG</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td>${esc(r.name)}</td><td class="r mono">${esc(r.points)}</td><td class="r mono">${esc(r.fgm)}/${esc(r.fga)}</td></tr>`).join('')}${
+    total ? `<tr><td><b>Total</b></td><td class="r mono"><b>${esc(rows.reduce((t, r) => t + r.points, 0))}</b></td><td></td></tr>` : ''}</tbody></table></div>`;
+  const game = g => `<h4>Game ${esc(g.game)}</h4>${g.rows.every(r => r.team === 0 || r.team === 1)
+    ? [[0, 'Home'], [1, 'Away']].map(([t, label]) => table(label, g.rows.filter(r => r.team === t), true)).join('')
+    : table('Player', g.rows, false)}`;
+  return `<p class="who">${d.participants.length ? `Players: ${d.participants.map(n => esc(n)).join(', ')}` : 'No players on file.'}</p>${
+    d.games.map(game).join('') || histNote('No games saved.')}`;
+}
+// toggle doesn't bubble, so listen while it travels down.
+$('historyList').addEventListener('toggle', async e => {
+  const d = e.target, body = d.querySelector?.('.hbody');
+  if (!d.open || !body || d.dataset.shown) return;
+  try {
+    const { data } = await liveFetch(`/api/sessions/${encodeURIComponent(d.dataset.id)}`);
+    body.innerHTML = sessionHtml(data);
+    d.dataset.shown = '1';
+  } catch { body.innerHTML = histNote('Could not load this session. History needs a connection.'); }
+}, true);
+
 // Check in layout: lists hold as many rows as fit between the top of the board and the bottom of
 // the screen, and each board column takes as many lists as it needs. If those lists would come out
 // too narrow, they get longer instead, so the page scrolls down, never sideways. Done for the night
@@ -853,13 +1058,20 @@ function renderTonight() {
         btn('choose', c.query, 'New player', { arg: esc(c.query) })].join('')}</div>
     </div>`).join('');
 
-  const pending = state.unsynced.length;
+  renderDot();
+}
+
+// The database dot: online and live (this laptop shares the session), offline, or locked; with the
+// changes and games still waiting to reach the server.
+function renderDot() {
+  const unsaved = state.unsynced.length, waiting = pending.length;
   const offline = db === 'offline';
   const dot = $('dbDot');
-  const label = `Database ${db === 'locked' ? 'needs the organizer passcode' : db}${pending ? ` · ${plural(pending, 'game')} not saved yet` : ''}`;
+  const label = `Database ${db === 'locked' ? 'needs the organizer passcode' : db === 'online' && liveId !== null ? 'online, live' : db}${
+    waiting ? ` · ${plural(waiting, 'change')} waiting` : ''}${unsaved ? ` · ${plural(unsaved, 'game')} not saved yet` : ''}`;
   dot.className = `island-db ${{ online: 'on', offline: 'off', locked: 'off' }[db] ?? ''}`;
   dot.setAttribute('aria-label', db === 'locked' ? `${label}. Enter passcode` : offline ? `${label}. Try again` : label);
-  dot.title = offline ? `${label}. Games are kept on this laptop until the connection is back. Click to try again.`
+  dot.title = offline ? `${label}. Changes and games are kept on this laptop until the connection is back. Click to try again.`
     : db === 'locked' ? `${label}. Click to enter it.` : `${label} · ${plural(profiles.size, 'player')} on file`;
 }
 
@@ -878,8 +1090,8 @@ function renderBoard() {
       </div>`).join('') || '<p class="empty">No players on this team.</p>';
   }
   $('boardGame').textContent = `Game ${g.number}`;
-  $('board').classList.toggle('flip', !!state.flipped);
-  $('flipBtn').setAttribute('aria-pressed', !!state.flipped);
+  $('board').classList.toggle('flip', flipped);
+  $('flipBtn').setAttribute('aria-pressed', flipped);
   $('boardHint').textContent = ready() ? '' : 'On the Queue tab, fill the spots and set each player to a team.';
 }
 
@@ -888,6 +1100,7 @@ function renderClock() {
   $('clock').textContent = clockText(ms);
   $('clock').classList.toggle('low', ms <= 60000);
   $('startBtn').textContent = g.endsAt ? 'Pause' : 'Start';
+  $('startBtn').dataset.arg = g.endsAt ? 'pause' : 'start'; // what a tap means, so a replay can't flip it
   $('startBtn').disabled = !g.endsAt && (!ready() || ms === 0);
   $('islandClock').textContent = `Game ${g.number} · ${g.endsAt || g.started ? clockText(ms) : 'Not started'}`;
   $('islandClock').classList.toggle('on', !!g.endsAt);
@@ -911,18 +1124,16 @@ function buzz() {
 
 // The clock is an end timestamp, so it can't drift and survives a refresh.
 setInterval(() => {
-  const g = state.game;
-  if (g.endsAt && g.endsAt <= Date.now()) {
-    Object.assign(g, { endsAt: null, remainingMs: 0 });
+  if (state.game.endsAt && state.game.endsAt <= Date.now()) {
     buzz();
-    commit();
+    act('clockEnd');
   }
   renderClock();
 }, 250);
 
 // The dot only acts when there is something to do: ask for the passcode when the database
 // refused it, retry when offline. Online it just shows its state (hover for details).
-$('dbDot').onclick = () => { if (db === 'locked') askPasscode(); else if (db !== 'online') { db = 'connecting'; renderTonight(); sync(); } };
+$('dbDot').onclick = () => { if (db === 'locked') askPasscode(); else if (db !== 'online') { db = 'connecting'; renderTonight(); sync(); poll(); } };
 // Enter in the passcode box saves; left to the form it would press Cancel, the first button.
 $('passText').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('passDlg').close('save'); } });
 $('passDlg').addEventListener('close', () => {
@@ -932,7 +1143,7 @@ $('passDlg').addEventListener('close', () => {
   $('passText').value = '';
   db = 'connecting';
   // Also renews this device's sign-in, e.g. after the passcode was changed.
-  api('/api/login', { passcode }).catch(() => {}).finally(() => { sync(); saveList(); });
+  api('/api/login', { passcode }).catch(() => {}).finally(() => { sync(); saveList(); poll(); });
 });
 
 // Sign out: forget the passcode and the offline copy on this device, then back to the home page.
@@ -951,3 +1162,6 @@ themeLabel();
 route();
 render();
 sync();
+poll(); // joins the shared session: takes the server's, or shares this laptop's if it is newer
+setInterval(poll, 2000);
+document.addEventListener('visibilitychange', poll);
