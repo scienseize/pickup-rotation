@@ -30,6 +30,7 @@ function isoDate(value) {
 // POST /api/players { names }
 export function playersBody(body) {
   if (!Array.isArray(body?.names)) throw new Invalid('names must be a list');
+  if (body.names.length > 1000) throw new Invalid('too many names (1000 at most)');
   return body.names.map(cleanName);
 }
 
@@ -49,6 +50,7 @@ export function gameBody(body) {
   const game = whole(body.game, 1, 1000, 'game');
   const date = isoDate(body.date);
   if (!Array.isArray(body.rows)) throw new Invalid('rows must be a list');
+  if (body.rows.length > 50) throw new Invalid('too many rows (50 at most)');
   const rows = body.rows.map(r => {
     if (!r || typeof r !== 'object' || Array.isArray(r)) throw new Invalid('each row must be an object');
     const fga = whole(r.fga ?? 0, 0, MAX_POINTS, 'fga'), fgm = whole(r.fgm ?? 0, 0, fga, 'fgm (no more than fga)');
@@ -74,26 +76,31 @@ export async function passcodeOk(header, secret) {
   return diff === 0;
 }
 
-// Sign-in session: a cookie holding its expiry and an HMAC of it, keyed with the passcode,
-// so changing the passcode signs every device out. Nothing is stored on the server.
+// Sign-in session: a cookie holding its expiry and an HMAC of it, keyed with SESSION_SECRET plus
+// the passcode: a captured cookie can't be used to guess the passcode offline, and changing the
+// passcode still signs every device out. Nothing is stored on the server.
 export const SESSION_DAYS = 30;
 const enc = s => new TextEncoder().encode(s);
 const hmacKey = (secret, use) => crypto.subtle.importKey('raw', enc(secret), { name: 'HMAC', hash: 'SHA-256' }, false, [use]);
 const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64url = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
 
-export async function signSession(secret, now) {
+const sessionKey = (passcode, sessionSecret, use) => hmacKey(`${sessionSecret}:${passcode}`, use);
+
+export async function signSession(passcode, now, sessionSecret) {
+  if (!passcode || !sessionSecret) throw new Error('SESSION_SECRET and the passcode must be set');
   const exp = String(now + SESSION_DAYS * 864e5);
-  return `${exp}.${b64url(await crypto.subtle.sign('HMAC', await hmacKey(secret, 'sign'), enc(`session:${exp}`)))}`;
+  return `${exp}.${b64url(await crypto.subtle.sign('HMAC', await sessionKey(passcode, sessionSecret, 'sign'), enc(`session:${exp}`)))}`;
 }
 
-// True only for an unexpired cookie signed with this secret. crypto.subtle.verify is constant-time.
-export async function sessionOk(cookieHeader, secret, now) {
-  if (!secret || !cookieHeader) return false;
+// True only for an unexpired cookie signed with these secrets. crypto.subtle.verify is constant-time.
+export async function sessionOk(cookieHeader, passcode, now, sessionSecret) {
+  if (!passcode || !sessionSecret || !cookieHeader) return false;
   const value = cookieHeader.split(/;\s*/).find(c => c.startsWith('session='))?.slice(8) ?? '';
-  const [exp, sig] = value.split('.');
-  if (!/^\d+$/.test(exp ?? '') || Number(exp) <= now || !sig) return false;
+  const parts = value.split('.');
+  const [exp, sig] = parts;
+  if (parts.length !== 2 || !/^\d+$/.test(exp) || Number(exp) <= now || !sig) return false;
   let bytes;
   try { bytes = unb64url(sig); } catch { return false; }
-  return crypto.subtle.verify('HMAC', await hmacKey(secret, 'verify'), bytes, enc(`session:${exp}`));
+  return crypto.subtle.verify('HMAC', await sessionKey(passcode, sessionSecret, 'verify'), bytes, enc(`session:${exp}`));
 }

@@ -13,6 +13,8 @@ for (const bad of ['', '   ', 'x'.repeat(61), 7, null]) rejects(() => cleanName(
 assert.deepEqual(playersBody({ names: ['Ana', ' ben '] }), ['Ana', 'ben']);
 rejects(() => playersBody({ names: 'Ana' }));
 rejects(() => playersBody(null));
+rejects(() => playersBody({ names: Array(1001).fill('Ana') }));
+assert.equal(playersBody({ names: Array(1000).fill('Ana') }).length, 1000);
 
 // A finished game: whole points 0 to 200, rows as objects, a real date.
 const ok = { session: 1793700000000, date: '2026-11-04', game: 1, rows: [{ name: 'Ana', points: 10 }] };
@@ -34,6 +36,8 @@ for (const won of [2, -1, true, '1', 0.5]) rejects(() => result(won), `won ${won
 for (const points of [-1, 201, 2.5, '3', true]) rejects(() => gameBody({ ...ok, rows: [{ name: 'Ana', points }] }), `points ${points}`);
 rejects(() => gameBody({ ...ok, rows: { name: 'Ana', points: 1 } }));
 rejects(() => gameBody({ ...ok, rows: ['Ana'] }));
+rejects(() => gameBody({ ...ok, rows: Array(51).fill({ name: 'Ana', points: 1 }) }));
+assert.equal(gameBody({ ...ok, rows: Array(50).fill({ name: 'Ana', points: 1 }) }).rows.length, 50);
 rejects(() => gameBody({ ...ok, date: '2026-02-31' }));
 rejects(() => gameBody({ ...ok, game: 0 }));
 
@@ -58,18 +62,27 @@ assert.equal(await passcodeOk(null, 'court-night-42'), false);
 assert.equal(await passcodeOk('Bearer ', ''), false);
 
 // Session cookie: good until it expires; a tampered one, a missing one, or one signed with
-// an old passcode never passes.
-const t0 = 1_800_000_000_000, day = 864e5;
-const token = await signSession('court-night-42', t0);
+// an old passcode or another session secret never passes. SESSION_SECRET and the passcode are both needed.
+const t0 = 1_800_000_000_000, day = 864e5, P = 'court-night-42', S = 'session-secret-x';
+const token = await signSession(P, t0, S);
 const jar = `theme=dark; session=${token}; other=1`;
-assert.equal(await sessionOk(jar, 'court-night-42', t0 + day), true);
-assert.equal(await sessionOk(jar, 'court-night-42', t0 + SESSION_DAYS * day + 1), false);
-assert.equal(await sessionOk(jar, 'new-passcode-7', t0 + day), false);
+assert.equal(await sessionOk(jar, P, t0 + day, S), true);
+assert.equal(await sessionOk(jar, P, t0 + SESSION_DAYS * day + 1, S), false);
+assert.equal(await sessionOk(jar, 'new-passcode-7', t0 + day, S), false);
+assert.equal(await sessionOk(jar, P, t0 + day, 'other-secret'), false);
+assert.equal(await sessionOk(jar, P, t0 + day), false);
 const [exp, sig] = token.split('.');
-assert.equal(await sessionOk(`session=${Number(exp) + day}.${sig}`, 'court-night-42', t0), false); // a longer expiry, same signature
-assert.equal(await sessionOk(`session=${exp}.${sig.slice(0, -2)}AA`, 'court-night-42', t0), false);
-assert.equal(await sessionOk(`session=${exp}.@@@`, 'court-night-42', t0), false);
-for (const bad of [null, '', 'theme=dark', 'session=', 'session=abc.def']) assert.equal(await sessionOk(bad, 'court-night-42', t0), false);
-assert.equal(await sessionOk(jar, '', t0), false);
+assert.equal(await sessionOk(`session=${Number(exp) + day}.${sig}`, P, t0, S), false); // a longer expiry, same signature
+assert.equal(await sessionOk(`session=${exp}.${sig.slice(0, -2)}AA`, P, t0, S), false);
+assert.equal(await sessionOk(`session=${exp}.@@@`, P, t0, S), false);
+assert.equal(await sessionOk(`session=${token}.junk`, P, t0, S), false); // exactly two parts
+// A cookie signed with the passcode alone (what a captured one used to allow guessing) is rejected.
+const weak = await crypto.subtle.importKey('raw', new TextEncoder().encode(P), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+const weakSig = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign('HMAC', weak, new TextEncoder().encode(`session:${exp}`))))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+assert.equal(await sessionOk(`session=${exp}.${weakSig}`, P, t0, S), false);
+for (const bad of [null, '', 'theme=dark', 'session=', 'session=abc.def']) assert.equal(await sessionOk(bad, P, t0, S), false);
+assert.equal(await sessionOk(jar, '', t0, S), false);
+await assert.rejects(signSession(P, t0, ''));
+await assert.rejects(signSession('', t0, S));
 
 console.log('rules.test.mjs: all checks passed');

@@ -23,7 +23,8 @@ let audio; // created on the first click; browsers block sound before one
 const PASS_KEY = 'pickup-passcode', PROFILES_KEY = 'pickup-profiles', THEME_KEY = 'pickup-theme';
 const stored = key => { try { return localStorage.getItem(key); } catch { return null; } };
 // lowercase name -> { name, games, points, avg }; the last copy is kept so profiles still show offline
-let profiles = new Map((JSON.parse(stored(PROFILES_KEY)) || []).map(p => [p.name.toLowerCase(), p]));
+let profiles = new Map();
+try { profiles = new Map(JSON.parse(stored(PROFILES_KEY)).map(p => [p.name.toLowerCase(), p])); } catch {} // corrupt copy: start empty
 let leaderMode = 'tonight'; // 'tonight' | 'alltime', the leaderboard toggle
 let leaderKind = 'all'; // 'all' or a player type, the leaderboard filter
 let kindPick = null; // the player whose type picker is open
@@ -87,11 +88,11 @@ const KIND_SHORT = { UG: 'UG', SHS: 'SHS', Alumni: 'Alum', Outsider: 'Vis' };
 const kindLabel = k => (k === 'Outsider' ? 'Visitor' : k);
 const kindOf = name => { const k = state.kinds.find(x => x.name === name); return k ? k.kind : profileOf(name)?.kind ?? null; };
 const kindShort = name => KIND_SHORT[kindOf(name)] ?? '';
-const kindClass = name => (kindOf(name) ? `k-${kindOf(name).toLowerCase()}` : 'unset');
-const kindTag = name => (kindOf(name) ? `<span class="kt ${kindClass(name)}" title="${kindLabel(kindOf(name))}">${kindShort(name)}</span>` : '');
+const kindClass = name => (kindOf(name) ? `k-${esc(kindOf(name).toLowerCase())}` : 'unset');
+const kindTag = name => (kindOf(name) ? `<span class="kt ${kindClass(name)}" title="${esc(kindLabel(kindOf(name)))}">${kindShort(name)}</span>` : '');
 // A tag that opens the picker; a player with no type shows a faint "Type".
 const kindBtn = name => `<button type="button" class="kt ${kindClass(name)}" data-action="pickKind" data-name="${esc(name)}" data-arg=""
-  title="${kindLabel(kindOf(name)) ?? 'Set type'}" aria-label="${kindOf(name) ? `${esc(name)} is ${kindLabel(kindOf(name))}. Change type` : `Set type for ${esc(name)}`}">${kindShort(name) || 'Type'}</button>`;
+  title="${esc(kindLabel(kindOf(name)) ?? 'Set type')}" aria-label="${kindOf(name) ? `${esc(name)} is ${esc(kindLabel(kindOf(name)))}. Change type` : `Set type for ${esc(name)}`}">${kindShort(name) || 'Type'}</button>`;
 const kindPicker = name => `<div class="kpick" role="group" aria-label="Type for ${esc(name)}">${KINDS.map(k =>
   btn('setKind', name, kindLabel(k), { arg: k, pressed: kindOf(name) === k, cls: kindOf(name) === k ? 's' : 'o s' })).join('')}${
   kindOf(name) ? `<button type="button" class="xbtn" data-action="setKind" data-name="${esc(name)}" data-arg="" aria-label="Clear type">&times;</button>` : ''}</div>`;
@@ -138,7 +139,11 @@ function show(name) {
   if (name === 'checkin') renderTonight();
   if (name === 'leaders') renderLeaders();
 }
-const route = () => show(decodeURIComponent(location.hash.slice(1)));
+function route() {
+  let name = '';
+  try { name = decodeURIComponent(location.hash.slice(1)); } catch {} // a malformed hash like #% opens Home
+  show(name);
+}
 function go(name) { try { history.replaceState(null, '', '#' + name); } catch {} show(name); }
 
 tabs.forEach(t => {
@@ -814,7 +819,7 @@ function renderTonight() {
     const record = !profiles.size ? '' : pr?.games
       ? ` · ${plural(pr.games, 'game')} · AVG ${pr.avg.toFixed(1)}${pr.fga ? ` · FG ${pct(pr.fgm, pr.fga)}` : ''}${
         pr.wins || pr.losses ? ` · ${pr.wins}-${pr.losses}` : ''}` : ' · First game';
-    const type = kindOf(name) ? ` · ${kindLabel(kindOf(name))}` : '';
+    const type = kindOf(name) ? ` · ${esc(kindLabel(kindOf(name)))}` : '';
     const games = p ? `<small>${p.games}g</small>` : ''; // short, so the name and type have room
     const trail = key === 'arrive'
       ? btn('checkIn', name, 'Check in', { cls: 's' }) + `<button type="button" class="xbtn" data-action="removeName"
@@ -934,7 +939,7 @@ $('passDlg').addEventListener('close', () => {
 // Tonight's session stays saved in this browser for whoever signs in next.
 async function signOut() {
   try { await fetch('/api/logout', { method: 'POST' }); } catch {}
-  try { localStorage.removeItem(PASS_KEY); } catch {}
+  try { localStorage.removeItem(PASS_KEY); localStorage.removeItem(PROFILES_KEY); } catch {}
   try { await Promise.all((await caches.keys()).map(k => caches.delete(k))); } catch {}
   location.replace('/');
 }

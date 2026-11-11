@@ -8,6 +8,7 @@ const PASS = 'court-night-42';
 const served = [];
 const env = {
   ORGANIZER_PASSCODE: PASS,
+  SESSION_SECRET: 'test-session-secret',
   ASSETS: { fetch: async req => { served.push(new URL(req.url).pathname); return new Response('file', { status: 200 }); } },
   DB: { prepare: () => ({ all: async () => ({ results: [] }) }) },
 };
@@ -35,10 +36,21 @@ for (const path of ['/login', '/login.html']) assert.equal((await at(path)).head
 for (const path of ['/', '/index.html', '/logo.png', '/favicon.png']) assert.equal((await at(path)).status, 200, path);
 assert.deepEqual(served, ['/', '/index.html', '/logo.png', '/favicon.png']);
 
+// Files carry the CSP and nosniff; API answers carry nosniff.
+const home = await at('/');
+assert.match(home.headers.get('Content-Security-Policy'), /script-src 'self'(;|$)/);
+assert.equal(home.headers.get('X-Content-Type-Options'), 'nosniff');
+assert.equal(home.headers.get('Referrer-Policy'), 'same-origin');
+assert.equal((await at('/api/session')).headers.get('X-Content-Type-Options'), 'nosniff');
+for (const path of ['/theme.js', '/signin.js']) assert.equal((await at(path)).status, 200, path);
+
 // Sign in: a wrong passcode gets nothing; the right one gets a 30-day, script-proof cookie.
 assert.equal((await post('/api/login', { passcode: 'guess' })).status, 401);
 assert.equal((await post('/api/login', {})).status, 401);
 assert.equal((await at('/api/login', { method: 'POST', body: 'passcode=x', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })).status, 415);
+env.SESSION_SECRET = ''; // no session secret: no cookie
+assert.equal((await post('/api/login', { passcode: PASS })).status, 500);
+env.SESSION_SECRET = 'test-session-secret';
 const ok = await post('/api/login', { passcode: PASS });
 assert.equal(ok.status, 200);
 assert.deepEqual(await ok.json(), []);
@@ -77,12 +89,25 @@ assert.match(db[0].sql, /INSERT OR IGNORE INTO players \(name, added_on\)/);
 assert.match(db[1].sql, /UPDATE players SET kind = \? WHERE name = \?/);
 assert.deepEqual(db[1].v, ['UG', 'Ana']);
 
+// Over-long lists are refused; a body over the limit is refused even with no Content-Length (a stream).
+const auth = { Cookie: session, Authorization: `Bearer ${PASS}` };
+assert.equal((await post('/api/players', { names: Array(1001).fill('Ana') }, auth)).status, 400);
+assert.equal((await post('/api/results', { ...game, rows: Array(51).fill(game.rows[0]) }, auth)).status, 400);
+const chunk = new TextEncoder().encode(' '.repeat(100_000));
+const big = await at('/api/players', { method: 'POST', body: new ReadableStream({ start(c) { for (let i = 0; i < 11; i++) c.enqueue(chunk); c.close(); } }), duplex: 'half', headers: { 'Content-Type': 'application/json', ...auth } });
+assert.equal(big.status, 413);
+assert.equal((await at('/api/players', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json', 'Content-Length': '2000000', ...auth } })).status, 413);
+assert.equal((await at('/api/players', { method: 'POST', body: '{', headers: { 'Content-Type': 'application/json', ...auth } })).status, 400);
+
 // A cookie from before a passcode change no longer works.
 env.ORGANIZER_PASSCODE = 'new-passcode-7';
 assert.equal((await at('/app', { headers: { Cookie: session } })).status, 302);
 env.ORGANIZER_PASSCODE = PASS;
 
-// Sign out clears the cookie.
+// Sign out clears the cookie, but not for a cross-site request.
+assert.equal((await at('/api/logout', { method: 'POST', headers: { 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
+assert.equal((await at('/api/logout', { method: 'POST', headers: { 'Sec-Fetch-Site': 'same-site' } })).status, 403);
+assert.equal((await at('/api/logout', { method: 'POST', headers: { 'Sec-Fetch-Site': 'same-origin' } })).status, 204);
 const out = await at('/api/logout', { method: 'POST' });
 assert.equal(out.status, 204);
 assert.match(out.headers.get('Set-Cookie'), /^session=; .*Max-Age=0/);

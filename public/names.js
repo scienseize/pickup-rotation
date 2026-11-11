@@ -4,7 +4,8 @@
 
 const Names = {
   norm: s => String(s).trim().replace(/\s+/g, ' ').toLowerCase(),
-  clean: s => Names.proper(String(s).trim().replace(/\s+/g, ' ').slice(0, 60)),
+  // The 60-character cap comes after casing ("ß" becomes "SS") and never leaves half a surrogate pair.
+  clean: s => Names.proper(String(s).trim().replace(/\s+/g, ' ')).slice(0, 60).replace(/[\uD800-\uDBFF]$/, ''),
 
   // Proper case for words typed in the wrong case: "juan", "JUAN" and "jUAN" become "Juan",
   // "o'neil" becomes "O'Neil", each part of "anne-marie" is fixed. A word that starts with a

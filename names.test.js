@@ -46,6 +46,8 @@ assert.equal(Names.clean('JUAN SANTOS'), 'Juan Santos');
 assert.equal(Names.clean('jUAN sANTOS'), 'Juan Santos');
 assert.equal(Names.clean("o'neil anne-marie"), "O'Neil Anne-Marie");
 assert.equal(Names.clean('ñino peña'), 'Ñino Peña');
+assert.ok(Names.clean('ß' + 'a'.repeat(59)).length <= 60); // casing turns ß into SS
+assert.ok(!/[\uD800-\uDBFF]$/.test(Names.clean('a'.repeat(59) + '😀'))); // no half a surrogate pair
 assert.equal(Names.clean('McDonald DeShawn'), 'McDonald DeShawn');
 assert.deepEqual(Names.resolve('zed PARK', people), { fresh: 'Zed Park' });
 assert.deepEqual(Names.resolve('BEN', people), { name: 'Ben Torres' }); // known players keep the database's spelling
