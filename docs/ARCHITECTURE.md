@@ -382,9 +382,14 @@ rows are numbered, and ties share a rank (1, 2, 2, 4).
 Past sessions, newest first, each a native `<details>` headed by its date with
 the player and game counts. The list is fetched from `GET /api/sessions` when
 the tab opens; a session's players and box scores are fetched from
-`GET /api/sessions/<id>` the first time it is opened. Each game shows both teams
-with their points total when the games were saved with teams (`results.team`),
-and one list for older games. Sessions from before sessions were stored show
+`GET /api/sessions/<id>` the first time it is opened (only that `<details>`
+fetches; the ones inside it do not). Inside are a collapsed *Players* table, in
+the leaderboard's style (games, points, FG, W-L for the night, worked out on the
+client; someone who never played shows dashes), and one collapsed `<details>` per
+game, headed by the result ("Game 3 · Home 21, Away 18", or the player count for
+older games). A game shows both teams with their points total when it was saved
+with teams (`results.team`), and one list otherwise. Player types show beside
+names when the app knows them. Sessions from before sessions were stored show
 the players who played. It needs the connection: offline it says so in one line.
 
 ### Scoreboard view (for the court; full screen)

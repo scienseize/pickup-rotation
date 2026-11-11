@@ -650,24 +650,41 @@ assert.notEqual(run(`state.startedAt`), 200);
   assert.match(els.historyList.innerHTML, /<details class="dd" data-id="5"><summary>2026-11-06<span class="mono">12 players · 1 game<\/span>/);
   assert.match(els.historyList.innerHTML, /1 player · 2 games/);
   const detail = {
-    id: 5, date: '2026-11-06', participants: ['Ana', 'Ben <b>'], games: [
-      { game: 1, rows: [{ name: 'Ana', points: 7, fgm: 3, fga: 8, won: 1, team: 0 }, { name: 'Cy', points: 3, fgm: 1, fga: 2, won: 1, team: 0 }, { name: 'Ben <b>', points: 2, fgm: 1, fga: 4, won: 0, team: 1 }] },
-      { game: 2, rows: [{ name: 'Old Timer', points: 4, fgm: 0, fga: 0, won: null, team: null }] },
+    id: 5, date: '2026-11-06', participants: ['Ana', 'Ben <b>', 'Dee'], games: [
+      { game: 1, rows: [{ name: 'Ana', points: 7, fgm: 3, fga: 8, won: 1, team: 0 }, { name: 'Cy', points: 4, fgm: 1, fga: 2, won: 1, team: 0 }, { name: 'Ben <b>', points: 2, fgm: 1, fga: 4, won: 0, team: 1 }] },
+      { game: 2, rows: [{ name: 'Old Timer', points: 4, fgm: 0, fga: 0, won: null, team: null }, { name: 'Ana', points: 4, fgm: 2, fga: 5, won: null, team: null }] },
     ],
   };
+  run(`profiles = new Map([['ana', { name: 'Ana', kind: 'UG', games: 3, points: 9, avg: 3, fgm: 0, fga: 0, wins: 0, losses: 0 }]])`);
   const body = { innerHTML: '' }, details = { open: true, dataset: { id: '5' }, querySelector: () => body };
   reply = path => ({ status: 200, json: path === '/api/sessions/5' ? detail : [] });
   const [, onToggle] = histListeners.find(([type]) => type === 'toggle');
   await onToggle({ target: details });
   assert.equal(calls().at(-1).path, '/api/sessions/5');
-  assert.match(body.innerHTML, /Players: Ana, Ben &#60;b&#62;/); // names go through esc
-  assert.doesNotMatch(body.innerHTML, /Ben <b>/);
-  assert.match(body.innerHTML, /<h4>Game 1<\/h4><div class="tw"><table><thead><tr><th>Home<\/th>[\s\S]*?<td>Ana<\/td>[\s\S]*?<td><b>Total<\/b><\/td><td class="r mono"><b>10<\/b><\/td>[\s\S]*?<th>Away<\/th>[\s\S]*?<td><b>Total<\/b><\/td><td class="r mono"><b>2<\/b>/);
-  assert.match(body.innerHTML, /<h4>Game 2<\/h4>[^]*?<th>Player<\/th>[^]*?<td>Old Timer<\/td>/); // no teams stored: one list, no totals
-  assert.equal((body.innerHTML.match(/Total/g) || []).length, 2);
+  const html = body.innerHTML, tag = '<span class="kt k-ug" title="UG">UG</span>';
+  // The players are a table of their own, collapsed, with their totals for the night: by points, then
+  // games, then name. Cy and Old Timer tie on both, so by name; Dee checked in and never played.
+  assert.match(html, /^<details class="dd"><summary>Players · 5<\/summary><div class="lb">/);
+  assert.deepEqual([...html.matchAll(/<b title="([^"]+)">/g)].map(m => m[1]), ['Ana', 'Cy', 'Old Timer', 'Ben &#60;b&#62;', 'Dee']); // names go through esc
+  assert.doesNotMatch(html, /Ben <b>/);
+  assert.match(html, /<th>Player<\/th><th class="r gm">Games<\/th><th class="r">Points<\/th><th class="r">FG<\/th><th class="r">W-L<\/th>/);
+  assert.match(html, new RegExp(`<b title="Ana">Ana</b>${tag}</div></td><td class="r mono gm">2</td><td class="r pts">11</td><td class="r mono fg"><small>5/13</small> 38%</td><td class="r mono">1-0</td></tr>`));
+  assert.match(html, /<b title="Cy">Cy<\/b><\/div><\/td>/); // no type on file: no tag
+  assert.match(html, /<b title="Old Timer">Old Timer<\/b><\/div><\/td><td class="r mono gm">1<\/td><td class="r pts">4<\/td><td class="r mono">-<\/td><td class="r mono">-<\/td><\/tr>/); // no shots, no result
+  assert.match(html, /<b title="Dee">Dee<\/b><\/div><\/td><td class="r mono gm">0<\/td><td class="r mono">-<\/td><td class="r mono">-<\/td><td class="r mono">-<\/td><\/tr>/);
+  assert.match(html, /<b title="Ben &#60;b&#62;">[^]*?<td class="r mono">0-1<\/td>/);
+  // Each game is its own <details>, headed by the result; the box score is inside.
+  assert.equal((html.match(/<details class="dd">/g) || []).length, 3);
+  assert.match(html, /<summary>Game 1 · Home 11, Away 2<\/summary><div class="tw"><table class="box"><thead><tr><th>Home<\/th>[\s\S]*?<td>Ana<span class="kt k-ug"[\s\S]*?<td><b>Total<\/b><\/td><td class="r mono"><b>11<\/b><\/td>[\s\S]*?<th>Away<\/th>[\s\S]*?<td><b>Total<\/b><\/td><td class="r mono"><b>2<\/b>/);
+  assert.match(html, /<summary>Game 2 · 2 players<\/summary><div class="tw"><table class="box"><thead><tr><th>Player<\/th>[^]*?<td>Old Timer<\/td>/); // no teams stored: one list, no totals
+  assert.equal((html.match(/Total/g) || []).length, 2);
   assert.equal(details.dataset.shown, '1'); // opened once: not fetched again
   await onToggle({ target: details });
+  // Opening a game or the players inside it is not a session opening: no fetch, nothing redrawn.
+  const nested = { open: true, dataset: {}, querySelector: () => null };
+  await onToggle({ target: nested });
   assert.equal(fetched.length, 0);
+  assert.equal(body.innerHTML, html);
   // Offline: one line, and it tries again next time.
   const shut = { open: true, dataset: { id: '5' }, querySelector: () => body };
   reply = () => ({ status: 500 });

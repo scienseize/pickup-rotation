@@ -994,22 +994,40 @@ async function renderHistory() {
       : histNote('No sessions yet.');
   } catch { box.innerHTML = histNote('History needs a connection.'); }
 }
-// A session's box scores. With teams (0 home, 1 away) each game lists both sides with their total; games
-// saved before teams were kept have one list.
+// A session opens to its players (a table, with each one's totals for the night) and its games, each a
+// <details> headed by the result. With teams (0 home, 1 away) a game lists both sides with their total;
+// games saved before teams were kept have one list.
 function sessionHtml(d) {
-  const table = (label, rows, total) => `<div class="tw"><table><thead><tr><th>${esc(label)}</th><th class="r">PTS</th><th class="r">FG</th></tr></thead><tbody>${
-    rows.map(r => `<tr><td>${esc(r.name)}</td><td class="r mono">${esc(r.points)}</td><td class="r mono">${esc(r.fgm)}/${esc(r.fga)}</td></tr>`).join('')}${
-    total ? `<tr><td><b>Total</b></td><td class="r mono"><b>${esc(rows.reduce((t, r) => t + r.points, 0))}</b></td><td></td></tr>` : ''}</tbody></table></div>`;
-  const game = g => `<h4>Game ${esc(g.game)}</h4>${g.rows.every(r => r.team === 0 || r.team === 1)
-    ? [[0, 'Home'], [1, 'Away']].map(([t, label]) => table(label, g.rows.filter(r => r.team === t), true)).join('')
-    : table('Player', g.rows, false)}`;
-  return `<p class="who">${d.participants.length ? `Players: ${d.participants.map(n => esc(n)).join(', ')}` : 'No players on file.'}</p>${
-    d.games.map(game).join('') || histNote('No games saved.')}`;
+  const sum = rows => rows.reduce((t, r) => t + r.points, 0);
+  const table = (label, rows, total) => `<div class="tw"><table class="box"><thead><tr><th>${esc(label)}</th><th class="r">PTS</th><th class="r">FG</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td>${esc(r.name)}${kindTag(r.name)}</td><td class="r mono">${esc(r.points)}</td><td class="r mono">${esc(r.fgm)}/${esc(r.fga)}</td></tr>`).join('')}${
+    total ? `<tr><td><b>Total</b></td><td class="r mono"><b>${esc(sum(rows))}</b></td><td></td></tr>` : ''}</tbody></table></div>`;
+  const game = g => {
+    const teamed = g.rows.every(r => r.team === 0 || r.team === 1), side = t => g.rows.filter(r => r.team === t);
+    return `<details class="dd"><summary>Game ${esc(g.game)} · ${teamed ? `Home ${esc(sum(side(0)))}, Away ${esc(sum(side(1)))}` : esc(plural(g.rows.length, 'player'))}</summary>${
+      teamed ? [[0, 'Home'], [1, 'Away']].map(([t, label]) => table(label, side(t), true)).join('') : table('Player', g.rows, false)}</details>`;
+  };
+  // Everyone who checked in, plus anyone in the results; one who never played has 0 games and dashes.
+  const who = new Map([...d.participants, ...d.games.flatMap(g => g.rows.map(r => r.name))].map(n => [n, { games: 0, points: 0, fgm: 0, fga: 0, won: 0, lost: 0 }]));
+  for (const r of d.games.flatMap(g => g.rows)) {
+    const s = who.get(r.name);
+    s.games++; s.points += r.points; s.fgm += r.fgm; s.fga += r.fga; s.won += r.won === 1; s.lost += r.won === 0;
+  }
+  const dash = '<td class="r mono">-</td>';
+  const row = ([name, s]) => `<tr><td class="who"><div><b title="${esc(name)}">${esc(name)}</b>${kindTag(name)}</div></td><td class="r mono gm">${esc(s.games)}</td>${
+    s.games ? `<td class="r pts">${esc(s.points)}</td>` : dash}${
+    s.fga ? `<td class="r mono fg${s.fga < MIN_FG_SHOTS ? ' few' : ''}"><small>${esc(s.fgm)}/${esc(s.fga)}</small> ${esc(pct(s.fgm, s.fga))}</td>` : dash}${
+    s.won + s.lost ? `<td class="r mono">${esc(s.won)}-${esc(s.lost)}</td>` : dash}</tr>`;
+  const ranked = [...who].sort(([an, a], [bn, b]) => b.points - a.points || b.games - a.games || byName(an, bn));
+  const players = who.size ? `<details class="dd"><summary>Players · ${esc(who.size)}</summary><div class="lb"><div class="tw"><table><thead><tr><th>Player</th><th class="r gm">Games</th><th class="r">Points</th><th class="r">FG</th><th class="r">W-L</th></tr></thead><tbody>${
+    ranked.map(row).join('')}</tbody></table></div></div></details>` : histNote('No players on file.');
+  return players + (d.games.map(game).join('') || histNote('No games saved.'));
 }
-// toggle doesn't bubble, so listen while it travels down.
+// toggle doesn't bubble, so listen while it travels down. Only a session's own <details> (it has an id)
+// fetches, once; opening a game or the players inside it leaves what is shown alone.
 $('historyList').addEventListener('toggle', async e => {
   const d = e.target, body = d.querySelector?.('.hbody');
-  if (!d.open || !body || d.dataset.shown) return;
+  if (!d.open || !d.dataset.id || !body || d.dataset.shown) return;
   try {
     const { data } = await liveFetch(`/api/sessions/${encodeURIComponent(d.dataset.id)}`);
     body.innerHTML = sessionHtml(data);
