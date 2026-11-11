@@ -15,17 +15,21 @@ const newGame = number => ({
   number, onCourt: [], subbedOut: [], satOut: [], homeName: 'Home', awayName: 'Away',
   remainingMs: GAME_MS, endsAt: null, started: false,
 });
-const newSession = () => ({ players: [], game: newGame(1), expected: [], unsynced: [], kinds: [], startedAt: Date.now() });
+const newSession = () => ({ players: [], game: newGame(1), expected: [], unsynced: [], kinds: [], seen: {}, startedAt: Date.now() });
 
+let fresh = true; // nothing was saved here: this laptop must join the server's session, never replace it
 let state = load();
 let saved = true;
 let audio; // created on the first click; browsers block sound before one
 const PASS_KEY = 'pickup-passcode', PROFILES_KEY = 'pickup-profiles', THEME_KEY = 'pickup-theme';
-const PENDING_KEY = 'pickup-pending', FLIP_KEY = 'pickup-flipped';
+const PENDING_KEY = 'pickup-pending', FLIP_KEY = 'pickup-flipped', DEVICE_KEY = 'pickup-device';
 const stored = key => { try { return localStorage.getItem(key); } catch { return null; } };
+// This laptop's name in state.seen: the last of its changes the shared copy holds.
+const DEVICE = stored(DEVICE_KEY) || Math.random().toString(36).slice(2, 10);
+try { localStorage.setItem(DEVICE_KEY, DEVICE); } catch {}
 let flipped = stored(FLIP_KEY) === '1'; // which team shows on the left: this laptop only, never shared
 // Sharing: every change to the session goes through act(), which also queues it here as
-// [op, a, b, game number] until a push to the server has taken it. Saved in its own key so a reload
+// [op, a, b, game number, sequence number] until a push to the server has taken it. Saved in its own key so a reload
 // while offline keeps it. liveId and liveVer are the session and version the server last told us.
 let pending = JSON.parse(stored(PENDING_KEY)) || [];
 let liveId = null, liveVer = 0;
@@ -41,7 +45,7 @@ let db = 'connecting'; // 'online' | 'offline' | 'locked' (needs the organizer p
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s) return tidy(s);
+    if (s) { fresh = false; return tidy(s); }
   } catch {}
   return newSession();
 }
@@ -51,7 +55,7 @@ function tidy(s) {
   delete s.roster; // replaced by the database
   delete s.log; // never read
   delete s.flipped; // per laptop now
-  const st = { expected: [], unsynced: [], kinds: [], startedAt: Date.now(), ...s };
+  const st = { expected: [], unsynced: [], kinds: [], seen: {}, startedAt: Date.now(), ...s };
   seatTeams(st.game); // saved before every called player had a team
   // Saved before shots were tracked: start everyone's shots at 0.
   for (const c of [...st.game.onCourt, ...(st.game.subbedOut ?? [])]) Object.assign(c, { fgm: c.fgm ?? 0, fga: c.fga ?? 0, log: c.log ?? [] });
@@ -254,8 +258,8 @@ async function sync() {
 // polls every 2 seconds, so a change shows on the others within about 3. ----
 // ponytail: whole-state pushes, a 2-second poll and last-write-wins on the same field; Durable Objects
 // or WebSockets if the night ever needs instant updates or per-field merging.
-// ponytail: a push whose reply is lost is replayed on top of itself by the next adopt; give each change
-// an id and keep the applied ones in the state if that ever shows.
+// A push whose reply is lost still reached the server. state.seen[device] is the last sequence number of
+// this laptop's changes that a copy holds, so adopt() drops the waiting ones the copy already has.
 
 // Changes about the night as a whole: these still apply when the game has moved on, or a new session
 // started. A game's own changes (points, clock, lineup) are dropped by adopt() if the game number differs.
@@ -269,10 +273,12 @@ const shared = () => liveId === state.startedAt && !pending.length;
 function act(op, a, b) {
   const game = state.game.number; // before the action: End game moves on to the next
   if (actions[op](a, b) === false) return false;
-  if (op === 'newSession') pending = []; // the old session's changes mean nothing to the new one
+  if (op === 'newSession') { pending = []; fresh = false; } // the old session's changes mean nothing to the new one; this one is meant
   else {
     if (op === 'teamName' && pending.length > inflight && pending.at(-1)[0] === op && pending.at(-1)[1] === a) pending.pop(); // typing: keep the last
-    pending.push([op, a, b, game]);
+    const seq = Math.max(pending.at(-1)?.[4] ?? 0, state.seen[DEVICE] ?? 0) + 1; // up across reloads and sessions
+    state.seen[DEVICE] = seq;
+    pending.push([op, a, b, game, seq]);
   }
   commit();
   pushLive();
@@ -281,6 +287,7 @@ function act(op, a, b) {
 // One push at a time, rerun if more changes came while it was out (same pattern as sync).
 let pushing = false, pushAgain = false, inflight = 0; // inflight: how many pending changes the push in the air holds
 async function pushLive() {
+  if (fresh) return; // not joined yet: the poll decides whether this laptop's empty session may be pushed
   if (pushing) { pushAgain = true; return; }
   pushing = true;
   try {
@@ -291,7 +298,7 @@ async function pushLive() {
       const r = await liveFetch('/api/live', { id, date: localDate(id), version: id === liveId ? liveVer : 0, state });
       if (id === state.startedAt) { // else a new session started meanwhile; the rerun pushes it
         if (r.status === 409) adopt(r.data); // someone got there first: take theirs, lay ours back on top
-        else { liveId = id; liveVer = r.data.version; pending.splice(0, inflight); save(); }
+        else { liveId = id; liveVer = r.data.version; fresh = false; pending.splice(0, inflight); save(); }
       }
       inflight = 0;
       if (db !== 'locked') db = 'online';
@@ -312,6 +319,8 @@ function adopt(server) {
   state = tidy(server.state);
   liveId = server.id;
   liveVer = server.version;
+  fresh = false;
+  pending = pending.filter(c => !(c[4] <= (state.seen[DEVICE] ?? 0))); // the copy already holds these
   if (switched) {
     // Another laptop started a new session. ponytail: game changes made here are dropped and the
     // list, check-ins and player types carry over; games ended here that the server never saw ride along.
@@ -323,9 +332,11 @@ function adopt(server) {
   // Each change runs again with confirm answered yes. One recorded on another game is stale; one that
   // fails or finds nothing to do is too. Both are dropped.
   replaying = true;
-  pending = pending.filter(([op, a, b, game]) => {
+  pending = pending.filter(([op, a, b, game, seq]) => {
     if (!SESSION_OPS.has(op) && game !== state.game.number) return false;
-    try { return actions[op](a, b) !== false; } catch { return false; }
+    try { if (actions[op](a, b) === false) return false; } catch { return false; }
+    if (seq) state.seen[DEVICE] = Math.max(state.seen[DEVICE] ?? 0, seq);
+    return true;
   });
   replaying = false;
   save();
@@ -346,7 +357,10 @@ async function poll() {
     const { status, data } = await liveFetch(`/api/live?id=${liveId ?? 0}&v=${liveVer}`);
     if (pushing) return; // a push started meanwhile and this reply may predate it
     if (db !== 'locked') db = 'online';
-    if (status === 204 || data.id < state.startedAt) { // nothing newer; send what is waiting or a session the server lacks
+    // Nothing newer: send what is waiting, or a session the server lacks (no session at all: a fresh
+    // laptop creates it). A fresh laptop never pushes over a session the server has, however new its id.
+    if (status === 204 || (data.id < state.startedAt && !fresh)) {
+      if (status === 204) fresh = false;
       if (pending.length || state.startedAt !== liveId) pushLive();
     } else if (data.id !== liveId || data.version > liveVer) adopt(data);
     if (was !== 'online' && shared() && (state.unsynced.length || state.kinds.length)) sync(); // back from offline

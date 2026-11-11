@@ -656,7 +656,13 @@ highest id.
   `unsynced`, and a message says so.
 - **Joining.** A page that loads asks for the current session. The server's is
   taken unless this laptop holds a newer one that was never shared (the first
-  run after this was deployed), which is then pushed as a new row.
+  run after this was deployed), which is then pushed as a new row. A laptop with
+  nothing saved (`fresh`) always takes the server's session, and pushes nothing
+  until it has; if the server has none, it creates one.
+- **Lost replies.** Each laptop has a random id (`pickup-device`) and numbers its
+  changes; `state.seen[device]` records the highest number the shared copy
+  holds. `adopt()` drops waiting changes the copy already has, so a push that
+  arrived but whose reply was lost is not applied twice.
 - **New session** creates the state locally and pushes it as a new row with its
   date (`localDate(startedAt)`); the others switch on their next poll.
 - **Results and types** are posted to `/api/results` and `/api/kind` only once
@@ -667,8 +673,7 @@ highest id.
 Known limits, on purpose: two people changing the same thing within 2 seconds,
 the later one wins; the game clock is an end timestamp from the laptop that
 started it, so countdowns can differ by the laptops' clock difference, and the
-buzzer sounds on each laptop that sees it reach zero; a push whose reply is lost
-is replayed on top of itself by the next adopt; a laptop offline through a whole
+buzzer sounds on each laptop that sees it reach zero; a laptop offline through a whole
 game loses its changes to that game; sessions from before this feature show
 games in History but only the players who played.
 

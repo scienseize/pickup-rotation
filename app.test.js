@@ -327,17 +327,25 @@ const night = (startedAt, number = 1) => ({
   players: [P('Ann'), P('Bo')], expected: [], unsynced: [], kinds: [], startedAt,
   game: { number, onCourt: [seat('Ann', 'home'), seat('Bo', 'away')], subbedOut: [], satOut: [], homeName: 'Home', awayName: 'Away', remainingMs: 1200000, endsAt: null, started: false },
 });
-const use = n => run(`state = tidy(${JSON.stringify(n)}); pending = []; liveId = null; liveVer = 0; needsChoice = [];`);
+const use = n => run(`state = tidy(${JSON.stringify(n)}); pending = []; liveId = null; liveVer = 0; needsChoice = []; fresh = false;`);
 const take = (n, version = 5) => run(`adopt(${JSON.stringify({ id: n.startedAt, version, state: n })})`);
 const ops = () => run(`pending.map(c => c[0])`).join();
 const ann = () => run(`seatOf('Ann').points`);
 
-// A change is queued with its game number and saved on its own, so a reload while offline keeps it.
+// A change is queued with its game number and a sequence number, and saved on its own, so a reload
+// while offline keeps it. The sequence is also recorded in the shared state, under this laptop's id.
 context.confirm = () => true;
 use(night(100));
 run(`act('make', 'Ann', '2')`);
-assert.deepEqual(run(`pending`), [['make', 'Ann', '2', 1]]);
-assert.deepEqual(JSON.parse(storage.get('pickup-pending')), [['make', 'Ann', '2', 1]]);
+assert.deepEqual(run(`pending`), [['make', 'Ann', '2', 1, 1]]);
+assert.deepEqual(JSON.parse(storage.get('pickup-pending')), [['make', 'Ann', '2', 1, 1]]);
+assert.equal(run(`state.seen[DEVICE]`), 1);
+run(`act('make', 'Ann', '3')`);
+assert.deepEqual(run(`pending.map(c => c[4])`), [1, 2]); // counting up
+run(`act('undo', 'Ann')`);
+assert.deepEqual(run(`pending.map(c => c[4])`), [1, 2, 3]);
+use(night(100));
+run(`act('make', 'Ann', '2')`);
 assert.equal(run(`act('make', 'Ann', '1')`), false); // an action that did nothing is not queued
 assert.equal(ops(), 'make');
 // Another laptop checked in Zoe meanwhile; its copy lacks our +2. Taking it keeps the +2, once.
@@ -492,6 +500,58 @@ assert.notEqual(run(`state.startedAt`), 200);
   await settle();
   [get, post] = calls();
   assert.deepEqual([post.post, post.body.id, post.body.version, run(`state.startedAt`)], [true, 100, 0, 100]);
+
+  const withZoe = () => { const n = night(100); n.players.push(P('Zoe')); return n; };
+  // A laptop with nothing saved joins the server's session, whatever its own new id says: it never
+  // pushes its empty one over the night everyone else is in. Check-ins made before joining survive.
+  await settle();
+  use(night(200));
+  run(`fresh = true`);
+  reply = (path, init) => (init.method === 'POST' ? { status: 200, json: { version: 1 } } : { status: 200, json: { ...live(withZoe()), version: 3 } });
+  await run(`poll()`);
+  await settle();
+  assert.deepEqual(calls().map(c => c.post), [false]); // nothing pushed
+  assert.deepEqual(run(`[state.startedAt, state.players.map(p => p.name).join(), fresh]`), [100, 'Ann,Bo,Zoe', false]);
+  use(night(200));
+  run(`fresh = true; act('checkIn', 'Late Larry')`);
+  await settle();
+  assert.equal(fetched.length, 0); // not even the check-in is pushed before joining
+  await run(`poll()`);
+  await settle();
+  assert.deepEqual(run(`[state.startedAt, state.players.map(p => p.name).join(), pending.map(c => c[0]).join()]`), [100, 'Ann,Bo,Zoe,Late Larry', '']);
+  const [, up] = calls(); // joined first; then the check-in went up on the server's session, and was accepted
+  assert.deepEqual([up.post, up.body.id, up.body.version, up.body.state.players.length], [true, 100, 3, 4]);
+  // The server has no session at all: a fresh laptop creates it.
+  use(night(200));
+  run(`fresh = true`);
+  reply = (path, init) => (init.method === 'POST' ? { status: 200, json: { version: 1 } } : { status: 204 });
+  await run(`poll()`);
+  await settle();
+  assert.deepEqual(calls().map(c => [c.post, c.body?.id]), [[false, undefined], [true, 200]]);
+  assert.equal(run(`fresh`), false);
+  // New session on any laptop is meant: it becomes the current one even though a session exists.
+  use(night(100));
+  run(`fresh = true; act('newSession')`);
+  assert.equal(run(`fresh`), false);
+  await settle();
+  assert.equal(calls().filter(c => c.post).length, 1);
+
+  // A push the server accepted but whose reply was lost: the next copy already holds the change, so it
+  // is not applied a second time.
+  use(night(100));
+  run(`liveId = 100; liveVer = 1`);
+  let sent;
+  reply = (path, init) => { sent = JSON.parse(init.body); throw new Error('connection lost'); };
+  run(`act('make', 'Ann', '2')`);
+  await settle();
+  assert.equal(run(`db`), 'offline');
+  assert.equal(ops(), 'make'); // still waiting: it is not known to have arrived
+  calls();
+  reply = () => ({ status: 200, json: { id: 100, date: '2026-11-06', version: 2, state: sent.state } });
+  await run(`poll()`);
+  assert.equal(ann(), 2); // once, not 4
+  assert.equal(ops(), '');
+  assert.deepEqual(calls().map(c => c.post), [false]); // and nothing left to push
 
   // Games and types go to the database only once the shared copy holds them, then come off as a change.
   use(night(100));
