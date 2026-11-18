@@ -749,6 +749,9 @@ assert.notEqual(run(`state.startedAt`), 200);
   const teamed = (h, a) => gameOf([row('H', h, { team: 0 }), row('A', a, { team: 1 })]);
   assert.match(teamed(4, 6), /<div class="tw"><table[^]*?<th>Home[^]*?<div class="tw win away"><table[^]*?<th>Away/);
   assert.doesNotMatch(teamed(5, 5), /win/);
+  assert.equal((teamed(5, 5).match(/<div class="tw tie">/g) || []).length, 2); // a tie: both sides marked TIE
+  assert.doesNotMatch(teamed(4, 6), /tie/);
+  assert.doesNotMatch(g, /tie/); // older games without teams are never a tie here
   g = gameOf([row('Zed', 2), row('Amy', 5), row('Bob', 5)]); // a tie: no teams and no winner
   assert.match(g, /^ · 3 players<\/summary>/);
   assert.match(g, /<th>Player<\/th>/);

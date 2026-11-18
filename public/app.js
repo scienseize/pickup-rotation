@@ -1068,12 +1068,13 @@ function sessionHtml(d) {
     const teamed = rows.length && rows.every(r => r.team === 0 || r.team === 1);
     const decided = rows.length && rows.every(r => r.won === 0 || r.won === 1) && of('won', 1).length && of('won', 0).length;
     const sides = teamed ? [['Home', of('team', 0)], ['Away', of('team', 1)]] : decided ? [['Winners', of('won', 1)], ['Losers', of('won', 0)]] : null;
-    // The winning side gets a quiet highlight: its team's color, or green for Winners in older games. A tie, none.
+    // The winning side gets a quiet highlight and a WIN watermark: its team's color, or green for Winners in
+    // older games. A tie highlights neither side and marks both with a TIE watermark.
     const totals = sides?.map(([, list]) => sum(list)) ?? [];
     const win = !sides ? -1 : !teamed ? 0 : totals[0] === totals[1] ? -1 : totals[0] > totals[1] ? 0 : 1;
     const result = !sides ? plural(rows.length, 'player') : teamed ? `Home ${sum(sides[0][1])}, Away ${sum(sides[1][1])}` : `${sum(sides[0][1])}-${sum(sides[1][1])}`;
     return `<details class="dd"><summary>Game ${esc(g.game)} · ${esc(result)}</summary>${
-      sides ? `<div class="sides">${sides.map(([label, list], i) => table(label, list, true, i !== win ? '' : ` win${teamed ? ['', ' home', ' away'][i + 1] : ''}`)).join('')}</div>` : table('Player', top(rows), false)}${
+      sides ? `<div class="sides">${sides.map(([label, list], i) => table(label, list, true, teamed && win < 0 ? ' tie' : i !== win ? '' : ` win${teamed ? ['', ' home', ' away'][i + 1] : ''}`)).join('')}</div>` : table('Player', top(rows), false)}${
       d.id === undefined ? '' : `<div class="btns left">${btn('editGame', d.id, 'Fix this game', { arg: g.game })}</div>`}</details>`;
   };
   // Everyone who checked in, plus anyone in the results; one who never played has 0 games and dashes.
