@@ -303,9 +303,18 @@ laptop screen and still works at phone width.
   the middle of its header; the choice is per laptop. Rows and type scale up to
   the largest size at which the list still fits the screen (sized for 30 to 40
   people). Lists run to the bottom of the
-  screen, and if a name is cut off by its column every name shows as First L. Each column has a serif header
+  screen. If a name is cut off by its column, the type steps down a size
+  (more rows a column, so fewer and wider columns) until every whole name
+  fits; only if none fits at the smallest size does every name show as
+  First L., at the largest size that then fits. Names are measured again once
+  the web fonts arrive, since they are wider than the fallback. On a TV
+  mirrored at 1280x720 or larger, 30 to 40 whole names fit. Each column has a serif header
   and a count, and players are quiet one-line rows in rounded cards with
   hairline separators. Names sort with numbers in order (Test 2 before Test 10).
+  **New players** have a four-leaf clover before their name, here and on the
+  queue diagram: no games in the database before tonight (`isNew`), so the
+  mark stays all night. It is drawn in ink, since green would read as the UG
+  tag, and needs the profiles, so offline it doesn't show.
   1. **01. Here:** everyone checked in, on court or not (who is on court is the
      Queue tab's job). *Done* marks a waiting player done for the
      night, so the queue never calls them again. The ← button undoes a mistaken

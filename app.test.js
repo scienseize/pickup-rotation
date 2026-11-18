@@ -88,7 +88,7 @@ const subs = [...roster.matchAll(/<p class="sech">(?:<[^>]+><\/i>)?([^<]+)<span>
 assert.deepEqual(subs, ['Done for the night 1']);
 assert.equal((roster.match(/class="rrow"/g) || []).length, 14); // Player A appears once, not twice
 const section = k => { const i = roster.indexOf(`s-${k}"`), j = roster.indexOf('<div class="sec ', i); return roster.slice(i, j < 0 ? undefined : j); };
-assert.match(section('here'), /class="kt unset"[\s\S]*?Type<\/button><b>Player A<\/b><\/div>/); // on court: listed under Here, details only
+assert.match(section('here'), /class="kt unset"[\s\S]*?Type<\/button>(?:<span class="clover"[\s\S]*?<\/svg><\/span>)?<b>Player A<\/b><\/div>/); // on court: listed under Here, details only
 assert.doesNotMatch(roster, /On court/);
 assert.match(section('here'), /<b>Player K<\/b><button class="btn o s" data-action="done"/);
 assert.match(section('arrive'), /<b>Abe New<\/b><button class="btn s" data-action="checkIn"[\s\S]*<b>Zed New<\/b>/); // A to Z
@@ -284,7 +284,7 @@ run(`actions.pickKind('Ana')`);
 // A type shows on every screen for someone playing: Check in, leaderboard, diagram, scoreboard.
 const onCourt1 = run(`state.game.onCourt.find(c => player(c.name).games).name`); // on the leaderboard's table
 run(`actions.setKind(${JSON.stringify(onCourt1)}, 'Outsider'); commit();`);
-assert.match(bothLists(), new RegExp(`class="kt k-outsider"[^>]*>?[\\s\\S]{0,200}?Vis</button><b>${onCourt1}</b>`));
+assert.match(bothLists(), new RegExp(`class="kt k-outsider"[^>]*>?[\\s\\S]{0,200}?Vis</button>(?:<span class="clover"[\\s\\S]*?</svg></span>)?<b>${onCourt1}</b>`));
 assert.match(els.leaderBoard.innerHTML, new RegExp(`${onCourt1}</b><span class="kt k-outsider" title="Visitor">Vis</span>`));
 assert.match(els.qmap.innerHTML, new RegExp(`data-p="${onCourt1}" data-src="court"[^]*?<span class="qsub"><span class="kt k-outsider" title="Visitor">Vis</span><small>`));
 assert.match(els.homePlayers.innerHTML + els.awayPlayers.innerHTML, new RegExp(`<b>${onCourt1}</b><span class="kt k-outsider" title="Visitor">Vis</span><small class="mono">`));
@@ -801,6 +801,17 @@ assert.notEqual(run(`state.startedAt`), 200);
   assert.equal(run(`player('Night Owl').late`), true);
   assert.equal(run(`player('Night Owl').turns`), 0);
   run(`state.game = JSON.parse(${JSON.stringify(saved)})`);
+
+  // New player: no games in the database before tonight. Tonight's saved games don't count against
+  // them; one earlier game does. Nothing is marked until the profiles have loaded.
+  run(`savedProfiles = profiles; profiles = new Map([['vet', { name: 'Vet', games: 3 }], ['rook', { name: 'Rook', games: 2 }]]);
+    state.players.push({ name: 'Rook', games: 2, turns: 2, readyAt: 0, present: false, totalPoints: 0 }, { name: 'Vet', games: 2, turns: 2, readyAt: 0, present: false, totalPoints: 0 })`);
+  assert.deepEqual(run(`['Vet', 'Rook', 'Stranger'].map(isNew)`), [false, true, true]);
+  assert.match(run(`clover('Stranger')`), /class="clover" role="img" aria-label="New player"/);
+  assert.equal(run(`clover('Vet')`), '');
+  run(`profiles = new Map()`);
+  assert.equal(run(`isNew('Stranger')`), false);
+  run(`profiles = savedProfiles; state.players = state.players.filter(p => !['Rook', 'Vet'].includes(p.name))`);
 
   context.location.protocol = 'file:';
   console.log('app.test.js: all checks passed');

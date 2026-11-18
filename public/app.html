@@ -427,6 +427,11 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .rrow .btn.o{border:0;background:var(--panel);color:var(--ink)}
 .rrow .xbtn{width:calc(26px*var(--rs,1));height:calc(26px*var(--rs,1))}
 .s-done .rrow b{color:var(--mu)}
+/* New player: a four-leaf clover before the name, in ink (green would read as the UG tag). */
+.clover{display:inline-flex;flex-shrink:0;color:var(--ink)}
+.clover svg{width:1em;height:1em;fill:currentColor}
+.rrow .clover{font-size:calc(15px*var(--rs,1))}
+.qn b .clover{margin-right:.3em;vertical-align:-.1em;font-size:.8em}
 /* Player type: a small tinted tag, muted so it stays quiet: sage UG, gold SHS, plum Alumni, dusty
    rose Visitor. No orange or blue: those mean the teams. As a button it opens the picker, a strip
    of the four types under the row; a player with no type shows a faint dashed "Type". */

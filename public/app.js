@@ -821,7 +821,7 @@ function renderMap(order, now) {
     if (g.satOut.includes(name)) notes.push('sitting out');
     if (passed.has(name)) notes.push('passed over');
     return `<div class="qn${cls}${picked ? ' picked' : ''}" data-p="${esc(name)}" data-src="${src}"${p.present ? ' draggable="true"' : ''}
-      tabindex="0" role="button" aria-pressed="${picked}" title="${esc(name)}"><b>${esc(shortName(name))}</b><span class="qsub">${kindTag(name)}<small>${notes.join(' · ')}</small></span>${
+      tabindex="0" role="button" aria-pressed="${picked}" title="${esc(name)}"><b>${clover(name)}${esc(shortName(name))}</b><span class="qsub">${kindTag(name)}<small>${notes.join(' · ')}</small></span>${
       picked ? `<span class="qacts">${acts(name, src)}</span>` : ''}</div>`;
   };
   const group = (label, names, src, cls = '', mark = '', zone = '') => names.length || zone
@@ -1180,7 +1180,7 @@ $('fixDlg').addEventListener('close', async () => {
 // the screen, and each board column takes as many lists as it needs. If those lists would come out
 // too narrow, they get longer instead, so the page scrolls down, never sideways. Done for the night
 // shares the second column. A phone stacks everything (see the styles).
-function rosterLayout(n) {
+function rosterLayout(n, cap = Infinity) { // cap: the largest scale to try
   const r = $('roster');
   const spread = rows => {
     let arrive = 1, arrivePer = rows;
@@ -1198,13 +1198,15 @@ function rosterLayout(n) {
   const fit = (rows, s) => { const l = spread(rows), cols = here ? l.here : l.arrive;
     return cols * (here ? COL_MIN : COL_ARRIVE) * s + (cols - 1) * 8 + 24 <= r.clientWidth && { ...l, scale: s }; };
   const screen = s => Math.max(6, Math.floor((H - HEAD_H) / (ROW_H * s)));
-  for (const s of SCALES) { const l = fit(screen(s), s); if (l) return l; } // the biggest type that fits without scrolling
+  for (const s of SCALES) { const l = s <= cap && fit(screen(s), s); if (l) return l; } // the biggest type that fits without scrolling
   for (let rows = screen(1); ; rows++) { // too many even at the smallest: longer columns, and the page scrolls
     const l = fit(rows, 1);
     if (l || rows >= most) return l || { ...spread(rows), scale: 1 };
   }
 }
 window.addEventListener('resize', () => renderTonight());
+// Names are measured to decide their size; the web fonts can arrive after the first draw and are wider.
+document.fonts?.ready.then(() => renderTonight());
 
 const tag = name => (avgText(name) ? ` · ${avgText(name)}` : '');
 // Team marker for labels: a filled square for Home, an outlined one for Away.
@@ -1219,6 +1221,14 @@ const mk = team => `<i class="mk ${team}" aria-hidden="true"></i>`;
 // a name off the list. Check in, the main action, always shows; touch screens show every button.
 const ROW_H = 40, HEAD_H = 70, COL_MIN = 200, COL_ARRIVE = 250; // at scale 1; a To arrive row also holds its Check in button
 const SCALES = [1.7, 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1]; // the roster's type and rows are as big as still fits the screen // px: .rrow height, a column's header and padding, the narrowest list
+// New player: no games in the database before tonight (tonight's own games may already be saved
+// there). Marked with a four-leaf clover. Unknown until the profiles have loaded.
+// Four heart-shaped leaves meeting in the middle, and a stem.
+const LEAF = 'M0 -.6C-1 -2.4-5.6-3.6-5.6-7.4a2.9 2.9 0 0 1 5.6-1.2a2.9 2.9 0 0 1 5.6 1.2C5.6-3.6 1-2.4 0-.6Z';
+const CLOVER = `<svg viewBox="-12 -12 24 24" aria-hidden="true">${[45, 135, 225, 315].map(a => `<path transform="rotate(${a})" d="${LEAF}"/>`).join('')
+  }<path d="M.6 .6C3 5 5.5 8 9.5 10.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+const isNew = name => profiles.size > 0 && (profileOf(name)?.games ?? 0) <= (playerNamed(name)?.games ?? 0);
+const clover = name => (isNew(name) ? `<span class="clover" role="img" aria-label="New player" title="New player">${CLOVER}</span>` : '');
 const briefName = name => { const w = name.split(' '); return w.length > 1 ? `${w[0]} ${w.at(-1)[0]}.` : name; }; // First L.
 const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); // Test 2 before Test 10
 function renderTonight() {
@@ -1241,12 +1251,13 @@ function renderTonight() {
       : key === 'here' && !seatOf(name) ? btn('done', name, 'Done') + (canUncheck(p) ? `<button type="button" class="xbtn" data-action="uncheck"
         data-name="${esc(name)}" data-arg="" title="Back to To arrive" aria-label="Move ${esc(name)} back to To arrive">&larr;</button>` : '')
         : key === 'done' ? btn('undoDone', name, 'Undo') : '';
-    return `<div class="rrow" title="${esc(name)}${type}${p ? ` · ${plural(p.games, 'game')} tonight` : ''}${record}">${kindBtn(name)}<b>${esc(brief ? briefName(name) : name)}</b>${trail}</div>${
+    return `<div class="rrow" title="${esc(name)}${type}${p ? ` · ${plural(p.games, 'game')} tonight` : ''}${record}">${kindBtn(name)}${clover(name)}<b>${esc(brief ? briefName(name) : name)}</b>${trail}</div>${
       kindPick === name ? kindPicker(name) : ''}`;
   };
   for (const k in groups) groups[k].sort((a, b) => byName(a.name, b.name));
   const count = k => groups[k].length;
-  const L = rosterLayout({ here: count('here'), arrive: count('arrive'), done: count('done') });
+  const counts = { here: count('here'), arrive: count('arrive'), done: count('done') };
+  let L = rosterLayout(counts);
   // A list of players in columns of `per` rows, under an optional small header.
   const list = (k, per, cols, head = '') => {
     const cards = [];
@@ -1259,14 +1270,23 @@ function renderTonight() {
   const panel = (n, title, total, cols, body, empty) => `<div class="kcol" style="--c:${cols}"><div class="khead"><span class="kn">0${n}.</span><h3>${title}</h3><div class="seg" role="group" aria-label="List on show">${toggle}</div><span class="kc">${total}</span></div>
     <div class="kbody">${body || `<p class="kempty">${empty}</p>`}</div></div>`;
   let brief = false; // names as First L.
-  $('roster').style.setProperty('--rs', L.scale);
   const draw = () => { $('roster').innerHTML = !people.size ? '<p class="empty">Nobody on the list yet. Add players above, or paste this week\'s list.</p>'
     : rosterView === 'here' ? panel(1, 'Here', count('here'), L.here, count('here') ? list('here', L.rows, L.here) : '', 'Nobody here yet.')
       : panel(2, 'To arrive', count('arrive'), L.arrive, (count('arrive') ? list('arrive', L.arrivePer, L.arrive) : '')
         + (count('done') ? list('done', L.rows, L.arrive, 'Done for the night') : ''), 'Everyone is here.'); };
-  draw();
-  // A name cut off by its column: everyone goes to First L. (the full name stays in the hover title).
-  if (!brief && [...$('roster').querySelectorAll('.rrow b')].some(b => b.scrollWidth > b.clientWidth)) { brief = true; draw(); }
+  // A name cut off by its column: a smaller size first (more rows a column, so fewer and wider columns),
+  // and only at the smallest does everyone go to First L. (the full name stays in the hover title), at
+  // the biggest size that then fits. Read from across the gym, a whole name beats a big initial.
+  const cut = () => [...$('roster').querySelectorAll('.rrow b')].some(b => b.scrollWidth > b.clientWidth);
+  for (;;) {
+    $('roster').style.setProperty('--rs', L.scale);
+    draw();
+    if (!cut()) break;
+    const i = SCALES.indexOf(L.scale);
+    if (i >= 0 && i < SCALES.length - 1) L = rosterLayout(counts, SCALES[i + 1]);
+    else if (!brief) { brief = true; L = rosterLayout(counts); }
+    else break;
+  }
 
   $('choices').innerHTML = needsChoice.map(c => `<div class="notice">
       <b>${esc(c.query)} matches ${c.choices.length} players. Which one is coming?</b>
