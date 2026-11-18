@@ -5,7 +5,7 @@ basketball sessions. Design and rules: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.
 
 ## On game night (any laptop)
 
-1. Open https://pickup-rotation.pickup-rotation.workers.dev
+1. Open https://hexagames.iaciso.workers.dev
 2. The home page shows the ISO logo. Press *Enter as organizer*: a device
    that is already signed in goes straight to the app (`/app`); otherwise the
    passcode box appears. Signing in opens the app's *Home* tab: one button for
@@ -42,7 +42,7 @@ npm install
 | Put changes online | `npm run deploy` |
 | Backups | Automatic: every day the live database is exported and, if it changed, committed to the `backups` branch (`.github/workflows/backup.yml`). Run one now: `gh workflow run backup.yml`. Manual copy: `npx wrangler d1 export pickup --remote --output backup-YYYY-MM-DD.sql` |
 | Restore a backup | `git show backups:pickup.sql > restore.sql`, then `npx wrangler d1 execute pickup --remote --file restore.sql` (into an empty database) |
-| Update an existing database (after a schema change) | `npx wrangler d1 execute pickup --remote --file migrations/0004_sessions.sql` (each file in `migrations/` once, in order, before deploying the Worker that needs it; `--local` for local testing). Sharing and History need 0004 |
+| Update an existing database (after a schema change) | `npx wrangler d1 execute pickup --remote --file migrations/0005_result_kind.sql` (each file in `migrations/` once, in order, before deploying the Worker that needs it; `--local` for local testing). Sharing and History need 0004; fixing games and per-game types need 0005 |
 | Change the organizer passcode | `npx wrangler secret put ORGANIZER_PASSCODE` (signs every device out; use a long passcode, it opens the whole site) |
 
 Local testing reads the passcode from `.dev.vars` (`ORGANIZER_PASSCODE=...`),

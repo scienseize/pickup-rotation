@@ -40,6 +40,7 @@ const stored = key => { try { return localStorage.getItem(key); } catch { return
 // This laptop's name in state.seen: the last of its changes the shared copy holds.
 const DEVICE = stored(DEVICE_KEY) || Math.random().toString(36).slice(2, 10);
 try { localStorage.setItem(DEVICE_KEY, DEVICE); } catch {}
+let rosterView = 'arrive'; // Check in shows one list at a time, To arrive or Here: this laptop only
 let flipped = stored(FLIP_KEY) === '1'; // which team shows on the left: this laptop only, never shared
 // Sharing: every change to the session goes through act(), which also queues it here as
 // [op, a, b, game number, sequence number] until a push to the server has taken it. Saved in its own key so a reload
@@ -98,7 +99,9 @@ const clockText = ms => {
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 };
 // Fill, Pick, Sit out and Remove lock once the clock has started or anyone has scored.
-const locked = () => state.game.started || Queue.played(state.game).some(c => c.points > 0);
+// Play has started: the clock has run, someone scored, or someone was subbed off (a clock reset must
+// not reopen Fill and Pick, or a subbed-off player could be called back and counted twice).
+const locked = () => state.game.started || !!state.game.subbedOut?.length || Queue.played(state.game).some(c => c.points > 0);
 const ready = () => {
   const court = state.game.onCourt;
   return court.length > 0 && court.every(c => c.team) && ['home', 'away'].every(t => court.some(c => c.team === t));
@@ -120,7 +123,9 @@ const kindLabel = k => (k === 'Outsider' ? 'Visitor' : k);
 const kindOf = name => { const k = state.kinds.find(x => x.name === name); return k ? k.kind : profileOf(name)?.kind ?? null; };
 const kindShort = name => KIND_SHORT[kindOf(name)] ?? '';
 const kindClass = name => (kindOf(name) ? `k-${esc(kindOf(name).toLowerCase())}` : 'unset');
-const kindTag = name => (kindOf(name) ? `<span class="kt ${kindClass(name)}" title="${esc(kindLabel(kindOf(name)))}">${kindShort(name)}</span>` : '');
+// A tag for a type itself: History shows the type a game was played under, not today's.
+const kindSpan = k => (KINDS.includes(k) ? `<span class="kt k-${k.toLowerCase()}" title="${esc(kindLabel(k))}">${KIND_SHORT[k]}</span>` : '');
+const kindTag = name => kindSpan(kindOf(name));
 // A tag that opens the picker; a player with no type shows a faint "Type".
 const kindBtn = name => `<button type="button" class="kt ${kindClass(name)}" data-action="pickKind" data-name="${esc(name)}" data-arg=""
   title="${esc(kindLabel(kindOf(name)) ?? 'Set type')}" aria-label="${kindOf(name) ? `${esc(name)} is ${esc(kindLabel(kindOf(name)))}. Change type` : `Set type for ${esc(name)}`}">${kindShort(name) || 'Type'}</button>`;
@@ -276,7 +281,7 @@ async function sync() {
 
 // Changes about the night as a whole: these still apply when the game has moved on, or a new session
 // started. A game's own changes (points, clock, lineup) are dropped by adopt() if the game number differs.
-const SESSION_OPS = new Set(['checkIn', 'uncheck', 'removeName', 'addNames', 'done', 'undoDone', 'setKind', 'posted', 'kindPosted']);
+const SESSION_OPS = new Set(['checkIn', 'uncheck', 'removeName', 'addNames', 'done', 'undoDone', 'setKind', 'posted', 'kindPosted', 'fixGame']);
 // The shared copy holds everything this laptop has done (nothing waiting, and the server knows its session).
 const shared = () => liveId === state.startedAt && !pending.length;
 
@@ -479,7 +484,9 @@ const actions = {
     const p = playerNamed(typed);
     if (p) { flash(p.present ? `${p.name} is already checked in.` : `${p.name} is done for the night.`); return false; }
     const name = profileOf(typed)?.name ?? typed; // keep the database's spelling
-    state.players.push({ name, games: 0, readyAt: Date.now(), present: true, totalPoints: 0, fgm: 0, fga: 0, wins: 0, losses: 0 });
+    // late: arrived once play has begun. They lead the next game, then join the normal rotation (Queue.endGame).
+    const late = state.game.number > 1 || locked();
+    state.players.push({ name, games: 0, turns: 0, readyAt: Date.now(), present: true, totalPoints: 0, fgm: 0, fga: 0, wins: 0, losses: 0, ...(late && { late }) });
     flash(`${name} checked in.`);
   },
   // Undo a mistaken check-in: back to To arrive. Only before they've played (canUncheck), since
@@ -555,7 +562,7 @@ const actions = {
     Queue.endGame(state.players, g, Date.now());
     state.unsynced.push({
       session: state.startedAt, date: state.date, game: g.number,
-      rows: Queue.played(g).map(c => ({ name: c.name, points: c.points, fgm: c.fgm, fga: c.fga, won: Queue.won(g, c), team: { home: 0, away: 1 }[c.team] ?? null })),
+      rows: Queue.played(g).map(c => ({ name: c.name, points: c.points, fgm: c.fgm, fga: c.fga, won: Queue.won(g, c), team: { home: 0, away: 1 }[c.team] ?? null, kind: kindOf(c.name) })),
     });
     state.game = newGame(g.number + 1);
     state.game.onCourt = lineup.map(x => ({ ...Queue.seat(x.name), team: x.team })); // Up next takes the court
@@ -569,6 +576,24 @@ const actions = {
     state.unsynced = state.unsynced.filter(u => !(u.session === session && u.game === game));
     if (state.unsynced.length === had) return false;
   },
+  // A finished game fixed in History (the database already has the fix): tonight's totals take the
+  // old rows off and the new ones on. Players not checked in tonight have no totals here to fix.
+  fixGame({ session, old }, rows) {
+    if (session !== state.startedAt) return false;
+    const count = (r, sign) => {
+      const p = state.players.find(p => p.name.toLowerCase() === r.name.toLowerCase());
+      if (!p) return;
+      p.games += sign; p.totalPoints += sign * r.points;
+      p.turns = Queue.turn(p) + sign; // ponytail: a fixed game counts a whole turn, half-game subs aside
+      p.fgm = (p.fgm ?? 0) + sign * r.fgm; p.fga = (p.fga ?? 0) + sign * r.fga;
+      if (r.won === 1) p.wins = (p.wins ?? 0) + sign;
+      if (r.won === 0) p.losses = (p.losses ?? 0) + sign;
+    };
+    old.forEach(r => count(r, -1));
+    rows.forEach(r => count(r, 1));
+  },
+  // History's Edit: opens the game in the fix dialog. A view until it is saved.
+  editGame(session, game) { openFix(histData.get(Number(session)), Number(game)); return false; },
   kindPosted(name, kind) {
     const had = state.kinds.length;
     state.kinds = state.kinds.filter(k => !(k.name === name && k.kind === kind)); // a newer tap for this player stays
@@ -621,6 +646,9 @@ const actions = {
     if (g.plan) g.plan = g.plan.filter(x => x.name !== inName);
   },
 
+  // Check in: switch between the To arrive and Here lists. A view, not a shared change.
+  rosterView(_, view) { rosterView = view || (rosterView === 'here' ? 'arrive' : 'here'); keepFocus(renderTonight); return false; },
+
   // Switch sides: which team shows on the left. This laptop only, so a view, not a shared change.
   flip() {
     flipped = !flipped;
@@ -630,7 +658,8 @@ const actions = {
   },
 
   // The Up next lineup: each edit freezes it as shown, then changes it (editPlan).
-  planSwap: (out, inn) => editPlan(l => { l.find(x => x.name === out).name = inn; }), // a waiting player in
+  // A waiting player in: pinned, and whoever they replaced is kept out (the original, if out was a pin too).
+  planSwap: (out, inn) => editPlan(l => { const x = l.find(y => y.name === out); Object.assign(x, { name: inn, pin: true, for: x.for ?? out }); }),
   planTeams: (a, b) => editPlan(l => { const x = l.find(y => y.name === a), y = l.find(z => z.name === b); [x.team, y.team] = [y.team, x.team]; }),
   planMove: (name, team) => editPlan(l => { if (l.filter(x => x.team === team).length < TEAM_SIZE) l.find(x => x.name === name).team = team; }),
   // On court: two players on opposite teams swap sides; a player goes to a team.
@@ -736,12 +765,15 @@ function shortName(name) {
 }
 // The next game's lineup, already in teams: the fairness order for the following game
 // (Queue.nextGame), split Home/Away, with the organizer's edits from the diagram kept in
-// game.plan. Players who left are dropped and the next in fairness order take their spots.
-// End game seats this lineup on court.
+// game.plan. Only the edits hold: a player put in by hand (pin) stays, the player they replaced
+// (for) stays out, and teams are remembered. Everyone else is recomputed, so a late arrival with
+// fewer games still gets in ahead of someone on court. End game seats this lineup on court.
 function nextLineup(now) {
-  const g = state.game, fair = Queue.nextGame(state.players, g, SPOTS, now).map(p => p.name);
-  const list = (g.plan ?? []).filter(x => player(x.name)?.present).map(x => ({ ...x }));
-  for (const name of fair) if (list.length < SPOTS && !list.some(x => x.name === name)) list.push({ name, team: null });
+  const g = state.game, plan = g.plan ?? [];
+  const list = plan.filter(x => x.pin && player(x.name)?.present && !seatOf(x.name)).map(x => ({ ...x })); // called onto the court since: the pin is spent
+  const out = new Set(list.map(x => x.for));
+  const fair = Queue.nextGame(state.players, g, SPOTS + out.size, now).map(p => p.name).filter(n => !out.has(n));
+  for (const name of fair) if (list.length < SPOTS && !list.some(x => x.name === name)) list.push({ name, team: plan.find(x => x.name === name)?.team ?? null });
   const n = t => list.filter(x => x.team === t).length;
   for (const x of list) if (!x.team) x.team = n('away') < n('home') ? 'away' : 'home';
   return list;
@@ -784,7 +816,8 @@ function renderMap(order, now) {
   };
   const node = (name, src, cls = '') => {
     const p = player(name), picked = sel?.name === name && sel.src === src;
-    const notes = [plural(p.games, 'game')];
+    const pr = profileOf(name); // all-time, from the database
+    const notes = [...(pr?.games ? [`${pr.avg.toFixed(1)} PPG`, ...(pr.fga ? [`${pct(pr.fgm, pr.fga)} FG`] : [])] : []), plural(Queue.turn(p), 'game')];
     if (g.satOut.includes(name)) notes.push('sitting out');
     if (passed.has(name)) notes.push('passed over');
     return `<div class="qn${cls}${picked ? ' picked' : ''}" data-p="${esc(name)}" data-src="${src}"${p.present ? ' draggable="true"' : ''}
@@ -793,7 +826,8 @@ function renderMap(order, now) {
   };
   const group = (label, names, src, cls = '', mark = '', zone = '') => names.length || zone
     ? `<div class="qgrp"${zone ? ` data-zone="${zone}"` : ''}><p class="grp">${mark}${esc(label)}</p>${names.length
-      ? `<div class="qnodes">${names.map(n => node(n, src, cls)).join('')}</div>` : '<p class="zone">Drag players here</p>'}</div>` : '';
+      ? `<div class="qnodes">${names.map(n => node(n, src, cls)).join('')}${zone ? '<div class="qslot" aria-hidden="true"></div>'.repeat(Math.max(0, TEAM_SIZE - names.length)) : ''}</div>`
+      : '<p class="zone">Drag players here</p>'}</div>` : ''; // a team's open places show as empty slots
   const col = (cls, head, body, empty, zone = '') => `<div class="qcol ${cls}"${zone ? ` data-zone="${zone}"` : ''}>
       <div class="colhead">${head}</div>${body || `<p class="empty">${empty}</p>`}</div>`;
   const arrow = '<span class="qarrow" aria-hidden="true">&rarr;</span>';
@@ -812,13 +846,29 @@ function renderMap(order, now) {
     : group(plural(nextNames.length, 'player'), nextNames, 'wait');
   const nextSet = new Set(nextNames);
   const tiers = new Map();
-  for (const p of order) if (!nextSet.has(p.name)) tiers.set(p.games, [...(tiers.get(p.games) ?? []), p.name]);
+  for (const p of order) if (!nextSet.has(p.name)) tiers.set(Queue.turn(p), [...(tiers.get(Queue.turn(p)) ?? []), p.name]); // by turns: the rotation's count
   const waiting = [...tiers].sort((a, b) => a[0] - b[0]).map(([n, names]) => group(plural(n, 'game'), names, 'wait')).join('')
     + group('Done for the night', state.players.filter(p => !p.present).map(p => p.name), 'done', ' out');
 
-  $('qmap').innerHTML = col('court', `<p class="col">On court · Game ${g.number}</p>${fill}`, court, '') + arrow
-    + col('next', `<p class="col">${full ? `Up next · Game ${g.number + 1}` : 'Up next · fills open spots'}</p>`, upnext, 'Nobody to call.', full ? '' : 'line') + arrow
-    + col('wait', `<p class="col">Waiting</p>${btn('fullscreen', '', 'Full screen', { arg: 'qmap' })}`, waiting, 'Nobody waiting.', 'line');
+  // Column headers in the Check in board's idiom: a number, a serif title, a small note.
+  const head = (n, title, note) => `<span class="kn">0${n}.</span><h3>${title}</h3><span class="kc">${esc(note)}</span>`;
+  glide($('qmap'), el => { el.innerHTML = col('court', head(1, 'On court', `Game ${g.number}`) + fill, court, '') + arrow
+    + col('next', head(2, 'Up next', full ? `Game ${g.number + 1}` : 'fills open spots'), upnext, 'Nobody to call.', full ? '' : 'line') + arrow
+    + col('wait', head(3, 'Waiting', order.filter(p => !nextSet.has(p.name)).length) + btn('fullscreen', '', 'Full screen', { arg: 'qmap' }), waiting, 'Nobody waiting.', 'line'); });
+}
+
+// Motion for the diagram: after a redraw each box glides from where it was to where it is now,
+// and a box that wasn't there fades in. Skipped when the system asks for reduced motion.
+function glide(el, draw) {
+  if (typeof matchMedia !== 'function' || matchMedia('(prefers-reduced-motion: reduce)').matches) return draw(el);
+  const was = new Map([...el.querySelectorAll('[data-p]')].map(n => [n.dataset.p, n.getBoundingClientRect()]));
+  draw(el);
+  const ease = { duration: 340, easing: 'cubic-bezier(.2,.8,.2,1)' };
+  for (const n of el.querySelectorAll('[data-p]')) {
+    const a = was.get(n.dataset.p), b = n.getBoundingClientRect(), dx = a ? a.left - b.left : 0, dy = a ? a.top - b.top : 0;
+    if (!a) n.animate([{ opacity: 0, transform: 'scale(.9)' }, {}], ease);
+    else if (Math.abs(dx) > 1 || Math.abs(dy) > 1) n.animate([{ transform: `translate(${dx}px,${dy}px)` }, {}], ease);
+  }
 }
 
 const qmap = $('qmap');
@@ -863,7 +913,9 @@ function dropOn(name, src, t) {
 qmap.addEventListener('dragstart', e => {
   const n = hit(e, '[data-p][draggable="true"]');
   if (n) { e.dataTransfer.setData('text/plain', `${n.dataset.src}:${n.dataset.p}`); e.dataTransfer.effectAllowed = 'move'; }
+  if (n) requestAnimationFrame(() => n.classList.add('drag')); // after the browser has taken the drag image
 });
+qmap.addEventListener('dragend', () => qmap.querySelectorAll('.drag').forEach(x => x.classList.remove('drag')));
 qmap.addEventListener('dragover', e => {
   const t = hit(e, '[data-src="court"],[data-src="next"]') || hit(e, '[data-zone]');
   if (!t) return;
@@ -914,9 +966,12 @@ function renderLeaders() {
     .map(([k, label]) => btn('leaderKind', '', label, { arg: k, pressed: leaderKind === k, cls: leaderKind === k ? 's' : 'o s' })).join('');
   // All-time players come from the database profiles, in the shape Queue.leaderboard takes. The
   // type filter comes first, so ranks start at 1 within the type.
-  const list = (!all ? state.players : [...profiles.values()].filter(p => p.games).map(p => ({
-    name: p.name, games: p.games, totalPoints: p.points, fgm: p.fgm ?? 0, fga: p.fga ?? 0, wins: p.wins ?? 0, losses: p.losses ?? 0 })))
-    .filter(p => leaderKind === 'all' || kindOf(p.name) === leaderKind);
+  // All-time counts each game under the type it was played under (byKind); a copy of the profiles
+  // from before that existed falls back to today's type.
+  const asRow = (name, p) => ({ name, games: p.games, totalPoints: p.points, fgm: p.fgm ?? 0, fga: p.fga ?? 0, wins: p.wins ?? 0, losses: p.losses ?? 0 });
+  const allTime = () => [...profiles.values()].flatMap(p => leaderKind === 'all' ? [asRow(p.name, p)]
+    : (p.byKind ?? [{ ...p, kind: kindOf(p.name) }]).filter(k => k.kind === leaderKind).map(k => asRow(p.name, k))).filter(p => p.games);
+  const list = all ? allTime() : state.players.filter(p => leaderKind === 'all' || kindOf(p.name) === leaderKind);
   const rows = Queue.leaderboard(list, all ? 'perGame' : 'total', all ? MIN_ALLTIME_GAMES : MIN_RANKED_GAMES);
   const played = rows.filter(r => r.player.games), notYet = all ? [] : rows.filter(r => !r.player.games);
   const when = all ? 'every week' : 'tonight';
@@ -999,10 +1054,13 @@ async function renderHistory() {
 // <details> headed by the result. A game lists its two sides, each sorted by points then name, with their
 // totals: Home and Away when rows have a team (0 home, 1 away); for games saved before teams were kept,
 // Winners and Losers from each row's won. With neither (a tie, very old data) it is one list.
+const histData = new Map(); // session id -> its loaded detail, for Edit
+// The type a row was played under; rows from before that was kept show today's.
+const rowTag = r => (r.kind ? kindSpan(r.kind) : kindTag(r.name));
 function sessionHtml(d) {
   const sum = rows => rows.reduce((t, r) => t + r.points, 0);
   const table = (label, rows, total) => `<div class="tw"><table class="box"><thead><tr><th>${esc(label)}</th><th class="r">PTS</th><th class="r">FG</th></tr></thead><tbody>${
-    rows.map(r => `<tr><td>${esc(r.name)}${kindTag(r.name)}</td><td class="r mono">${esc(r.points)}</td><td class="r mono">${esc(r.fgm)}/${esc(r.fga)}</td></tr>`).join('')}${
+    rows.map(r => `<tr><td>${esc(r.name)}${rowTag(r)}</td><td class="r mono">${esc(r.points)}</td><td class="r mono">${esc(r.fgm)}/${esc(r.fga)}</td></tr>`).join('')}${
     total ? `<tr><td><b>Total</b></td><td class="r mono"><b>${esc(sum(rows))}</b></td><td></td></tr>` : ''}</tbody></table></div>`;
   const top = rows => [...rows].sort((a, b) => b.points - a.points || byName(a.name, b.name));
   const game = g => {
@@ -1012,16 +1070,18 @@ function sessionHtml(d) {
     const sides = teamed ? [['Home', of('team', 0)], ['Away', of('team', 1)]] : decided ? [['Winners', of('won', 1)], ['Losers', of('won', 0)]] : null;
     const result = !sides ? plural(rows.length, 'player') : teamed ? `Home ${sum(sides[0][1])}, Away ${sum(sides[1][1])}` : `${sum(sides[0][1])}-${sum(sides[1][1])}`;
     return `<details class="dd"><summary>Game ${esc(g.game)} · ${esc(result)}</summary>${
-      sides ? sides.map(([label, list]) => table(label, list, true)).join('') : table('Player', top(rows), false)}</details>`;
+      sides ? sides.map(([label, list]) => table(label, list, true)).join('') : table('Player', top(rows), false)}${
+      d.id === undefined ? '' : `<div class="btns left">${btn('editGame', d.id, 'Fix this game', { arg: g.game })}</div>`}</details>`;
   };
   // Everyone who checked in, plus anyone in the results; one who never played has 0 games and dashes.
-  const who = new Map([...d.participants, ...d.games.flatMap(g => g.rows.map(r => r.name))].map(n => [n, { games: 0, points: 0, fgm: 0, fga: 0, won: 0, lost: 0 }]));
+  const who = new Map([...d.participants, ...d.games.flatMap(g => g.rows.map(r => r.name))].map(n => [n, { games: 0, points: 0, fgm: 0, fga: 0, won: 0, lost: 0, kind: null }]));
   for (const r of d.games.flatMap(g => g.rows)) {
     const s = who.get(r.name);
     s.games++; s.points += r.points; s.fgm += r.fgm; s.fga += r.fga; s.won += r.won === 1; s.lost += r.won === 0;
+    s.kind = r.kind ?? s.kind; // the type of their last game that night
   }
   const dash = '<td class="r mono">-</td>';
-  const row = ([name, s]) => `<tr><td class="who"><div><b title="${esc(name)}">${esc(name)}</b>${kindTag(name)}</div></td><td class="r mono gm">${esc(s.games)}</td>${
+  const row = ([name, s]) => `<tr><td class="who"><div><b title="${esc(name)}">${esc(name)}</b>${rowTag({ name, kind: s.kind })}</div></td><td class="r mono gm">${esc(s.games)}</td>${
     s.games ? `<td class="r pts">${esc(s.points)}</td>` : dash}${
     s.fga ? `<td class="r mono fg${s.fga < MIN_FG_SHOTS ? ' few' : ''}"><small>${esc(s.fgm)}/${esc(s.fga)}</small> ${esc(pct(s.fgm, s.fga))}</td>` : dash}${
     s.won + s.lost ? `<td class="r mono">${esc(s.won)}-${esc(s.lost)}</td>` : dash}</tr>`;
@@ -1041,15 +1101,85 @@ $('historyList').addEventListener('toggle', async e => {
   if (!d.open || !d.dataset.id || !body || d.dataset.shown) return;
   try {
     const { data } = await liveFetch(`/api/sessions/${encodeURIComponent(d.dataset.id)}`);
+    histData.set(data.id, data);
     body.innerHTML = sessionHtml(data);
     d.dataset.shown = '1';
   } catch { body.innerHTML = histNote('Could not load this session. History needs a connection.'); }
 }, true);
 
+// Fix a finished game: a dialog with one row per player (name, team, points, makes, attempts). Saving
+// replaces the game in the database (/api/results/fix); removing every row deletes it. Tonight's totals
+// follow as one shared change (fixGame). A teamed game's wins and losses are worked out again from the
+// new points; otherwise each row keeps its own.
+let fixing = null; // { session, date, game, rows } while the dialog is open
+const fixRow = (r = {}) => `<tr data-name="${esc(r.name ?? '')}" data-won="${esc(r.won ?? '')}" data-kind="${esc(r.kind ?? '')}">
+  <td><input class="in" name="n" list="fixNames" required maxlength="60" value="${esc(r.name ?? '')}" aria-label="Name"></td>
+  <td><select class="in" name="t" aria-label="Team">${[['', '-'], ['0', 'Home'], ['1', 'Away']].map(([v, l]) =>
+    `<option value="${v}"${String(r.team ?? '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></td>
+  ${['points', 'fgm', 'fga'].map(k => `<td><input class="in" name="${k}" type="number" min="0" max="200" step="1" required value="${esc(r[k] ?? 0)}" aria-label="${
+    { points: 'Points', fgm: 'Makes', fga: 'Attempts' }[k]}"></td>`).join('')}
+  <td><button type="button" class="xbtn" data-fix="del" aria-label="Remove this row">&times;</button></td></tr>`;
+function openFix(d, game) {
+  const g = d?.games.find(x => x.game === game);
+  if (!g) return flash('Open the session again to fix this game.');
+  fixing = { session: d.id, date: d.date, game, rows: g.rows };
+  $('fixTitle').textContent = `Fix game ${game}, ${d.date}`;
+  $('fixRows').innerHTML = g.rows.map(fixRow).join('');
+  $('fixNames').innerHTML = [...profiles.values()].map(p => `<option value="${esc(p.name)}">`).join('');
+  $('fixDlg').returnValue = '';
+  $('fixDlg').showModal();
+}
+$('fixAdd').addEventListener('click', () => $('fixRows').insertAdjacentHTML('beforeend', fixRow()));
+$('fixRows').addEventListener('click', e => { if (e.target.closest('[data-fix="del"]')) { e.target.closest('tr').remove(); fixCheck(); } });
+const fixRead = () => [...$('fixRows').querySelectorAll('tr')].map(tr => {
+  const v = n => tr.querySelector(`[name="${n}"]`);
+  return { tr, v, name: cleanName(v('n').value), team: v('t').value === '' ? null : Number(v('t').value),
+    points: Number(v('points').value), fgm: Number(v('fgm').value), fga: Number(v('fga').value) };
+});
+// The checks the inputs can't make on their own, on the field at fault. They run on every edit, so a
+// corrected value clears its message and the browser's own check on Save sees the current state.
+function fixCheck() {
+  const seen = new Set();
+  for (const r of fixRead()) {
+    const key = r.name.toLowerCase();
+    r.v('n').setCustomValidity(seen.has(key) ? 'This player is already in the game.' : '');
+    seen.add(key);
+    r.v('fgm').setCustomValidity(r.fgm > r.fga ? "Makes can't be more than attempts." : '');
+    // Baskets are 2 or 3 points, so points sit between 2 and 3 per make (rows from before shots were kept have none).
+    r.v('points').setCustomValidity(r.fga && (r.points < 2 * r.fgm || r.points > 3 * r.fgm) ? `With ${r.fgm} made, points are ${2 * r.fgm} to ${3 * r.fgm}.` : '');
+  }
+}
+$('fixRows').addEventListener('input', fixCheck);
+$('fixDlg').addEventListener('close', async () => {
+  if ($('fixDlg').returnValue !== 'save' || !fixing) return;
+  const f = fixing;
+  fixing = null;
+  const read = fixRead(), teamed = read.length && read.every(r => r.team !== null);
+  const total = t => read.filter(r => r.team === t).reduce((n, r) => n + r.points, 0);
+  const win = teamed && total(0) !== total(1) ? (total(0) > total(1) ? 0 : 1) : null;
+  const rows = read.map(({ tr, v, ...r }) => ({ ...r,
+    won: teamed ? (win === null ? null : Number(r.team === win)) : tr.dataset.won === '' ? null : Number(tr.dataset.won),
+    kind: tr.dataset.name.toLowerCase() === r.name.toLowerCase() ? tr.dataset.kind || null : kindOf(r.name) }));
+  try { await api('/api/results/fix', { session: f.session, date: f.date, game: f.game, rows }); }
+  catch (e) {
+    if (e instanceof Rejected) flash(`The database refused the fix: ${e.message}`);
+    else if (!(e instanceof Locked)) flash('Fixing a game needs a connection. Nothing was changed.');
+    return;
+  }
+  act('fixGame', { session: f.session, old: f.rows }, rows);
+  flash(rows.length ? `Game ${f.game} fixed.` : `Game ${f.game} deleted.`);
+  const body = $('historyList').querySelector(`details[data-id="${f.session}"] .hbody`);
+  try {
+    const { data } = await liveFetch(`/api/sessions/${f.session}`);
+    histData.set(data.id, data);
+    if (body) body.innerHTML = sessionHtml(data);
+  } catch {}
+});
+
 // Check in layout: lists hold as many rows as fit between the top of the board and the bottom of
 // the screen, and each board column takes as many lists as it needs. If those lists would come out
 // too narrow, they get longer instead, so the page scrolls down, never sideways. Done for the night
-// shares the third column. A phone stacks everything (see the styles).
+// shares the second column. A phone stacks everything (see the styles).
 function rosterLayout(n) {
   const r = $('roster');
   const spread = rows => {
@@ -1058,15 +1188,20 @@ function rosterLayout(n) {
       arrivePer = rows - (n.done ? Math.ceil(n.done / arrive) + 1 : 0); // Done takes its rows and a header
       if (arrivePer >= 1 && Math.ceil(n.arrive / arrive) <= arrivePer) break;
     }
-    return { rows, arrive, arrivePer, here: Math.max(1, Math.ceil(n.here / rows)), court: 1 };
+    return { rows, arrive, arrivePer, here: Math.max(1, Math.ceil(n.here / rows)) };
   };
-  if ($('checkin').hidden || r.clientWidth < 600) return spread(Infinity); // laid out again when the tab shows
+  if ($('checkin').hidden || r.clientWidth < 600) return { ...spread(Infinity), scale: 1.15 }; // laid out again when the tab shows
   const H = Math.floor(innerHeight - (r.getBoundingClientRect().top + scrollY) - 24);
   r.style.setProperty('--kh', `${H}px`);
-  const most = Math.max(6, n.here, n.arrive + n.done + 1);
-  for (let rows = Math.max(6, Math.floor((H - HEAD_H) / ROW_H)); ; rows++) {
-    const l = spread(rows), cols = l.court + l.here + l.arrive;
-    if (rows >= most || cols * COL_MIN + (cols - 3) * 8 + 2 * 12 + 3 * 24 <= r.clientWidth) return l;
+  const here = rosterView === 'here', most = Math.max(6, here ? n.here : n.arrive + n.done + 1);
+  // Only the list on show needs to fit: its columns side by side, at scale s.
+  const fit = (rows, s) => { const l = spread(rows), cols = here ? l.here : l.arrive;
+    return cols * (here ? COL_MIN : COL_ARRIVE) * s + (cols - 1) * 8 + 24 <= r.clientWidth && { ...l, scale: s }; };
+  const screen = s => Math.max(6, Math.floor((H - HEAD_H) / (ROW_H * s)));
+  for (const s of SCALES) { const l = fit(screen(s), s); if (l) return l; } // the biggest type that fits without scrolling
+  for (let rows = screen(1); ; rows++) { // too many even at the smallest: longer columns, and the page scrolls
+    const l = fit(rows, 1);
+    if (l || rows >= most) return l || { ...spread(rows), scale: 1 };
   }
 }
 window.addEventListener('resize', () => renderTonight());
@@ -1075,21 +1210,24 @@ const tag = name => (avgText(name) ? ` · ${avgText(name)}` : '');
 // Team marker for labels: a filled square for Home, an outlined one for Away.
 const mk = team => `<i class="mk ${team}" aria-hidden="true"></i>`;
 
-// Check in: a board of numbered, full-height columns: 01 On court (one column split in the middle,
-// Home above Away, with their team bands), 02 Here, 03 To arrive, with Done for the night at the foot of 03. Players are
+// Check in: one full-width, full-height list at a time, with a button in its header to switch:
+// 02 To arrive (shown first), with Done for the night at its foot, or 01 Here (everyone checked in, on court or
+// not; who is on court is the Queue tab's job). Players are
 // quiet one-line rows in rounded cards. Each list fills down to the bottom of the screen, then
 // starts another column, and the board's columns share the page's width. A row shows its details
 // (games tonight) until it is hovered or focused, then its button: Done, Undo, or the x that takes
 // a name off the list. Check in, the main action, always shows; touch screens show every button.
-const ROW_H = 40, HEAD_H = 70, COL_MIN = 175; // px: .rrow height, a column's header and padding, the narrowest list
+const ROW_H = 40, HEAD_H = 70, COL_MIN = 200, COL_ARRIVE = 250; // at scale 1; a To arrive row also holds its Check in button
+const SCALES = [1.7, 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1]; // the roster's type and rows are as big as still fits the screen // px: .rrow height, a column's header and padding, the narrowest list
+const briefName = name => { const w = name.split(' '); return w.length > 1 ? `${w[0]} ${w.at(-1)[0]}.` : name; }; // First L.
 const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); // Test 2 before Test 10
 function renderTonight() {
   const people = new Map(state.expected.map(n => [n.toLowerCase(), { n, name: profileOf(n)?.name ?? n }]));
   for (const p of state.players) people.set(p.name.toLowerCase(), { n: p.name, name: p.name });
-  const g = state.game, groups = { home: [], away: [], here: [], arrive: [], done: [] };
+  const groups = { here: [], arrive: [], done: [] };
   for (const x of people.values()) {
-    const p = playerNamed(x.name), seat = p && seatOf(p.name);
-    groups[!p ? 'arrive' : !p.present ? 'done' : seat ? seat.team ?? 'home' : 'here'].push({ ...x, p });
+    const p = playerNamed(x.name);
+    groups[!p ? 'arrive' : !p.present ? 'done' : 'here'].push({ ...x, p });
   }
   const row = ({ n, name, p }, key) => {
     const pr = profileOf(name);
@@ -1097,32 +1235,38 @@ function renderTonight() {
       ? ` · ${plural(pr.games, 'game')} · AVG ${pr.avg.toFixed(1)}${pr.fga ? ` · FG ${pct(pr.fgm, pr.fga)}` : ''}${
         pr.wins || pr.losses ? ` · ${pr.wins}-${pr.losses}` : ''}` : ' · First game';
     const type = kindOf(name) ? ` · ${esc(kindLabel(kindOf(name)))}` : '';
-    const games = p ? `<small>${p.games}g</small>` : ''; // short, so the name and type have room
     const trail = key === 'arrive'
       ? btn('checkIn', name, 'Check in', { cls: 's' }) + `<button type="button" class="xbtn" data-action="removeName"
         data-name="${esc(n)}" data-arg="" aria-label="Remove ${esc(name)} from tonight's list">&times;</button>`
-      : key === 'here' ? games + btn('done', name, 'Done') + (canUncheck(p) ? `<button type="button" class="xbtn" data-action="uncheck"
+      : key === 'here' && !seatOf(name) ? btn('done', name, 'Done') + (canUncheck(p) ? `<button type="button" class="xbtn" data-action="uncheck"
         data-name="${esc(name)}" data-arg="" title="Back to To arrive" aria-label="Move ${esc(name)} back to To arrive">&larr;</button>` : '')
-        : key === 'done' ? games + btn('undoDone', name, 'Undo') : games;
-    return `<div class="rrow" title="${esc(name)}${type}${p ? ` · ${plural(p.games, 'game')} tonight` : ''}${record}">${kindBtn(name)}<b>${esc(name)}</b>${trail}</div>${
+        : key === 'done' ? btn('undoDone', name, 'Undo') : '';
+    return `<div class="rrow" title="${esc(name)}${type}${p ? ` · ${plural(p.games, 'game')} tonight` : ''}${record}">${kindBtn(name)}<b>${esc(brief ? briefName(name) : name)}</b>${trail}</div>${
       kindPick === name ? kindPicker(name) : ''}`;
   };
   for (const k in groups) groups[k].sort((a, b) => byName(a.name, b.name));
-  const count = k => groups[k].length, onCourt = count('home') + count('away');
-  const L = rosterLayout({ court: onCourt, here: count('here'), arrive: count('arrive'), done: count('done') });
+  const count = k => groups[k].length;
+  const L = rosterLayout({ here: count('here'), arrive: count('arrive'), done: count('done') });
   // A list of players in columns of `per` rows, under an optional small header.
   const list = (k, per, cols, head = '') => {
     const cards = [];
     for (let j = 0; j < groups[k].length; j += per) cards.push(`<div class="rows">${groups[k].slice(j, j + per).map(x => row(x, k)).join('')}</div>`);
     return `<div class="sec s-${k}">${head && `<p class="sech">${head}<span>${count(k)}</span></p>`}<div class="cols" style="--c:${cols}">${cards.join('')}</div></div>`;
   };
-  const panel = (n, title, total, cols, body, empty) => `<div class="kcol" style="--c:${cols}"><div class="khead"><span class="kn">0${n}.</span><h3>${title}</h3><span class="kc">${total}</span></div>
+  // The one list on show fills the board; the toggle in the middle of its header switches lists.
+  const toggle = [['arrive', 'To arrive'], ['here', 'Here']].map(([v, label]) => btn('rosterView', '', `${label} · ${count(v)}`,
+    { arg: v, pressed: rosterView === v, cls: rosterView === v ? 's' : 'o s' })).join('');
+  const panel = (n, title, total, cols, body, empty) => `<div class="kcol" style="--c:${cols}"><div class="khead"><span class="kn">0${n}.</span><h3>${title}</h3><div class="seg" role="group" aria-label="List on show">${toggle}</div><span class="kc">${total}</span></div>
     <div class="kbody">${body || `<p class="kempty">${empty}</p>`}</div></div>`;
-  $('roster').innerHTML = !people.size ? '<p class="empty">Nobody on the list yet. Add players above, or paste this week\'s list.</p>'
-    : panel(1, 'On court', onCourt, L.court, onCourt ? `<div class="kteams">${list('home', 99, 1, `${mk('home')}${esc(g.homeName)}`)}${list('away', 99, 1, `${mk('away')}${esc(g.awayName)}`)}</div>` : '', 'Nobody on court yet.')
-      + panel(2, 'Here', count('here'), L.here, count('here') ? list('here', L.rows, L.here) : '', 'Nobody waiting.')
-      + panel(3, 'To arrive', count('arrive'), L.arrive, (count('arrive') ? list('arrive', L.arrivePer, L.arrive) : '')
-        + (count('done') ? list('done', L.rows, L.arrive, 'Done for the night') : ''), 'Everyone is here.');
+  let brief = false; // names as First L.
+  $('roster').style.setProperty('--rs', L.scale);
+  const draw = () => { $('roster').innerHTML = !people.size ? '<p class="empty">Nobody on the list yet. Add players above, or paste this week\'s list.</p>'
+    : rosterView === 'here' ? panel(1, 'Here', count('here'), L.here, count('here') ? list('here', L.rows, L.here) : '', 'Nobody here yet.')
+      : panel(2, 'To arrive', count('arrive'), L.arrive, (count('arrive') ? list('arrive', L.arrivePer, L.arrive) : '')
+        + (count('done') ? list('done', L.rows, L.arrive, 'Done for the night') : ''), 'Everyone is here.'); };
+  draw();
+  // A name cut off by its column: everyone goes to First L. (the full name stays in the hover title).
+  if (!brief && [...$('roster').querySelectorAll('.rrow b')].some(b => b.scrollWidth > b.clientWidth)) { brief = true; draw(); }
 
   $('choices').innerHTML = needsChoice.map(c => `<div class="notice">
       <b>${esc(c.query)} matches ${c.choices.length} players. Which one is coming?</b>

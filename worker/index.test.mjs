@@ -102,7 +102,10 @@ env.DB = {
   },
   batch: async q => {
     db.push(...q);
-    for (const { sql: t, v } of q) if (t.includes('INTO results')) saved.push({ session: v[0], played_on: v[1], game: v[2], name: v[3], points: v[4], fgm: v[5], fga: v[6], won: v[7], team: v[8] });
+    for (const { sql: t, v } of q) {
+      if (t.includes('DELETE FROM results')) saved.splice(0, Infinity, ...saved.filter(r => !(r.session === v[0] && r.game === v[1])));
+      if (t.includes('INTO results')) saved.push({ session: v[0], played_on: v[1], game: v[2], name: v[3], points: v[4], fgm: v[5], fga: v[6], won: v[7], team: v[8], kind: v[9] });
+    }
   },
 };
 assert.equal((await post('/api/players', { names: ['Ana'] }, { Cookie: session, Authorization: `Bearer ${PASS}` })).status, 200);
@@ -111,8 +114,8 @@ assert.equal(db.length, 1);
 const game = { session: 1793700000000, date: '2026-11-06', game: 1, rows: [{ name: 'Ana', points: 7, fgm: 3, fga: 8, won: 1 }] };
 assert.equal((await post('/api/results', game, { Cookie: session, Authorization: `Bearer ${PASS}` })).status, 200);
 const insert = db.find(q => q.sql.includes('INTO results'));
-assert.match(insert.sql, /\(session, played_on, game, name, points, fgm, fga, won, team\)/);
-assert.deepEqual(insert.v, [1793700000000, '2026-11-06', 1, 'Ana', 7, 3, 8, 1, null]); // no team sent: NULL
+assert.match(insert.sql, /\(session, played_on, game, name, points, fgm, fga, won, team, kind\)/);
+assert.deepEqual(insert.v, [1793700000000, '2026-11-06', 1, 'Ana', 7, 3, 8, 1, null, null]); // no team or type sent: NULL
 
 // A player's type: passcode and session both needed; adds the player if new, then updates them.
 assert.equal((await post('/api/kind', { name: 'Ana', kind: 'UG' }, { Cookie: session })).status, 401);
@@ -171,7 +174,7 @@ assert.equal((await res.json()).id, SID + 1);
 const OLD = 1790000000000;
 const night = (session, date, rows) => post('/api/results', { session, date, game: 1, rows }, org);
 assert.equal((await night(SID, '2026-11-06', [{ name: 'Ana', points: 7, fgm: 3, fga: 8, won: 1, team: 0 }, { name: 'Ben', points: 2, fgm: 1, fga: 4, won: 0, team: 1 }])).status, 200);
-assert.equal(db.findLast(q => q.sql.includes('INTO results')).v.at(-1), 1); // team stored
+assert.equal(db.findLast(q => q.sql.includes('INTO results')).v.at(-2), 1); // team stored
 assert.equal((await night(OLD, '2026-10-30', [{ name: 'Cy', points: 4 }])).status, 200);
 const get = path => at(path, { headers: { Cookie: session } });
 assert.deepEqual(await (await get('/api/sessions')).json(), [
@@ -182,16 +185,32 @@ assert.deepEqual(await (await get('/api/sessions')).json(), [
 ]);
 // Participants come from the stored session; box scores from results, with the team when it is known.
 assert.deepEqual(await (await get(`/api/sessions/${SID}`)).json(), { id: SID, date: '2026-11-06', participants: ['Ana'], games: [{ game: 1, rows: [
-  { name: 'Ana', points: 7, fgm: 3, fga: 8, won: 1, team: 0 }, { name: 'Ben', points: 2, fgm: 1, fga: 4, won: 0, team: 1 }] }] });
+  { name: 'Ana', points: 7, fgm: 3, fga: 8, won: 1, team: 0, kind: null }, { name: 'Ben', points: 2, fgm: 1, fga: 4, won: 0, team: 1, kind: null }] }] });
 // A night from before sessions were stored: players are those who played, and no team.
 assert.deepEqual(await (await get(`/api/sessions/${OLD}`)).json(), { id: OLD, date: '2026-10-30', participants: ['Cy'], games: [{ game: 1, rows: [
-  { name: 'Cy', points: 4, fgm: 0, fga: 0, won: null, team: null }] }] });
+  { name: 'Cy', points: 4, fgm: 0, fga: 0, won: null, team: null, kind: null }] }] });
 // An accepted push also corrects the date: a session made with a non-Thursday date fixes itself.
 res = await post('/api/live', { id: SID + 1, date: '2026-11-12', version: 1, state: { players: [{ name: 'Ana' }], game: { number: 1 } } }, org);
 assert.deepEqual(await res.json(), { version: 2 });
 assert.equal((await (await get('/api/sessions')).json())[0].date, '2026-11-12');
 assert.equal((await get('/api/sessions/12345')).status, 404);
 for (const bad of ['abc', '1;DROP', '-1', '1.5']) assert.equal((await get(`/api/sessions/${bad}`)).status, 400, bad);
+
+// Fixing a finished game (History's Edit): passcode needed; the game's rows are replaced in one
+// batch, each with its type, and no rows deletes the game. Other games are left alone.
+const fix = { session: SID, date: '2026-11-06', game: 1, rows: [{ name: 'Ana', points: 5, fgm: 2, fga: 8, won: 1, team: 0, kind: 'SHS' }, { name: 'Dee', points: 4, fgm: 2, fga: 4, won: 0, team: 1 }] };
+assert.equal((await post('/api/results/fix', fix, { Cookie: session })).status, 401);
+assert.equal((await post('/api/results/fix', { ...fix, rows: [fix.rows[0], fix.rows[0]] }, org)).status, 400);
+db.length = 0;
+assert.equal((await post('/api/results/fix', fix, org)).status, 200);
+assert.match(db[0].sql, /DELETE FROM results WHERE session = \? AND game = \?/);
+assert.deepEqual(db[0].v, [SID, 1]);
+assert.deepEqual((await (await get(`/api/sessions/${SID}`)).json()).games, [{ game: 1, rows: [
+  { name: 'Ana', points: 5, fgm: 2, fga: 8, won: 1, team: 0, kind: 'SHS' }, { name: 'Dee', points: 4, fgm: 2, fga: 4, won: 0, team: 1, kind: null }] }]);
+assert.equal((await post('/api/results/fix', { ...fix, rows: [] }, org)).status, 200);
+assert.equal((await get(`/api/sessions/${SID}`)).status, 200); // the session is still stored
+assert.deepEqual((await (await get(`/api/sessions/${SID}`)).json()).games, []);
+assert.equal(saved.filter(r => r.session === OLD).length, 1);
 
 // A cookie from before a passcode change no longer works.
 env.ORGANIZER_PASSCODE = 'new-passcode-7';

@@ -41,14 +41,21 @@ async function readJson(request) {
   try { return [null, JSON.parse(await new Blob(chunks).text())]; } catch { return [json(400, { error: 'invalid JSON' })]; }
 }
 
+// Each player's totals, plus byKind: the same totals split by the type each game was played under
+// (rows saved before types were kept count under the player's type now), for the All-time type filter.
 async function profiles(db) {
-  const { results } = await db.prepare(`
-    SELECT p.name AS name, p.kind AS kind, COUNT(r.points) AS games, COALESCE(SUM(r.points), 0) AS points, AVG(r.points) AS avg,
+  const stats = `COUNT(r.points) AS games, COALESCE(SUM(r.points), 0) AS points,
       COALESCE(SUM(r.fgm), 0) AS fgm, COALESCE(SUM(r.fga), 0) AS fga,
-      COALESCE(SUM(r.won = 1), 0) AS wins, COALESCE(SUM(r.won = 0), 0) AS losses
+      COALESCE(SUM(r.won = 1), 0) AS wins, COALESCE(SUM(r.won = 0), 0) AS losses`;
+  const [{ results }, { results: split }] = await Promise.all([db.prepare(`
+    SELECT p.name AS name, p.kind AS kind, ${stats}, AVG(r.points) AS avg
     FROM players p LEFT JOIN results r ON r.name = p.name
-    GROUP BY p.name ORDER BY p.name`).all();
-  return results.map(p => ({ ...p, avg: p.avg === null ? null : Math.round(p.avg * 10) / 10 }));
+    GROUP BY p.name ORDER BY p.name`).all(),
+  db.prepare(`SELECT r.name AS name, COALESCE(r.kind, p.kind) AS kind, ${stats}
+    FROM results r JOIN players p ON p.name = r.name GROUP BY r.name, COALESCE(r.kind, p.kind)`).all()]);
+  const byName = Map.groupBy(split, k => k.name.toLowerCase());
+  return results.map(p => ({ ...p, avg: p.avg === null ? null : Math.round(p.avg * 10) / 10,
+    byKind: (byName.get(p.name.toLowerCase()) ?? []).map(({ name, ...k }) => k) }));
 }
 
 async function write(db, path, body) {
@@ -65,13 +72,16 @@ async function write(db, path, body) {
     if (names.length) await db.batch(names.map(n => addPlayer(n, today)));
     return;
   }
-  // One transaction per game; a repeat is ignored by UNIQUE (session, game, name).
-  const g = gameBody(body);
-  if (!g.rows.length) return;
+  // One transaction per game; a repeat is ignored by UNIQUE (session, game, name). A fix
+  // (/api/results/fix, from History) replaces the game's rows instead; no rows deletes the game.
+  // ponytail: a laptop that still holds the game unsent re-adds rows the fix removed; per-game versions if that bites
+  const g = gameBody(body), fix = path === '/api/results/fix';
+  if (!g.rows.length && !fix) return;
   await db.batch([
+    ...(fix ? [db.prepare('DELETE FROM results WHERE session = ? AND game = ?').bind(g.session, g.game)] : []),
     ...g.rows.map(r => addPlayer(r.name, g.date)),
-    ...g.rows.map(r => db.prepare('INSERT OR IGNORE INTO results (session, played_on, game, name, points, fgm, fga, won, team) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(g.session, g.date, g.game, r.name, r.points, r.fgm, r.fga, r.won, r.team)),
+    ...g.rows.map(r => db.prepare('INSERT OR IGNORE INTO results (session, played_on, game, name, points, fgm, fga, won, team, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(g.session, g.date, g.game, r.name, r.points, r.fgm, r.fga, r.won, r.team, r.kind)),
   ]);
 }
 
@@ -119,7 +129,7 @@ async function sessionList(db) {
 async function sessionDetail(db, id) {
   const [row, { results }] = await Promise.all([
     db.prepare('SELECT played_on, state FROM sessions WHERE id = ?').bind(id).first(),
-    db.prepare('SELECT played_on, game, name, points, fgm, fga, won, team FROM results WHERE session = ? ORDER BY game, team, points DESC, name').bind(id).all(),
+    db.prepare('SELECT played_on, game, name, points, fgm, fga, won, team, kind FROM results WHERE session = ? ORDER BY game, team, points DESC, name').bind(id).all(),
   ]);
   if (!row && !results.length) return null;
   const games = new Map();
@@ -182,7 +192,7 @@ export default {
       const detail = await sessionDetail(env.DB, Number(id));
       return detail ? json(200, detail) : json(404, { error: 'no such session' });
     }
-    if (request.method !== 'POST' || !['/api/players', '/api/results', '/api/kind', '/api/live'].includes(path)) {
+    if (request.method !== 'POST' || !['/api/players', '/api/results', '/api/results/fix', '/api/kind', '/api/live'].includes(path)) {
       return json(404, { error: 'not found' });
     }
     if (!isJson(request)) return json(415, { error: 'send JSON' });

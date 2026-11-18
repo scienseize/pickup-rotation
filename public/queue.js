@@ -3,13 +3,20 @@
 // A plain script (not a module) so index.html works when opened from file://.
 
 const Queue = {
+  // A player's place in the rotation: turns, which counts a mid-game sub as half a game for both
+  // players and moves a latecomer to the normal rotation after their first game. games stays the
+  // stat (games played). Players saved before turns existed use games.
+  turn: p => p.turns ?? p.games,
+
   // Present players not on court, in the order they should be called: fewest
-  // games first. Array.sort is stable, so ties keep check-in order.
+  // turns first, so nobody repeats until everyone has played. Ties go to whoever
+  // has waited longest (readyAt: check-in, or the end of their last game), then
+  // to check-in order (Array.sort is stable).
   waitingOrder(players, game) {
     const called = new Set(game.onCourt.map(c => c.name));
     return players
       .filter(p => p.present && !called.has(p.name))
-      .sort((a, b) => a.games - b.games);
+      .sort((a, b) => Queue.turn(a) - Queue.turn(b) || a.readyAt - b.readyAt);
   },
 
   // Players Fill would call, skipping anyone sitting out this game.
@@ -47,10 +54,10 @@ const Queue = {
   // Waiting players with fewer games than someone called, i.e. skipped by a
   // hand-pick. Players who chose to sit out are not counted as skipped.
   passedOver(players, game) {
-    const games = new Map(players.map(p => [p.name, p.games]));
-    const most = Math.max(-1, ...game.onCourt.map(c => games.get(c.name)));
+    const turns = new Map(players.map(p => [p.name, Queue.turn(p)]));
+    const most = Math.max(-1, ...game.onCourt.map(c => turns.get(c.name)));
     return Queue.waitingOrder(players, game)
-      .filter(p => p.games < most && !game.satOut.includes(p.name))
+      .filter(p => Queue.turn(p) < most && !game.satOut.includes(p.name))
       .map(p => p.name);
   },
 
@@ -62,6 +69,8 @@ const Queue = {
   // game counts for them too; before that it is a plain swap. Someone coming back on gets their
   // points and shots back, so each player stays one row in the results. A sub who comes back off
   // without a shot is treated as an undo (a sub made by mistake): no row, and the game doesn't count.
+  // After the start, both players in a sub play half the game (half: they count half a turn); an undo
+  // gives the returning player back the status they had before. Before the start it is a full game.
   // ponytail: a player coming back for the other team brings their points along; split per team if that ever happens
   // ponytail: a sub who played a while and scored nothing also leaves no row; track minutes if that matters
   sub(game, outName, inName, keep) {
@@ -71,8 +80,9 @@ const Queue = {
     const back = off.findIndex(c => c.name === inName);
     const was = back < 0 ? Queue.seat(inName) : off.splice(back, 1)[0];
     const stats = c => ({ points: c.points, fgm: c.fgm ?? 0, fga: c.fga ?? 0, log: c.log ?? [] });
-    if (keep && !(seat.sub && !seat.points && !seat.fga)) off.push({ name: seat.name, team: seat.team, ...stats(seat) });
-    Object.assign(seat, { name: inName, ...stats(was), sub: true });
+    const undo = keep && seat.sub && !seat.points && !seat.fga;
+    if (keep && !undo) off.push({ name: seat.name, team: seat.team, ...stats(seat), half: !!seat.half });
+    Object.assign(seat, { name: inName, ...stats(was), sub: true, half: keep && !(undo && back >= 0 && !was.half) });
     game.satOut = game.satOut.filter(n => n !== inName);
   },
 
@@ -85,10 +95,17 @@ const Queue = {
   // A player's result in this game: 1 a win, 0 a loss, null on a tie.
   won: (game, c) => { const w = Queue.winner(game); return w === null ? null : c.team === w ? 1 : 0; },
 
-  // Count the game for everyone who played it: games, points, shots, and a win or a loss.
+  // Count the game for everyone who played it: games, points, shots, and a win or a loss. Turns go up
+  // by 1, or by half for both players in a mid-game sub (subbed off, or on court with half). A late
+  // arrival's first game puts them in the normal rotation: their turns rise to the fewest any other
+  // present player has, so the priority covers only that first game.
   endGame(players, game, now) {
+    const off = new Set((game.subbedOut ?? []).map(c => c.name));
+    const late = [];
     for (const c of Queue.played(game)) {
       const p = players.find(p => p.name === c.name);
+      p.turns = Queue.turn(p) + (off.has(c.name) || c.half ? 0.5 : 1);
+      if (p.late) { late.push(p); delete p.late; }
       p.games += 1;
       p.readyAt = now;
       p.totalPoints += c.points;
@@ -97,6 +114,8 @@ const Queue = {
       const won = Queue.won(game, c);
       if (won !== null) { p.wins = (p.wins ?? 0) + won; p.losses = (p.losses ?? 0) + 1 - won; }
     }
+    const level = Math.min(...players.filter(p => p.present && !late.includes(p)).map(Queue.turn));
+    for (const p of late) if (Number.isFinite(level) && level > p.turns) p.turns = level; // nobody else here: nothing to match
   },
 
   // Who Fill will call for the following game: end this game on a copy, then

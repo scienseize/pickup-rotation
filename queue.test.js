@@ -33,13 +33,19 @@ Queue.fill(players, game, 10);
 assert.equal(called(game), 'NHIJKLMABC');
 Queue.endGame(players, game, 300);
 
-// Order is game count, then check-in order; waiting time doesn't matter. P checked in first but
-// has been ready for less time than Q, and still goes first.
+// Order is game count, then longest wait. P checked in first but has been ready for less time
+// than Q (P just played), so Q goes first; R has fewer games and leads both.
 assert.equal(Queue.waitingOrder([
   { name: 'P', games: 1, readyAt: 900, present: true },
   { name: 'Q', games: 1, readyAt: 100, present: true },
   { name: 'R', games: 0, readyAt: 950, present: true },
-], newGame(1)).map(p => p.name).join(''), 'RPQ');
+], newGame(1)).map(p => p.name).join(''), 'RQP');
+// The same rule picks the next game: X and Y are tied at 1 game once this one ends, and Y, who
+// sat it out waiting, goes ahead of X, who is on court and checked in first.
+assert.equal(Queue.nextGame([
+  { name: 'X', games: 0, readyAt: 1, present: true, totalPoints: 0 },
+  { name: 'Y', games: 1, readyAt: 50, present: true, totalPoints: 0 },
+], { onCourt: [{ name: 'X', team: 'home', points: 0 }], satOut: [] }, 1, 100)[0].name, 'Y');
 
 // Sit out: no game counted, not re-called by Fill, not "passed over", leads next game.
 game = newGame(4);
@@ -102,7 +108,7 @@ assert.equal(Queue.leaderboard(lbPlayers, 'perGame', 2).find(r => r.player.name 
   g.onCourt[1].points = 6; // B
   Queue.sub(g, 'B', 'L', true);
   assert.equal(called(g), 'KLCDEFGHIJ');
-  assert.deepEqual(g.subbedOut, [{ name: 'B', team: 'home', points: 6, fgm: 0, fga: 0, log: [] }]);
+  assert.deepEqual(g.subbedOut, [{ name: 'B', team: 'home', points: 6, fgm: 0, fga: 0, log: [], half: false }]);
   const homeScore = () => Queue.played(g).filter(c => c.team === 'home').reduce((t, c) => t + c.points, 0);
   assert.equal(homeScore(), 6);
   Queue.sub(g, 'K', 'K', true); // already on court: nothing happens
@@ -135,7 +141,7 @@ assert.equal(Queue.leaderboard(lbPlayers, 'perGame', 2).find(r => r.player.name 
   g.onCourt.forEach((c, i) => { c.team = i < 5 ? 'home' : 'away'; });
   Object.assign(g.onCourt[0], { points: 5, fgm: 2, fga: 4, log: [2, 0, 3, 0] }); // A: 2 of 4
   Queue.sub(g, 'A', 'K', true);
-  assert.deepEqual(g.subbedOut[0], { name: 'A', team: 'home', points: 5, fgm: 2, fga: 4, log: [2, 0, 3, 0] });
+  assert.deepEqual(g.subbedOut[0], { name: 'A', team: 'home', points: 5, fgm: 2, fga: 4, log: [2, 0, 3, 0], half: false });
   assert.deepEqual([g.onCourt[0].fgm, g.onCourt[0].fga, g.onCourt[0].log], [0, 0, []]); // K starts clean
   g.onCourt[0].fga = 1; // K misses once
   Queue.sub(g, 'K', 'A', true); // A comes back with their shots; K played, so K keeps a row
@@ -170,6 +176,67 @@ assert.equal(Queue.leaderboard(lbPlayers, 'perGame', 2).find(r => r.player.name 
   Queue.endGame(ps, tie, 2000);
   assert.deepEqual(rec('A'), [0, 1]); // a tie adds neither
   assert.equal(ps.find(x => x.name === 'A').games, 2); // but the game counts
+}
+
+// Late arrivals: priority for their first game only, then the normal rotation. 14 at the start;
+// O and P arrive during game 2, Q during game 4. Each plays the next game, then waits like everyone
+// who just played: nobody plays two games in a row while someone present has played fewer.
+{
+  const ps = [...'ABCDEFGHIJKLMN'].map(join);
+  const games = [];
+  let t = 1000;
+  for (let n = 1; n <= 9; n++) {
+    const g = newGame(n);
+    Queue.fill(ps, g, 10);
+    games.push(called(g));
+    if (n === 2) ps.push({ ...join('O', ++t), late: true }, { ...join('P', ++t), late: true });
+    if (n === 4) ps.push({ ...join('Q', ++t), late: true });
+    Queue.endGame(ps, g, (t += 10));
+  }
+  const inGame = (name, n) => games[n - 1].includes(name);
+  assert.ok(inGame('O', 3) && inGame('P', 3) && !inGame('O', 4) && !inGame('P', 4), games.join(' '));
+  assert.ok(inGame('Q', 5) && !inGame('Q', 6), games.join(' '));
+  // After their first game a latecomer's turns match the fewest anyone else here has.
+  const counts = ps.map(Queue.turn);
+  assert.ok(Math.max(...counts) - Math.min(...counts) <= 1, counts.join());
+  assert.ok(ps.every(p => !p.late));
+  // games stays the stat: Q played 4 games (5, and three more in rotation), whatever their turns.
+  assert.equal(ps.find(p => p.name === 'Q').games, games.filter(g => g.includes('Q')).length);
+  // A late arrival with nobody else present keeps a plain count.
+  const solo = [{ ...join('Z', 1), late: true }];
+  const g = newGame(1);
+  Queue.fill(solo, g, 10);
+  Queue.endGame(solo, g, 2);
+  assert.equal(solo[0].turns, 1);
+}
+
+// Mid-game subs count half a game for both players in the rotation; games played stays whole.
+{
+  const ps = [...'ABCDEFGHIJKL'].map(join);
+  const g = newGame(1);
+  Queue.fill(ps, g, 10);
+  g.onCourt.forEach((c, i) => { c.team = i < 5 ? 'home' : 'away'; });
+  Queue.sub(g, 'A', 'K', true); // after the start: A off, K on
+  Queue.sub(g, 'B', 'L', false); // before the start (a plain swap): L plays the whole game
+  Queue.sub(g, 'C', 'B', true); // B comes on for C mid-game, then goes straight back: an undo
+  Queue.sub(g, 'B', 'C', true);
+  Queue.endGame(ps, g, 100);
+  const turn = n => Queue.turn(ps.find(p => p.name === n));
+  const played = n => ps.find(p => p.name === n).games;
+  assert.deepEqual(['A', 'K', 'L', 'C', 'B', 'D'].map(turn), [0.5, 0.5, 1, 1, 0, 1]);
+  assert.deepEqual(['A', 'K', 'L', 'C', 'B'].map(played), [1, 1, 1, 1, 0]);
+  // Half a turn sorts ahead of a whole one: A and K lead their tier next game.
+  const next = Queue.waitingOrder(ps, newGame(2)).map(p => p.name);
+  assert.deepEqual(next.slice(0, 3), ['B', 'A', 'K']);
+  // A subbed-off player who comes back on later in the game still counts half, as does the one leaving.
+  const g2 = newGame(2);
+  const qs = [...'ABCDEFGHIJK'].map(join);
+  Queue.fill(qs, g2, 10);
+  Queue.sub(g2, 'A', 'K', true);
+  g2.onCourt[0].points = 2; // K scores, so K's leaving is not an undo
+  Queue.sub(g2, 'K', 'A', true);
+  Queue.endGame(qs, g2, 200);
+  assert.deepEqual(['A', 'K'].map(n => Queue.turn(qs.find(p => p.name === n))), [0.5, 0.5]);
 }
 
 // Games saved before substitutions existed have no subbedOut list.
