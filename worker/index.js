@@ -1,12 +1,15 @@
-// Cloudflare Worker: organizer sign-in, the app's files and its API on D1.
-// Every request reaches this first (run_worker_first): only the home page (with the sign-in),
-// the logo, the tab icon, the sign-in page's scripts and POST /api/login are open. Everything else,
-// the app at /app included, needs a valid session cookie.
-import { Invalid, isJson, playersBody, gameBody, kindBody, liveBody, passcodeOk, signSession, sessionOk, SESSION_DAYS } from './rules.js';
+// Cloudflare Worker: the app's files and its API on D1, for guests and organizers.
+// Every request reaches this first (run_worker_first). Anyone gets the app's files and the guest view at
+// / (the app in read-only mode). The read-only API (profiles, history, tonight's totals) needs this week's
+// guest code (a guest cookie, from POST /api/guest) or an organizer session. The organizer app at /app, the
+// shared session (/api/live), the guest code itself and every write need the organizer session cookie, and
+// writes the passcode too.
+import { Invalid, isJson, cleanName, playersBody, gameBody, kindBody, liveBody, passcodeOk, signSession, sessionOk, SESSION_DAYS,
+  weekOf, weekEnds, guestCode, cleanCode, signGuest, guestOk } from './rules.js';
 
 const MAX_BODY = 1_000_000;
-const OPEN = new Set(['/', '/index.html', '/logo.png', '/favicon.png', '/theme.js', '/signin.js']);
-const cookie = (value, maxAge) => `session=${value}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
+const OPEN = new Set(['/logo.png', '/favicon.png', '/theme.js', '/app.js', '/queue.js', '/names.js', '/sw.js']); // the app's files: the guest view runs them too
+const cookie = (value, maxAge, name = 'session') => `${name}=${value}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
 
 const json = (status, body) => new Response(JSON.stringify(body), {
   status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
@@ -111,6 +114,21 @@ async function livePush(db, body, now) {
   return json(409, liveRow(await db.prepare(`${LIVE} WHERE id = ?`).bind(id).first()));
 }
 
+// Tonight for guests: the newest session's players, reduced to what a leaderboard needs. Who is expected,
+// the game on court and the laptops' ids stay private. The blob is pushed by the laptops and not checked
+// field by field, so every number is forced to a whole number and every name cleaned: guests get plain values.
+async function tonight(db) {
+  const row = await db.prepare(`${LIVE} ORDER BY id DESC LIMIT 1`).first();
+  if (!row) return null;
+  const state = JSON.parse(row.state);
+  const n = v => { const x = Math.trunc(Number(v)); return Number.isFinite(x) && x > 0 ? x : 0; };
+  const players = (Array.isArray(state.players) ? state.players : []).flatMap(p => {
+    try { return [{ name: cleanName(p?.name), games: n(p.games), totalPoints: n(p.totalPoints), fgm: n(p.fgm), fga: n(p.fga), wins: n(p.wins), losses: n(p.losses), present: p.present === true }]; }
+    catch { return []; } // no usable name: left out
+  });
+  return { date: row.played_on, players };
+}
+
 // History: every night, newest first. Nights from before the sessions table exist only in results.
 async function sessionList(db) {
   const [{ results: games }, { results: live }] = await Promise.all([
@@ -161,53 +179,91 @@ async function login(request, env, now) {
   return res;
 }
 
+// The guest code buys this device a guest cookie for the rest of the week. GUEST_LIMIT (30 tries a minute
+// per address: a gym full of phones shares one) slows guessing; it is absent in local dev.
+async function guestIn(request, env, now) {
+  if (!isJson(request)) return json(415, { error: 'send JSON' });
+  if (env.GUEST_LIMIT) {
+    const { success } = await env.GUEST_LIMIT.limit({ key: request.headers.get('CF-Connecting-IP') || 'unknown' });
+    if (!success) return json(429, { error: 'too many tries' });
+  }
+  const [err, body] = await readJson(request);
+  if (err) return err;
+  if (!env.SESSION_SECRET || !env.ORGANIZER_PASSCODE) return json(500, { error: 'guest codes are not set up' });
+  const week = weekOf(now), code = await guestCode(env.ORGANIZER_PASSCODE, env.SESSION_SECRET, week);
+  if (!(await passcodeOk(`Bearer ${cleanCode(body?.code)}`, code))) return json(401, { error: 'wrong code' }); // constant time
+  return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store',
+    'Set-Cookie': cookie(await signGuest(env.ORGANIZER_PASSCODE, env.SESSION_SECRET, week), Math.ceil((weekEnds(week) - now) / 1000), 'guest') } });
+}
+
+// Player names and stats are for the club (guest code), and not for search engines either.
 export default {
   async fetch(request, env) {
-    const url = new URL(request.url), path = url.pathname, now = Date.now();
-    const signedIn = () => sessionOk(request.headers.get('Cookie'), env.ORGANIZER_PASSCODE, now, env.SESSION_SECRET);
-    // A signed-in device skips the sign-in page and opens the app's Home tab.
-    if (request.method === 'GET' && (path === '/' || path === '/index.html') && await signedIn()) {
-      return Response.redirect(new URL('/app', url).href, 302);
-    }
-    if (request.method === 'GET' && OPEN.has(path)) return asset(request, env);
-    if (path === '/login' || path === '/login.html') return Response.redirect(new URL('/', url).href, 302); // the old sign-in address
-    if (request.method === 'POST' && path === '/api/login') return login(request, env, now);
-    if (request.method === 'POST' && path === '/api/logout') {
-      const site = request.headers.get('Sec-Fetch-Site'); // a cross-site page can't sign you out
-      if (site && site !== 'same-origin' && site !== 'none') return json(403, { error: 'forbidden' });
-      return new Response(null, { status: 204, headers: { 'Set-Cookie': cookie('', 0), 'Cache-Control': 'no-store' } });
-    }
-    if (!(await signedIn())) {
-      return path.startsWith('/api/') ? json(401, { error: 'sign in' }) : Response.redirect(new URL('/?signin', url).href, 302);
-    }
-    if (!path.startsWith('/api/')) return asset(request, env);
-    if (request.method === 'GET' && path === '/api/session') return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } }); // the home page asks: signed in?
-
-    if (request.method === 'GET' && path === '/api/profiles') return json(200, await profiles(env.DB));
-    if (request.method === 'GET' && path === '/api/live') return liveGet(env.DB, url);
-    if (request.method === 'GET' && path === '/api/sessions') return json(200, await sessionList(env.DB));
-    if (request.method === 'GET' && path.startsWith('/api/sessions/')) {
-      const id = path.slice(14);
-      if (!/^\d{1,16}$/.test(id)) return json(400, { error: 'session id must be a number' });
-      const detail = await sessionDetail(env.DB, Number(id));
-      return detail ? json(200, detail) : json(404, { error: 'no such session' });
-    }
-    if (request.method !== 'POST' || !['/api/players', '/api/results', '/api/results/fix', '/api/kind', '/api/live'].includes(path)) {
-      return json(404, { error: 'not found' });
-    }
-    if (!isJson(request)) return json(415, { error: 'send JSON' });
-    if (!(await passcodeOk(request.headers.get('Authorization'), env.ORGANIZER_PASSCODE))) {
-      return json(401, { error: 'passcode needed' });
-    }
-    const [err, body] = await readJson(request);
-    if (err) return err;
-    try {
-      if (path === '/api/live') return await livePush(env.DB, body, now);
-      await write(env.DB, path, body);
-    } catch (e) {
-      if (e instanceof Invalid) return json(400, { error: e.message });
-      throw e;
-    }
-    return json(200, await profiles(env.DB));
+    const res = await route(request, env);
+    const out = new Response(res.body, res); // a redirect's headers can't be changed in place
+    out.headers.set('X-Robots-Tag', 'noindex');
+    return out;
   },
 };
+
+async function route(request, env) {
+  const url = new URL(request.url), path = url.pathname, now = Date.now();
+  const signedIn = () => sessionOk(request.headers.get('Cookie'), env.ORGANIZER_PASSCODE, now, env.SESSION_SECRET);
+  const get = request.method === 'GET';
+  // The home page: a signed-in device opens the organizer app; anyone else gets the guest view,
+  // which is the app's page in read-only mode (it reads the path).
+  if (get && (path === '/' || path === '/index.html')) {
+    return await signedIn() ? Response.redirect(new URL('/app', url).href, 302) : asset(new Request(new URL('/app', url), request), env);
+  }
+  if (get && OPEN.has(path)) return asset(request, env);
+  if (request.method === 'POST' && path === '/api/guest') return guestIn(request, env, now);
+  // The read-only API: this week's guests and organizers.
+  const reader = async () => (await guestOk(request.headers.get('Cookie'), env.ORGANIZER_PASSCODE, now, env.SESSION_SECRET)) || signedIn();
+  if (get && (['/api/profiles', '/api/tonight', '/api/sessions'].includes(path) || path.startsWith('/api/sessions/'))) {
+    if (!(await reader())) return json(401, { error: 'guest code needed' });
+  }
+  if (get && path === '/api/profiles') return json(200, await profiles(env.DB));
+  if (get && path === '/api/tonight') { const t = await tonight(env.DB); return t ? json(200, t) : new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } }); }
+  if (get && path === '/api/sessions') return json(200, await sessionList(env.DB));
+  if (get && path.startsWith('/api/sessions/')) {
+    const id = path.slice(14);
+    if (!/^\d{1,16}$/.test(id)) return json(400, { error: 'session id must be a number' });
+    const detail = await sessionDetail(env.DB, Number(id));
+    return detail ? json(200, detail) : json(404, { error: 'no such session' });
+  }
+  if (path === '/login' || path === '/login.html') return Response.redirect(new URL('/', url).href, 302); // the old sign-in address
+  if (request.method === 'POST' && path === '/api/login') return login(request, env, now);
+  if (request.method === 'POST' && path === '/api/logout') {
+    const site = request.headers.get('Sec-Fetch-Site'); // a cross-site page can't sign you out
+    if (site && site !== 'same-origin' && site !== 'none') return json(403, { error: 'forbidden' });
+    return new Response(null, { status: 204, headers: { 'Set-Cookie': cookie('', 0), 'Cache-Control': 'no-store' } });
+  }
+  if (!(await signedIn())) {
+    return path.startsWith('/api/') ? json(401, { error: 'sign in' }) : Response.redirect(new URL('/?signin', url).href, 302);
+  }
+  if (!path.startsWith('/api/')) return asset(request, env);
+  if (get && path === '/api/session') return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } }); // the guest view asks: signed in?
+  if (get && path === '/api/live') return liveGet(env.DB, url);
+  // This week's guest code, for the organizers' Home tab, and when it changes.
+  if (get && path === '/api/guest-code') {
+    const week = weekOf(now);
+    return json(200, { code: await guestCode(env.ORGANIZER_PASSCODE, env.SESSION_SECRET, week), until: weekEnds(week) });
+  }
+  if (request.method !== 'POST' || !['/api/players', '/api/results', '/api/results/fix', '/api/kind', '/api/live'].includes(path)) {
+    return json(404, { error: 'not found' });
+  }
+  if (!isJson(request)) return json(415, { error: 'send JSON' });
+  if (!(await passcodeOk(request.headers.get('Authorization'), env.ORGANIZER_PASSCODE))) {
+    return json(401, { error: 'passcode needed' });
+  }
+  const [err, body] = await readJson(request);
+  if (err) return err;
+  try {
+    if (path === '/api/live') return await livePush(env.DB, body, now);
+    await write(env.DB, path, body);
+  } catch (e) {
+    if (e instanceof Invalid) return json(400, { error: e.message });
+    throw e;
+  }
+  return json(200, await profiles(env.DB));
+}

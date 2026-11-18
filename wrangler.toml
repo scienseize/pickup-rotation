@@ -15,6 +15,12 @@ name = "LOGIN_LIMIT"
 namespace_id = "1001"
 simple = { limit = 5, period = 60 }
 
+# Slows guest-code guessing: 30 tries a minute per address, since a gym full of phones shares one.
+[[ratelimits]]
+name = "GUEST_LIMIT"
+namespace_id = "1002"
+simple = { limit = 30, period = 60 }
+
 [[d1_databases]]
 binding = "DB"
 database_name = "pickup"

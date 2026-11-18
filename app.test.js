@@ -822,6 +822,126 @@ assert.notEqual(run(`state.startedAt`), 200);
   assert.equal(run(`isNew('Stranger')`), false);
   run(`profiles = savedProfiles; state.players = state.players.filter(p => !['Rook', 'Vet'].includes(p.name))`);
 
+  // The shared copy is pushed by other laptops and its numbers aren't checked on the server: tidy() turns
+  // them into numbers, so markup pushed into one is never drawn.
+  {
+    const keep = run(`JSON.stringify(state)`), st = JSON.parse(keep);
+    st.game.number = '<img src=n>';
+    if (st.game.onCourt[0]) st.game.onCourt[0].points = '<img src=p>';
+    st.players[0].totalPoints = '<img src=t>';
+    st.players[0].games = '<img src=g>';
+    run(`state = tidy(${JSON.stringify(st)}); leaderMode = 'tonight'; render(); renderLeaders()`);
+    for (const [id, el] of Object.entries(els)) {
+      const html = el.innerHTML;
+      if (typeof html === 'string') assert.doesNotMatch(html, /<img src=/, id);
+    }
+    assert.equal(run(`typeof state.players[0].totalPoints`), 'number');
+    run(`state = tidy(${keep}); render()`);
+  }
+
+  // Home shows this week's guest code for organizers to read out, fetched once a week is over.
+  reply = path => (path === '/api/guest-code' ? { status: 200, json: { code: 'XYZ789', until: Date.now() + 864e5 } } : { status: 204 });
+  run(`guestCodeInfo = null`);
+  await run(`loadGuestCode()`);
+  assert.equal(els.guestCodeText.textContent, 'XYZ789');
+  assert.match(els.guestCodeNote.textContent, /^Changes /);
+  calls();
+  await run(`loadGuestCode()`); // still this week's: not fetched again
+  assert.equal(calls().length, 0);
+  run(`guestCodeInfo.until = Date.now() - 1; renderHome()`); // the week is over and no new one yet
+  assert.equal(els.guestCodeText.textContent, '------');
+
   context.location.protocol = 'file:';
+
+  // The guest view: the same script at /, read-only. Only Leaderboard and History; no shared session,
+  // no saved session, no writes; tonight and the profiles from the public API every 30 seconds; and a
+  // sign-in for organizers that posts the passcode to /api/login.
+  {
+    const gEls = {}, gStore = new Map(), timers = [], gFetched = [];
+    let loginOk = false, assigned = null, hasCode = false, prompts = 0;
+    gEls.guestDlg = fake(); gEls.guestDlg.open = false; gEls.guestDlg.showModal = () => { prompts++; };
+    gEls.passDlg = fake(); gEls.passDlg.open = false;
+    const tabObjs = ['home', 'checkin', 'queue', 'board', 'leaders', 'history'].map(tab => {
+      const t = fake(); t.dataset.tab = tab; t.hidden = false; t.sel = tab === 'home'; // as in the markup: Home selected
+      t.setAttribute = (k, v) => { if (k === 'aria-selected') t.sel = String(v) === 'true'; };
+      return t;
+    });
+    gEls.island = fake();
+    gEls.island.querySelectorAll = sel => (sel === '[role="tab"]' ? tabObjs : []);
+    const answer = path => path === '/api/session' ? { status: 401 }
+      : (path === '/api/tonight' || path === '/api/profiles' || path === '/api/sessions') && !hasCode ? { status: 401 }
+      : path === '/api/guest' ? { status: hasCode ? 204 : 401 }
+      : path === '/api/tonight' ? { status: 200, json: { date: '2026-11-19', players: [{ name: 'Ana', games: 2, totalPoints: 9, fgm: 4, fga: 8, wins: 1, losses: 1, present: true }] } }
+      : path === '/api/profiles' ? { status: 200, json: [{ name: 'Ana', kind: 'UG', games: 5, points: 30, avg: 6, fgm: 10, fga: 20, wins: 3, losses: 2 }] }
+      : path === '/api/login' ? { status: loginOk ? 200 : 401, json: [] } : { status: 404 };
+    const g = vm.createContext({
+      console, Proxy, Date, JSON, Math, Map, Set, Promise, Error, String, Number, Boolean, Array, Object, Symbol, URLSearchParams,
+      module: undefined,
+      document: { getElementById: id => (gEls[id] ??= fake()), querySelector: () => fake(), querySelectorAll: () => [], addEventListener() {},
+        documentElement: { dataset: { theme: 'dark' } }, activeElement: null, fullscreenElement: null, hidden: false },
+      window: { addEventListener() {}, scrollTo() {} },
+      localStorage: { getItem: k => gStore.get(k) ?? null, setItem: (k, v) => gStore.set(k, String(v)), removeItem: k => gStore.delete(k) },
+      location: { protocol: 'http:', pathname: '/', hash: '', search: '', assign: url => { assigned = url; }, replace: url => { assigned = url; } },
+      history: { replaceState() {} }, navigator: {}, CSS: { escape: x => x }, confirm: () => true,
+      setInterval: (fn, ms) => timers.push(ms), setTimeout() {}, requestAnimationFrame() {},
+      fetch: async (path, init = {}) => {
+        gFetched.push({ path, method: init.method ?? 'GET', body: init.body });
+        if (path === '/api/guest') hasCode = JSON.parse(init.body).code === 'good12';
+        const r = answer(path); return { status: r.status, ok: r.status < 400, json: async () => r.json }; },
+    });
+    for (const file of ['public/names.js', 'public/queue.js', 'public/app.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), g, { filename: file });
+    const grun = code => vm.runInContext(code, g);
+    await settle(); await settle();
+    // No guest code yet: asked once, the leaderboard says so (with a way back to the prompt), and
+    // nothing more is fetched until the code is in.
+    assert.equal(prompts, 1);
+    assert.equal(grun(`guestLocked`), true);
+    assert.match(gEls.leaderBoard.innerHTML, /needs this week's guest code[^]*data-action="askGuest"/);
+    const before = gFetched.length;
+    await grun(`guestRefresh()`);
+    assert.equal(gFetched.length, before);
+    assert.equal(grun(`act('askGuest')`), false); // a view action: it opens the prompt
+    assert.equal(prompts, 2);
+    // A wrong code says so and asks again; this week's unlocks and loads the leaderboard.
+    await grun(`guestEnter('nope')`);
+    assert.equal(gEls.guestMsg.textContent, "That isn't this week's code.");
+    assert.equal(grun(`guestLocked`), true);
+    await grun(`guestEnter('good12')`);
+    await settle();
+    assert.equal(grun(`guestLocked`), false);
+    assert.deepEqual(gFetched.filter(f => f.path === '/api/guest').map(f => JSON.parse(f.body).code), ['nope', 'good12']);
+    assert.deepEqual(grun(`TABS`), ['leaders', 'history']);
+    assert.equal(grun(`active`), 'leaders');
+    assert.deepEqual(tabObjs.filter(t => !t.hidden).map(t => t.dataset.tab), ['leaders', 'history']);
+    assert.deepEqual(tabObjs.filter(t => t.sel).map(t => t.dataset.tab), ['leaders']); // the hidden Home tab isn't left selected
+    assert.ok(timers.includes(30000) && !timers.includes(2000), timers.join()); // a slow refresh, and no 2-second poll
+    const paths = gFetched.map(f => f.path);
+    for (const p of ['/api/session', '/api/tonight', '/api/profiles']) assert.ok(paths.includes(p), p);
+    assert.ok(!paths.some(p => p.startsWith('/api/live')), paths.join());
+    assert.equal(grun(`state.players[0].name`), 'Ana'); // tonight, from the public API
+    assert.match(gEls.leaderBoard.innerHTML, /title="Ana"/);
+    grun(`actions.leaderMode('', 'alltime')`);
+    assert.match(gEls.leaderBoard.innerHTML, /title="Ana"/);
+    assert.doesNotMatch(gEls.leaderBoard.innerHTML, /data-action="pickKind"/); // types are read-only
+    assert.equal(grun(`act('fill')`), false);
+    assert.equal(grun(`act('checkIn', 'Bob')`), false);
+    assert.equal(grun(`act('pickKind', 'Ana')`), false);
+    assert.equal(grun(`pending.length`), 0);
+    assert.ok(!gStore.has('pickup-rotation-v1') && !gStore.has('pickup-pending'));
+    assert.doesNotMatch(grun(`sessionHtml(${JSON.stringify({ id: 5, date: '2026-11-06', participants: [], games: [{ game: 1, rows: [{ name: 'Ana', points: 2, fgm: 1, fga: 1, won: 1, team: 0 }, { name: 'Bo', points: 0, fgm: 0, fga: 1, won: 0, team: 1 }] }] })})`), /editGame/);
+    assert.equal(gEls.signinBtn.hidden, false);
+    assert.equal(gEls.dbDot.hidden, true);
+    // Sign in: a wrong passcode says so and stores nothing; the right one keeps it for writes and opens the app.
+    await grun(`guestSignIn('guess')`);
+    assert.equal(gEls.passMsg.textContent, 'Wrong passcode.');
+    assert.ok(!gStore.has('pickup-passcode') && assigned === null);
+    loginOk = true;
+    await grun(`guestSignIn('court-night')`);
+    const login = gFetched.filter(f => f.path === '/api/login');
+    assert.deepEqual(login.map(f => [f.method, JSON.parse(f.body).passcode]), [['POST', 'guess'], ['POST', 'court-night']]);
+    assert.equal(gStore.get('pickup-passcode'), 'court-night');
+    assert.equal(assigned, '/app');
+  }
+
   console.log('app.test.js: all checks passed');
 })();

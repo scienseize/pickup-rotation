@@ -30,6 +30,13 @@ const newGame = number => ({
 });
 const newSession = (now = Date.now()) => ({ players: [], game: newGame(1), expected: [], unsynced: [], kinds: [], seen: {}, startedAt: now, date: sessionDate(now) });
 
+// The guest view: the home page (/) for anyone not signed in. Leaderboard and History only, read-only,
+// refreshed every 30 seconds from the public API. The server enforces it; this only hides what can't work.
+const GUEST = location.pathname === '/' || location.pathname === '/index.html';
+const GUEST_MS = 30000; // slow on purpose: many phones at 2 s would use up the free plan's daily requests
+const VIEW_OPS = new Set(['leaderMode', 'leaderKind', 'goTab', 'theme', 'askGuest']); // the only actions a guest can run
+let guestLocked = false; // a guest without this week's code (none yet, or the week moved on)
+
 let fresh = true; // nothing was saved here: this laptop must join the server's session, never replace it
 let state = load();
 let saved = true;
@@ -57,6 +64,7 @@ let kindPick = null; // the player whose type picker is open
 let db = 'connecting'; // 'online' | 'offline' | 'locked' (needs the organizer passcode)
 
 function load() {
+  if (GUEST) return newSession(); // a guest never reads, or writes, a saved session
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
     if (s) { fresh = false; return tidy(s); }
@@ -72,13 +80,23 @@ function tidy(s) {
   const st = { expected: [], unsynced: [], kinds: [], seen: {}, startedAt: Date.now(), ...s };
   st.date ??= sessionDate(st.startedAt); // saved before sessions had a date
   seatTeams(st.game); // saved before every called player had a team
-  // Saved before shots were tracked: start everyone's shots at 0.
-  for (const c of [...st.game.onCourt, ...(st.game.subbedOut ?? [])]) Object.assign(c, { fgm: c.fgm ?? 0, fga: c.fga ?? 0, log: c.log ?? [] });
-  for (const p of st.players) Object.assign(p, { fgm: p.fgm ?? 0, fga: p.fga ?? 0, wins: p.wins ?? 0, losses: p.losses ?? 0 });
+  // Every count becomes a number: saved before shots were tracked (missing, so 0), and the shared copy is
+  // pushed by other laptops and not checked field by field on the server, so nothing but a number is
+  // ever drawn where a number goes (these aren't escaped).
+  const num = x => Number(x) || 0;
+  st.game.number = Math.max(1, num(st.game.number));
+  for (const c of [...st.game.onCourt, ...(st.game.subbedOut ?? [])]) {
+    Object.assign(c, { points: num(c.points), fgm: num(c.fgm), fga: num(c.fga), log: Array.isArray(c.log) ? c.log.map(num) : [] });
+  }
+  for (const p of st.players) {
+    Object.assign(p, { games: num(p.games), totalPoints: num(p.totalPoints), fgm: num(p.fgm), fga: num(p.fga), wins: num(p.wins), losses: num(p.losses), readyAt: num(p.readyAt) });
+    if (p.turns !== undefined) p.turns = num(p.turns); // absent: the queue uses games (Queue.turn)
+  }
   return st;
 }
 
 function save() {
+  if (GUEST) return;
   try { localStorage.setItem(KEY, JSON.stringify(state)); localStorage.setItem(PENDING_KEY, JSON.stringify(pending)); saved = true; }
   catch { saved = false; flash('Could not save. Changes will be lost if the page is refreshed.'); }
 }
@@ -151,10 +169,16 @@ const btn = (action, name, label, { arg = '', pressed, cls = 'o s', disabled } =
 
 // ---- tabs: the island. A tab hides every panel but its own and scrolls to the top ----
 
-const TABS = ['home', 'checkin', 'queue', 'board', 'leaders', 'history'];
+const TABS = GUEST ? ['leaders', 'history'] : ['home', 'checkin', 'queue', 'board', 'leaders', 'history'];
 const island = $('island'), thumb = island.querySelector('.island-thumb');
-const tabs = [...island.querySelectorAll('[role="tab"]')];
-let active = 'home';
+// A guest's island has two tabs. A hidden one is never the selected one: the markup selects Home, and
+// place() puts the highlight on whichever tab says it is selected.
+const tabs = [...island.querySelectorAll('[role="tab"]')].filter(t => {
+  t.hidden = !TABS.includes(t.dataset.tab);
+  if (t.hidden) t.setAttribute('aria-selected', 'false');
+  return !t.hidden;
+});
+let active = TABS[0];
 
 function place() {
   const b = island.querySelector('[aria-selected="true"]');
@@ -163,14 +187,15 @@ function place() {
   thumb.style.transform = `translateX(${b.offsetLeft}px)`;
 }
 function show(name) {
-  if (!TABS.includes(name)) name = 'home';
+  if (!TABS.includes(name)) name = TABS[0];
   const changed = name !== active;
   active = name;
   tabs.forEach(t => { const on = t.dataset.tab === name; t.setAttribute('aria-selected', on); t.tabIndex = on ? 0 : -1; });
-  TABS.forEach(id => { $(id).hidden = id !== name; });
+  document.querySelectorAll('.tabpanel').forEach(p => { p.hidden = p.id !== name; });
   place();
   island.querySelector('[aria-selected="true"]').scrollIntoView({ block: 'nearest', inline: 'nearest' });
   if (changed) window.scrollTo(0, 0);
+  if (name === 'home') loadGuestCode();
   if (name === 'checkin') renderTonight();
   if (name === 'leaders') renderLeaders();
   if (name === 'history') renderHistory();
@@ -209,10 +234,13 @@ const init = body => (body === undefined ? {} : {
   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${stored(PASS_KEY) || ''}` },
 });
 
+// A 401: an organizer is asked for the passcode, a guest for this week's guest code.
+function refused() { if (GUEST) lockGuest(); else { db = 'locked'; askPasscode(); } return new Locked(); }
+
 async function api(path, body) {
   if (location.protocol === 'file:') throw new Error('opened as a file');
   const res = await fetch(path, init(body));
-  if (res.status === 401) { db = 'locked'; askPasscode(); throw new Locked(); }
+  if (res.status === 401) throw refused();
   if (res.status === 400) throw new Rejected((await res.json()).error);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const list = await res.json();
@@ -235,7 +263,7 @@ function askPasscode() {
 async function liveFetch(path, body) {
   if (location.protocol === 'file:') throw new Error('opened as a file');
   const res = await fetch(path, init(body));
-  if (res.status === 401) { db = 'locked'; askPasscode(); throw new Locked(); }
+  if (res.status === 401) throw refused();
   if (!res.ok && res.status !== 409) throw new Error(`HTTP ${res.status}`);
   return { status: res.status, data: res.status === 204 ? null : await res.json() };
 }
@@ -289,6 +317,7 @@ const shared = () => liveId === state.startedAt && !pending.length;
 // Returns false when the action did nothing, so nothing is queued. Args must be plain JSON: adopt()
 // replays them on a newer copy, from the data alone.
 function act(op, a, b) {
+  if (GUEST && !VIEW_OPS.has(op)) return false; // read-only: nothing is changed, queued or pushed
   const game = state.game.number; // before the action: End game moves on to the next
   if (actions[op](a, b) === false) return false;
   if (op === 'newSession') { pending = []; fresh = false; } // the old session's changes mean nothing to the new one; this one is meant
@@ -592,6 +621,7 @@ const actions = {
     old.forEach(r => count(r, -1));
     rows.forEach(r => count(r, 1));
   },
+  askGuest() { openGuestDlg(); return false; }, // the guest view's way back to the code prompt
   // History's Edit: opens the game in the fix dialog. A view until it is saved.
   editGame(session, game) { openFix(histData.get(Number(session)), Number(game)); return false; },
   kindPosted(name, kind) {
@@ -789,6 +819,17 @@ function renderHome() {
     : started ? `Back to game ${g.number}` : ready() ? `Start game ${g.number}` : 'Fill the court';
   $('homeNext').dataset.arg = !present ? 'checkin' : started || ready() ? 'board' : 'queue';
   $('homeDate').textContent = `Session: ${dateLabel(state.date)}`;
+  const gc = guestCodeInfo?.until > Date.now() ? guestCodeInfo : null;
+  $('guestCodeText').textContent = gc ? gc.code : '------';
+  $('guestCodeNote').textContent = gc ? `Changes ${dateLabel(localDate(gc.until))}` : 'Needs a connection';
+}
+// This week's guest code (GET /api/guest-code, organizers only): shown on Home for players to type in.
+// Fetched again once the week it is for is over.
+let guestCodeInfo = null;
+async function loadGuestCode() {
+  if (GUEST || guestCodeInfo?.until > Date.now()) return;
+  try { guestCodeInfo = (await liveFetch('/api/guest-code')).data; } catch {}
+  renderHome();
 }
 
 // The Queue tab is this diagram, for the TV and the organizer alike: On court (Home, Away), then
@@ -985,7 +1026,7 @@ function renderLeaders() {
   const cell = (v, cls = 'r mono') => `<td class="${cls}">${v}</td>`;
   const big = v => cell(v, 'r pts');
   const row = ({ player: p, perGame: pg, fgPct, rank }) => `<tr class="${!rank ? 'un' : rank <= 3 ? `top p${rank}` : ''}">
-      <td class="n">${rank ?? ''}</td><td class="who"><div><b title="${esc(p.name)}">${esc(p.name)}</b>${all ? kindBtn(p.name) : kindTag(p.name)}</div></td>${cell(p.games, 'r mono gm')}${all
+      <td class="n">${rank ?? ''}</td><td class="who"><div><b title="${esc(p.name)}">${esc(p.name)}</b>${all && !GUEST ? kindBtn(p.name) : kindTag(p.name)}</div></td>${cell(p.games, 'r mono gm')}${all
       ? big(pg.toFixed(1)) + cell(p.totalPoints, 'r mono sub') + fgCell(p, fgPct) + cell(wl(p), 'r mono sub') + cell(decided(p) ? pct(p.wins, decided(p)) : '')
       : big(p.totalPoints) + cell(pg === null ? '' : pg.toFixed(1), 'r mono sub') + fgCell(p, fgPct) + cell(wl(p))}</tr>${
       all && kindPick === p.name ? `<tr class="pickrow"><td colspan="8">${kindPicker(p.name)}</td></tr>` : ''}`;
@@ -1001,7 +1042,8 @@ function renderLeaders() {
   const lb = $('leaderBoard');
   lb.className = `wide lb${k > 1 ? ' split' : ''}${k > 2 ? ' split3' : ''}`;
   lb.style.setProperty('--k', k);
-  lb.innerHTML = all && !profiles.size ? '<p class="empty">All-time stats need the database. Check the dot in the top bar.</p>'
+  lb.innerHTML = GUEST && guestLocked ? `<p class="empty">The leaderboard needs this week's guest code. Ask an organizer for it.</p><div class="btns">${btn('askGuest', '', 'Enter the code', { cls: 's' })}</div>`
+    : all && !profiles.size ? '<p class="empty">All-time stats need the database. Check the dot in the top bar.</p>'
     : !rows.length ? `<p class="empty">${leaderKind !== 'all' ? `No ${kindLabel(leaderKind)} players here yet.` : all ? 'No games in the database yet.' : 'No players yet.'}</p>`
     : (!played.length ? '<p class="empty">No games played yet.</p>' : parts.map(table).join(''))
       + (notYet.length ? `<p class="rest">Not played yet: ${notYet.map(r => esc(r.player.name)).join(', ')}</p>` : '');
@@ -1048,7 +1090,7 @@ async function renderHistory() {
     box.innerHTML = data.length ? data.map(s => `<details class="dd" data-id="${esc(s.id)}"><summary>${esc(s.date)}<span class="mono">${
       esc(plural(s.players, 'player'))} · ${esc(plural(s.games, 'game'))}</span></summary><div class="hbody"></div></details>`).join('')
       : histNote('No sessions yet.');
-  } catch { box.innerHTML = histNote('History needs a connection.'); }
+  } catch (e) { box.innerHTML = histNote(e instanceof Locked && GUEST ? "History needs this week's guest code." : 'History needs a connection.'); }
 }
 // A session opens to its players (a table, with each one's totals for the night) and its games, each a
 // <details> headed by the result. A game lists its two sides, each sorted by points then name, with their
@@ -1075,7 +1117,7 @@ function sessionHtml(d) {
     const result = !sides ? plural(rows.length, 'player') : teamed ? `Home ${sum(sides[0][1])}, Away ${sum(sides[1][1])}` : `${sum(sides[0][1])}-${sum(sides[1][1])}`;
     return `<details class="dd"><summary>Game ${esc(g.game)} · ${esc(result)}</summary>${
       sides ? `<div class="sides">${sides.map(([label, list], i) => table(label, list, true, teamed && win < 0 ? ' tie' : i !== win ? '' : ` win${teamed ? ['', ' home', ' away'][i + 1] : ''}`)).join('')}</div>` : table('Player', top(rows), false)}${
-      d.id === undefined ? '' : `<div class="btns left">${btn('editGame', d.id, 'Fix this game', { arg: g.game })}</div>`}</details>`;
+      d.id === undefined || GUEST ? '' : `<div class="btns left">${btn('editGame', d.id, 'Fix this game', { arg: g.game })}</div>`}</details>`;
   };
   // Everyone who checked in, plus anyone in the results; one who never played has 0 games and dashes.
   const who = new Map([...d.participants, ...d.games.flatMap(g => g.rows.map(r => r.name))].map(n => [n, { games: 0, points: 0, fgm: 0, fga: 0, won: 0, lost: 0, kind: null }]));
@@ -1378,6 +1420,7 @@ $('dbDot').onclick = () => { if (db === 'locked') askPasscode(); else if (db !==
 $('passText').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('passDlg').close('save'); } });
 $('passDlg').addEventListener('close', () => {
   if ($('passDlg').returnValue !== 'save' || !$('passText').value) return;
+  if (GUEST) return guestSignIn($('passText').value);
   const passcode = $('passText').value;
   try { localStorage.setItem(PASS_KEY, passcode); } catch {}
   $('passText').value = '';
@@ -1398,10 +1441,103 @@ async function signOut() {
 // Keeps the page opening with no connection once it has loaded here (sw.js).
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 
+// ---- the guest view ----
+
+// Tonight's totals (GET /api/tonight: plain numbers, nothing private) and the all-time profiles.
+async function guestRefresh() {
+  if (document.hidden || guestLocked) return; // locked: nothing to fetch until the code is in
+  try {
+    const res = await fetch('/api/tonight', { cache: 'no-store' });
+    if (res.status === 401) throw refused();
+    if (res.status === 200) {
+      const t = await res.json();
+      state.players = t.players.map(p => ({ ...p, readyAt: 0 }));
+      state.date = t.date;
+    } else if (res.status === 204) state.players = [];
+    await api('/api/profiles');
+  } catch {} // offline: keep what is shown
+  if (active === 'leaders') renderLeaders();
+}
+// Organizers sign in from the guest view: the passcode buys this device's session, and is kept for
+// the app's writes, as the old sign-in page did. Wrong or too many tries: say so and ask again.
+async function guestSignIn(passcode) {
+  $('passText').value = '';
+  let msg = 'No connection. Signing in needs the internet.';
+  try {
+    const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode }) });
+    if (res.ok) {
+      try { localStorage.setItem(PASS_KEY, passcode); } catch {}
+      return location.assign('/app');
+    }
+    msg = res.status === 401 ? 'Wrong passcode.' : res.status === 429 ? 'Too many tries. Wait a minute, then try again.' : 'Could not sign in. Try again in a moment.';
+  } catch {}
+  $('passMsg').textContent = msg;
+  askPasscode();
+}
+// No code (or last week's): ask once, and say so on the leaderboard and in History, which also have a way
+// back to the prompt. Not while the organizer sign-in is open.
+function lockGuest() {
+  if (guestLocked) return;
+  guestLocked = true;
+  if (!$('passDlg').open) openGuestDlg();
+  renderLeaders();
+  if (active === 'history') renderHistory();
+}
+function openGuestDlg() {
+  if ($('guestDlg').open) return;
+  $('guestMsg').textContent = '';
+  $('guestText').value = '';
+  $('guestDlg').returnValue = '';
+  $('guestDlg').showModal();
+}
+// The code buys a guest cookie for the rest of the week (POST /api/guest).
+async function guestEnter(code) {
+  let msg = 'No connection. Try again in a moment.';
+  try {
+    const res = await fetch('/api/guest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+    if (res.ok) {
+      guestLocked = false;
+      await guestRefresh();
+      if (active === 'history') renderHistory();
+      return;
+    }
+    msg = res.status === 401 ? "That isn't this week's code." : res.status === 429 ? 'Too many tries. Wait a minute, then try again.' : 'Could not check the code. Try again in a moment.';
+  } catch {}
+  openGuestDlg();
+  $('guestMsg').textContent = msg;
+}
+$('guestText').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('guestDlg').close('enter'); } });
+$('guestDlg').addEventListener('close', () => { if ($('guestDlg').returnValue === 'enter' && $('guestText').value.trim()) guestEnter($('guestText').value); });
+
+function guestStart() {
+  $('signinBtn').hidden = false;
+  $('dbDot').hidden = true;
+  $('passTitle').textContent = 'Organizer sign in';
+  $('passNote').textContent = 'For organizers running the night. This laptop or phone stays signed in for 30 days.';
+  $('signinBtn').addEventListener('click', () => { $('passMsg').textContent = ''; askPasscode(); });
+  // Not signed in (else the server would have sent this device to /app): forget a passcode left from
+  // an expired sign-in. Signed in after all (an offline copy opened here): go to the organizer app.
+  fetch('/api/session', { cache: 'no-store' }).then(r => {
+    if (r.ok) location.replace('/app');
+    else if (r.status === 401) { try { localStorage.removeItem(PASS_KEY); } catch {} }
+  }).catch(() => {});
+  if (new URLSearchParams(location.search).has('signin')) { // sent here from /app: the session ran out
+    try { history.replaceState(null, '', '/' + location.hash); } catch {}
+    askPasscode();
+  }
+  guestRefresh(); // a guest without this week's code gets the prompt from the first 401
+  setInterval(guestRefresh, GUEST_MS);
+  document.addEventListener('visibilitychange', guestRefresh);
+}
+
 themeLabel();
 route();
 render();
-sync();
-poll(); // joins the shared session: takes the server's, or shares this laptop's if it is newer
-setInterval(poll, 2000);
-document.addEventListener('visibilitychange', poll);
+if (GUEST) guestStart();
+else {
+  loadGuestCode();
+  sync();
+  poll(); // joins the shared session: takes the server's, or shares this laptop's if it is newer
+  setInterval(poll, 2000);
+  document.addEventListener('visibilitychange', poll);
+}

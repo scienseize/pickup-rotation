@@ -3,6 +3,7 @@
 // database and no rate limiter (as in local dev), then a limiter that refuses.
 import assert from 'node:assert';
 import worker from './index.js';
+import { guestCode, weekOf, weekEnds } from './rules.js';
 
 const PASS = 'court-night-42';
 const served = [];
@@ -17,25 +18,62 @@ const post = (path, body, headers = {}) => at(path, {
   method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json', ...headers },
 });
 
-// Signed out: the app and its files send you home with the passcode form open, the API
-// refuses, and no file is handed out.
-for (const path of ['/app', '/app.html', '/app.js', '/sw.js', '/queue.js']) {
+// Signed out: the organizer app sends you to the guest view with the sign-in open; the shared session,
+// every write and (without this week's guest code) the read-only API refuse. The app's files are open.
+for (const path of ['/app', '/app.html']) {
   const res = await at(path);
   assert.equal(res.status, 302, path);
   assert.equal(res.headers.get('Location'), 'https://pickup.test/?signin', path);
 }
-assert.equal((await at('/api/profiles')).status, 401);
-assert.equal((await at('/api/session')).status, 401); // the home page shows the passcode box
-for (const path of ['/api/live', '/api/sessions', '/api/sessions/1']) assert.equal((await at(path)).status, 401, path);
+assert.equal((await at('/api/session')).status, 401); // the guest view: not signed in
+assert.equal((await at('/api/live')).status, 401);
+for (const path of ['/api/profiles', '/api/sessions', '/api/sessions/1', '/api/tonight', '/api/guest-code']) assert.equal((await at(path)).status, 401, path);
 assert.equal((await post('/api/players', { names: ['Ana'] }, { Authorization: `Bearer ${PASS}` })).status, 401); // the passcode alone is not a session
+for (const path of ['/api/results', '/api/results/fix', '/api/kind', '/api/live']) assert.equal((await post(path, {}, { Authorization: `Bearer ${PASS}` })).status, 401, path);
 assert.deepEqual(served, []);
+for (const path of ['/app.js', '/queue.js', '/names.js', '/sw.js', '/theme.js']) assert.equal((await at(path)).status, 200, path);
+assert.deepEqual(served, ['/app.js', '/queue.js', '/names.js', '/sw.js', '/theme.js']);
+served.length = 0;
+assert.equal((await at('/signin.js')).status, 302); // the old sign-in page's script is gone
 
 // The old sign-in address goes to the home page.
 for (const path of ['/login', '/login.html']) assert.equal((await at(path)).headers.get('Location'), 'https://pickup.test/', path);
 
-// The home page (it holds the sign-in), the logo and the tab icon are open.
-for (const path of ['/', '/index.html', '/logo.png', '/favicon.png']) assert.equal((await at(path)).status, 200, path);
-assert.deepEqual(served, ['/', '/index.html', '/logo.png', '/favicon.png']);
+// The home page is the guest view: the app's page, served for / (and the old /index.html). The logo
+// and the tab icon are open. Every answer asks search engines not to index it.
+for (const path of ['/', '/index.html', '/logo.png', '/favicon.png']) {
+  const res = await at(path);
+  assert.equal(res.status, 200, path);
+  assert.equal(res.headers.get('X-Robots-Tag'), 'noindex', path);
+}
+assert.deepEqual(served, ['/app', '/app', '/logo.png', '/favicon.png']);
+for (const res of [await at('/app'), await at('/api/live'), await at('/api/profiles')]) assert.equal(res.headers.get('X-Robots-Tag'), 'noindex');
+
+// The guest code: this week's buys a guest cookie that lasts until the code changes (Thursday 00:00,
+// UTC+8); a wrong one, last week's, or a form post gets nothing. Case and spaces don't matter.
+const WEEK = weekOf(Date.now()), CODE = await guestCode(PASS, env.SESSION_SECRET, WEEK);
+assert.match(CODE, /^[A-HJKMNP-Z2-9]{6}$/);
+assert.notEqual(await guestCode(PASS, env.SESSION_SECRET, WEEK + 1), CODE); // next week's differs
+for (const code of ['WRONG1', await guestCode(PASS, env.SESSION_SECRET, WEEK - 1), '', 42]) assert.equal((await post('/api/guest', { code })).status, 401, String(code));
+assert.equal((await at('/api/guest', { method: 'POST', body: `code=${CODE}`, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })).status, 415);
+const entered = await post('/api/guest', { code: ` ${CODE.slice(0, 3).toLowerCase()} ${CODE.slice(3)} ` });
+assert.equal(entered.status, 204);
+const guestSet = entered.headers.get('Set-Cookie');
+for (const part of ['guest=', 'HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/']) assert.ok(guestSet.includes(part), part);
+const maxAge = Number(guestSet.match(/Max-Age=(\d+)/)[1]);
+assert.ok(maxAge > 0 && maxAge <= Math.ceil((weekEnds(WEEK) - Date.now()) / 1000) + 1, String(maxAge)); // over when the code changes
+const guest = guestSet.split(';')[0];
+// A guest reads; they don't get the organizer app, the shared session, the code itself or any write.
+for (const path of ['/api/profiles', '/api/sessions']) assert.equal((await at(path, { headers: { Cookie: guest } })).status, 200, path);
+assert.equal((await at('/app', { headers: { Cookie: guest } })).status, 302);
+for (const path of ['/api/live', '/api/guest-code', '/api/session']) assert.equal((await at(path, { headers: { Cookie: guest } })).status, 401, path);
+for (const path of ['/api/players', '/api/results', '/api/kind', '/api/live']) assert.equal((await post(path, {}, { Cookie: guest, Authorization: `Bearer ${PASS}` })).status, 401, path);
+// A forged or tampered guest cookie, or one for another week, reads nothing.
+for (const bad of [guest + 'x', `guest=${WEEK - 1}.${guest.split('.')[1]}`, 'guest=abc']) assert.equal((await at('/api/profiles', { headers: { Cookie: bad } })).status, 401, bad);
+// Guessing is slowed by its own limit (a gym shares one address, so it is looser than sign-in's).
+env.GUEST_LIMIT = { limit: async () => ({ success: false }) };
+assert.equal((await post('/api/guest', { code: CODE })).status, 429);
+delete env.GUEST_LIMIT;
 
 // Files carry the CSP and nosniff; API answers carry nosniff.
 const home = await at('/');
@@ -43,7 +81,6 @@ assert.match(home.headers.get('Content-Security-Policy'), /script-src 'self'(;|$
 assert.equal(home.headers.get('X-Content-Type-Options'), 'nosniff');
 assert.equal(home.headers.get('Referrer-Policy'), 'same-origin');
 assert.equal((await at('/api/session')).headers.get('X-Content-Type-Options'), 'nosniff');
-for (const path of ['/theme.js', '/signin.js']) assert.equal((await at(path)).status, 200, path);
 
 // Sign in: a wrong passcode gets nothing; the right one gets a 30-day, script-proof cookie.
 assert.equal((await post('/api/login', { passcode: 'guess' })).status, 401);
@@ -58,10 +95,12 @@ assert.deepEqual(await ok.json(), []);
 const setCookie = ok.headers.get('Set-Cookie');
 for (const part of ['HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/', 'Max-Age=2592000']) assert.ok(setCookie.includes(part), part);
 const session = setCookie.split(';')[0];
+// Organizers see this week's code on Home, and when it changes.
+assert.deepEqual(await (await at('/api/guest-code', { headers: { Cookie: session } })).json(), { code: CODE, until: weekEnds(WEEK) });
 
 // Signed in: pages and data flow; writes still need the passcode as well.
 assert.equal((await at('/app', { headers: { Cookie: session } })).status, 200);
-for (const path of ['/', '/index.html']) { // a signed-in device skips the sign-in page
+for (const path of ['/', '/index.html']) { // a signed-in device skips the guest view
   const res = await at(path, { headers: { Cookie: session } });
   assert.equal(res.status, 302, path);
   assert.equal(res.headers.get('Location'), 'https://pickup.test/app', path);
@@ -142,6 +181,7 @@ const SID = 1793800000000;
 const poll = (id, v) => at(`/api/live?id=${id}&v=${v}`, { headers: { Cookie: session } });
 const push = (version, state = {}, id = SID) => post('/api/live', { id, date: '2026-11-06', version, state: { players: [{ name: 'Ana' }], game: { number: 1 }, ...state } }, org);
 assert.equal((await poll(0, 0)).status, 204); // no session yet
+assert.equal((await at('/api/tonight', { headers: { Cookie: guest } })).status, 204); // and nothing for guests either
 assert.equal((await post('/api/live', { id: SID, date: '2026-11-06', version: 0, state: { players: [] } }, { Cookie: session })).status, 401);
 assert.equal((await post('/api/live', { id: SID, date: '2026-11-06', version: 0, state: { players: 'Ana' } }, org)).status, 400);
 // A new id is created at version 1; a push built on the current version bumps it.
@@ -195,6 +235,20 @@ assert.deepEqual(await res.json(), { version: 2 });
 assert.equal((await (await get('/api/sessions')).json())[0].date, '2026-11-12');
 assert.equal((await get('/api/sessions/12345')).status, 404);
 for (const bad of ['abc', '1;DROP', '-1', '1.5']) assert.equal((await get(`/api/sessions/${bad}`)).status, 400, bad);
+
+// Guests with this week's code read history and tonight. Tonight is the newest session's players only, as
+// plain values: who is expected, the game and the laptops' ids stay private, and a number pushed as
+// markup comes back as 0; a player with no usable name is left out.
+assert.equal((await at(`/api/sessions/${SID}`, { headers: { Cookie: guest } })).status, 200);
+assert.equal((await at(`/api/sessions/${SID}`)).status, 401); // no code, no history
+res = await post('/api/live', { id: SID + 1, date: '2026-11-12', version: 2, state: {
+  players: [{ name: 'Ana', games: 2, totalPoints: '<b>x</b>', fgm: 3.7, fga: -4, wins: 1, losses: 0, present: true, turns: 2, readyAt: 9 }, { name: '' }, { games: 1 }],
+  expected: ['Secret Sam'], game: { number: 3, onCourt: [{ name: 'Ana' }] }, seen: { abc: 4 } } }, org);
+assert.equal(res.status, 200);
+assert.equal((await at('/api/tonight')).status, 401);
+res = await at('/api/tonight', { headers: { Cookie: guest } });
+assert.equal(res.status, 200);
+assert.deepEqual(await res.json(), { date: '2026-11-12', players: [{ name: 'Ana', games: 2, totalPoints: 0, fgm: 3, fga: 0, wins: 1, losses: 0, present: true }] });
 
 // Fixing a finished game (History's Edit): passcode needed; the game's rows are replaced in one
 // batch, each with its type, and no rows deletes the game. Other games are left alone.
