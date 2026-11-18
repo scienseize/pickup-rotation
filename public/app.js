@@ -1059,7 +1059,7 @@ const histData = new Map(); // session id -> its loaded detail, for Edit
 const rowTag = r => (r.kind ? kindSpan(r.kind) : kindTag(r.name));
 function sessionHtml(d) {
   const sum = rows => rows.reduce((t, r) => t + r.points, 0);
-  const table = (label, rows, total) => `<div class="tw"><table class="box"><thead><tr><th>${esc(label)}</th><th class="r">PTS</th><th class="r">FG</th></tr></thead><tbody>${
+  const table = (label, rows, total, cls = '') => `<div class="tw${cls}"><table class="box"><thead><tr><th>${esc(label)}</th><th class="r">PTS</th><th class="r">FG</th></tr></thead><tbody>${
     rows.map(r => `<tr><td>${esc(r.name)}${rowTag(r)}</td><td class="r mono">${esc(r.points)}</td><td class="r mono">${esc(r.fgm)}/${esc(r.fga)}</td></tr>`).join('')}${
     total ? `<tr><td><b>Total</b></td><td class="r mono"><b>${esc(sum(rows))}</b></td><td></td></tr>` : ''}</tbody></table></div>`;
   const top = rows => [...rows].sort((a, b) => b.points - a.points || byName(a.name, b.name));
@@ -1068,9 +1068,12 @@ function sessionHtml(d) {
     const teamed = rows.length && rows.every(r => r.team === 0 || r.team === 1);
     const decided = rows.length && rows.every(r => r.won === 0 || r.won === 1) && of('won', 1).length && of('won', 0).length;
     const sides = teamed ? [['Home', of('team', 0)], ['Away', of('team', 1)]] : decided ? [['Winners', of('won', 1)], ['Losers', of('won', 0)]] : null;
+    // The winning side gets a quiet highlight: its team's color, or green for Winners in older games. A tie, none.
+    const totals = sides?.map(([, list]) => sum(list)) ?? [];
+    const win = !sides ? -1 : !teamed ? 0 : totals[0] === totals[1] ? -1 : totals[0] > totals[1] ? 0 : 1;
     const result = !sides ? plural(rows.length, 'player') : teamed ? `Home ${sum(sides[0][1])}, Away ${sum(sides[1][1])}` : `${sum(sides[0][1])}-${sum(sides[1][1])}`;
     return `<details class="dd"><summary>Game ${esc(g.game)} · ${esc(result)}</summary>${
-      sides ? sides.map(([label, list]) => table(label, list, true)).join('') : table('Player', top(rows), false)}${
+      sides ? `<div class="sides">${sides.map(([label, list], i) => table(label, list, true, i !== win ? '' : ` win${teamed ? ['', ' home', ' away'][i + 1] : ''}`)).join('')}</div>` : table('Player', top(rows), false)}${
       d.id === undefined ? '' : `<div class="btns left">${btn('editGame', d.id, 'Fix this game', { arg: g.game })}</div>`}</details>`;
   };
   // Everyone who checked in, plus anyone in the results; one who never played has 0 games and dashes.

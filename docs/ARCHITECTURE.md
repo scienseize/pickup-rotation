@@ -424,7 +424,7 @@ fetches; the ones inside it do not). Inside are a collapsed *Players* table, in
 the leaderboard's style (games, points, FG, W-L for the night, worked out on the
 client; someone who never played shows dashes), and one collapsed `<details>` per
 game, headed by the result ("Game 3 · Home 21, Away 18", or the player count for
-older games). A game shows both teams with their points total when it was saved
+older games). A game shows both teams side by side (Home left, Away right; stacked on a phone; the winning side has a quiet tint and edge in its team color, or green for Winners in older games, and a tie has none) with their points total when it was saved
 with teams (`results.team`), and one list otherwise. Player types show beside
 names: the type saved with the game, or today's for rows saved before that.
 

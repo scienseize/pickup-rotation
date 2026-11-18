@@ -704,7 +704,7 @@ assert.notEqual(run(`state.startedAt`), 200);
   assert.match(html, /<b title="Ben &#60;b&#62;">[^]*?<td class="r mono">0-1<\/td>/);
   // Each game is its own <details>, headed by the result; the box score is inside.
   assert.equal((html.match(/<details class="dd">/g) || []).length, 3);
-  assert.match(html, /<summary>Game 1 · Home 11, Away 2<\/summary><div class="tw"><table class="box"><thead><tr><th>Home<\/th>[\s\S]*?<td>Ana<span class="kt k-ug"[\s\S]*?<td><b>Total<\/b><\/td><td class="r mono"><b>11<\/b><\/td>[\s\S]*?<th>Away<\/th>[\s\S]*?<td><b>Total<\/b><\/td><td class="r mono"><b>2<\/b>/);
+  assert.match(html, /<summary>Game 1 · Home 11, Away 2<\/summary><div class="sides"><div class="tw win home"><table class="box"><thead><tr><th>Home<\/th>[\s\S]*?<td>Ana<span class="kt k-ug"[\s\S]*?<td><b>Total<\/b><\/td><td class="r mono"><b>11<\/b><\/td>[\s\S]*?<th>Away<\/th>[\s\S]*?<td><b>Total<\/b><\/td><td class="r mono"><b>2<\/b>/);
   assert.match(html, /<summary>Game 2 · 2 players<\/summary><div class="tw"><table class="box"><thead><tr><th>Player<\/th>[^]*?<td>Old Timer<\/td>/); // no teams stored: one list, no totals
   assert.equal((html.match(/Total/g) || []).length, 2);
   assert.equal(details.dataset.shown, '1'); // opened once: not fetched again
@@ -743,6 +743,12 @@ assert.notEqual(run(`state.startedAt`), 200);
   assert.match(g, /^ · 21-18<\/summary>/); // winners' total first
   assert.match(g, /<th>Winners<\/th>[^]*?<b>21<\/b>[^]*?<th>Losers<\/th>[^]*?<b>18<\/b>/);
   assert.deepEqual(order(g), ['Bea', 'Cat', 'Al', 'Dan', 'Lo']);
+  assert.match(g, /<div class="tw win"><table class="box"><thead><tr><th>Winners/); // highlighted, in the neutral win color
+  assert.match(g, /<div class="tw"><table class="box"><thead><tr><th>Losers/);
+  // The winning side is highlighted in its team's color; a tied game highlights neither.
+  const teamed = (h, a) => gameOf([row('H', h, { team: 0 }), row('A', a, { team: 1 })]);
+  assert.match(teamed(4, 6), /<div class="tw"><table[^]*?<th>Home[^]*?<div class="tw win away"><table[^]*?<th>Away/);
+  assert.doesNotMatch(teamed(5, 5), /win/);
   g = gameOf([row('Zed', 2), row('Amy', 5), row('Bob', 5)]); // a tie: no teams and no winner
   assert.match(g, /^ · 3 players<\/summary>/);
   assert.match(g, /<th>Player<\/th>/);
