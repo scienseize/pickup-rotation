@@ -19,11 +19,11 @@ assert.equal(playersBody({ names: Array(1000).fill('Ana') }).length, 1000);
 // A finished game: whole points 0 to 200, rows as objects, a real date.
 const ok = { session: 1793700000000, date: '2026-11-04', game: 1, rows: [{ name: 'Ana', points: 10 }] };
 // A row from before FG, results and teams were tracked gets 0 of 0, no result and no team.
-assert.deepEqual(gameBody(ok), { ...ok, rows: [{ name: 'Ana', points: 10, fgm: 0, fga: 0, won: null, team: null }] });
+assert.deepEqual(gameBody(ok), { ...ok, rows: [{ name: 'Ana', points: 10, fgm: 0, fga: 0, won: null, team: null, kind: null }] });
 // Field goals: whole numbers, made no more than attempted, attempts at most 200.
 const shots = (fgm, fga) => gameBody({ ...ok, rows: [{ name: 'Ana', points: 10, fgm, fga }] }).rows[0];
-assert.deepEqual(shots(4, 9), { name: 'Ana', points: 10, fgm: 4, fga: 9, won: null, team: null });
-assert.deepEqual(shots(0, 3), { name: 'Ana', points: 10, fgm: 0, fga: 3, won: null, team: null });
+assert.deepEqual(shots(4, 9), { name: 'Ana', points: 10, fgm: 4, fga: 9, won: null, team: null, kind: null });
+assert.deepEqual(shots(0, 3), { name: 'Ana', points: 10, fgm: 0, fga: 3, won: null, team: null, kind: null });
 for (const [fgm, fga] of [[5, 4], [-1, 3], [1, -1], [1.5, 3], [1, '3'], [0, 201], [1, undefined]]) {
   rejects(() => shots(fgm, fga), `fgm ${fgm} fga ${fga}`);
 }
@@ -44,7 +44,14 @@ for (const points of [-1, 201, 2.5, '3', true]) rejects(() => gameBody({ ...ok, 
 rejects(() => gameBody({ ...ok, rows: { name: 'Ana', points: 1 } }));
 rejects(() => gameBody({ ...ok, rows: ['Ana'] }));
 rejects(() => gameBody({ ...ok, rows: Array(51).fill({ name: 'Ana', points: 1 }) }));
-assert.equal(gameBody({ ...ok, rows: Array(50).fill({ name: 'Ana', points: 1 }) }).rows.length, 50);
+assert.equal(gameBody({ ...ok, rows: Array.from({ length: 50 }, (_, i) => ({ name: `P${i}`, points: 1 })) }).rows.length, 50);
+// One row per player: the same name twice (any case) is refused.
+rejects(() => gameBody({ ...ok, rows: [{ name: 'Ana', points: 1 }, { name: 'ana', points: 2 }] }));
+// kind: the player's type at the time, optional, as null.
+const typed = kind => gameBody({ ...ok, rows: [{ name: 'Ana', points: 10, kind }] }).rows[0].kind;
+assert.equal(typed('SHS'), 'SHS');
+assert.equal(typed(undefined), null);
+for (const bad of ['Staff', 'ug', 1]) rejects(() => typed(bad), `kind ${bad}`);
 rejects(() => gameBody({ ...ok, date: '2026-02-31' }));
 rejects(() => gameBody({ ...ok, game: 0 }));
 

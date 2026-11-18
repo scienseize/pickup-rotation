@@ -52,13 +52,15 @@ const context = vm.createContext({
   navigator: {},
   CSS: { escape: s => s },
   confirm: () => true,
-  setInterval() {}, setTimeout() {},
+  setInterval() {}, setTimeout() {}, requestAnimationFrame() {},
   fetch: () => Promise.reject(new Error('offline')),
 });
 for (const file of ['public/names.js', 'public/queue.js', 'public/app.js']) {
   vm.runInContext(fs.readFileSync(file, 'utf8'), context, { filename: file });
 }
 const run = code => vm.runInContext(code, context);
+// Check in shows one list at a time; this reads To arrive and Here together.
+const bothLists = () => { const a = els.roster.innerHTML; run(`actions.rosterView()`); const b = els.roster.innerHTML; run(`actions.rosterView()`); return a + b; };
 
 // The first render ran with no errors. The Queue tab is the diagram: every box is selectable and
 // draggable, and it holds its own Full screen button.
@@ -70,20 +72,27 @@ assert.doesNotMatch(map, /data-action="fill"/); // the court is full
 assert.doesNotMatch(map, /\d+ min/); // no wait times: they don't affect the order
 assert.match(map, /data-zone="line"/);
 
-// Check in: a board of numbered columns (On court with Home and Away, Here, To arrive with Done at
+// Check in: one list at a time (Here, on court or not; To arrive with Done at
 // its foot), each with a count; rows sorted with numbers in order; each row its one button.
 run(`state.expected = ['Player A', 'Zed New', 'Abe New']; player('Player L').present = false; seatOf('Player A').team = 'away'; render();`);
-const roster = els.roster.innerHTML;
-const panels = [...roster.matchAll(/<span class="kn">(0\d)\.<\/span><h3>([^<]+)<\/h3><span class="kc">(\d+)<\/span>/g)].map(m => `${m[1]} ${m[2]} ${m[3]}`);
-assert.deepEqual(panels, ['01 On court 10', '02 Here 1', '03 To arrive 2']);
+// One list at a time: To arrive first, with a button to Here; the test reads both.
+assert.match(els.roster.innerHTML, /data-arg="arrive" aria-pressed="true">To arrive · 2<[\s\S]*data-arg="here" aria-pressed="false">Here · 11</);
+const arriveView = els.roster.innerHTML;
+run(`actions.rosterView()`);
+assert.match(els.roster.innerHTML, /data-arg="here" aria-pressed="true">Here · 11</);
+const roster = els.roster.innerHTML + arriveView;
+run(`actions.rosterView()`);
+const panels = [...roster.matchAll(/<span class="kn">(0\d)\.<\/span><h3>([^<]+)<\/h3>[\s\S]*?<span class="kc">(\d+)<\/span>/g)].map(m => `${m[1]} ${m[2]} ${m[3]}`);
+assert.deepEqual(panels, ['01 Here 11', '02 To arrive 2']);
 const subs = [...roster.matchAll(/<p class="sech">(?:<[^>]+><\/i>)?([^<]+)<span>(\d+)<\/span>/g)].map(m => `${m[1]} ${m[2]}`);
-assert.deepEqual(subs, ['Home 4', 'Away 6', 'Done for the night 1']);
+assert.deepEqual(subs, ['Done for the night 1']);
 assert.equal((roster.match(/class="rrow"/g) || []).length, 14); // Player A appears once, not twice
 const section = k => { const i = roster.indexOf(`s-${k}"`), j = roster.indexOf('<div class="sec ', i); return roster.slice(i, j < 0 ? undefined : j); };
-assert.match(section('away'), /class="kt unset"[\s\S]*?Type<\/button><b>Player A<\/b><small>0g<\/small><\/div>/); // on court: details only
-assert.match(section('here'), /<b>Player K<\/b><small>0g<\/small><button class="btn o s" data-action="done"/);
+assert.match(section('here'), /class="kt unset"[\s\S]*?Type<\/button><b>Player A<\/b><\/div>/); // on court: listed under Here, details only
+assert.doesNotMatch(roster, /On court/);
+assert.match(section('here'), /<b>Player K<\/b><button class="btn o s" data-action="done"/);
 assert.match(section('arrive'), /<b>Abe New<\/b><button class="btn s" data-action="checkIn"[\s\S]*<b>Zed New<\/b>/); // A to Z
-assert.match(section('done'), /<b>Player L<\/b><small>0g<\/small><button class="btn o s" data-action="undoDone"/);
+assert.match(section('done'), /<b>Player L<\/b><button class="btn o s" data-action="undoDone"/);
 run(`seatOf('Player A').team = 'home';`);
 assert.equal(run(`byName('Test 2', 'Test 10')`) < 0, true); // numbers sort in order
 // Done takes a player out of the queue; Undo puts them back.
@@ -156,6 +165,17 @@ assert.equal(run(`nextLineup(Date.now()).length`), 10);
 assert.equal(run(`nextLineup(Date.now()).filter(x => x.team === 'home').length`), 5);
 context.dropOn('Player D', 'next', onto('Player M', 'court'));
 assert.ok(court().includes('Player D') && !court().includes('Player M'));
+// An edited lineup keeps only the edits, not all ten names: N checks in late with no games and
+// still makes Up next ahead of players on court, while M (put in by hand) stays and the player M
+// replaced stays out.
+const savedPlan = run(`JSON.stringify(state.game.plan)`);
+const bumped = run(`nextLineup(Date.now()).map(x => x.name).find(n => seatOf(n))`);
+context.dropOn('Player M', 'wait', onto(bumped, 'next'));
+run(`state.players.push({ name: 'Player N', games: 0, readyAt: Date.now(), present: true, totalPoints: 0 }); render();`);
+assert.ok(lineup().includes('Player N:') && lineup().includes('Player M:') && !lineup().includes(bumped + ':'), lineup());
+assert.equal(run(`nextLineup(Date.now()).length`), 10);
+assert.equal(run(`nextLineup(Date.now()).filter(x => x.team === 'home').length`), 5);
+run(`state.players.pop(); state.game.plan = ${savedPlan}; render();`);
 const planned = lineup();
 
 // Scoring in field goals: Miss, +2, +3, Undo (no +1 or -1). B misses, makes a 2 and a 3, then
@@ -190,8 +210,8 @@ assert.equal(sent.length, 10);
 assert.equal(sent.find(r => r.name === 'Player A').points, 6);
 // Home (A's 6, B's 2) beat Away (nothing): Home's rows say won 1, Away's won 0.
 // Each row also says which side the player was on: 0 home, 1 away.
-assert.deepEqual(sent.find(r => r.name === 'Player B'), { name: 'Player B', points: 2, fgm: 1, fga: 2, won: 1, team: 0 });
-assert.deepEqual(sent.find(r => r.name === 'Player A'), { name: 'Player A', points: 6, fgm: 0, fga: 0, won: 1, team: 0 });
+assert.deepEqual(sent.find(r => r.name === 'Player B'), { name: 'Player B', points: 2, fgm: 1, fga: 2, won: 1, team: 0, kind: null });
+assert.deepEqual(sent.find(r => r.name === 'Player A'), { name: 'Player A', points: 6, fgm: 0, fga: 0, won: 1, team: 0, kind: null });
 assert.equal(sent.find(r => r.name === 'Player F').team, 1);
 assert.equal(sent.find(r => r.name === 'Player F').won, 0);
 assert.equal(run(`[player('Player A').wins, player('Player A').losses, player('Player F').wins, player('Player F').losses].join()`), '1,0,0,1');
@@ -224,6 +244,15 @@ assert.deepEqual(allRows, ['1Ben', '2Ana', '-Cy']); // Cy has 1 game: listed, no
 assert.match(allHtml, /Ana<\/b>[\s\S]*?<\/button><\/div><\/td><td class="r mono gm">4<\/td><td class="r pts">10\.0<\/td><td class="r mono sub">40<\/td><td class="r mono fg" title="15 of 30 every week"><small>15\/30<\/small> 50%<\/td><td class="r mono sub">3-1<\/td><td class="r mono">75%<\/td>/);
 assert.match(allHtml, /Ben<\/b>[\s\S]*?<td class="r mono fg few"/); // 2 of 4: too few attempts
 for (const h of ['PPG', 'Points', 'FG%', 'W-L', 'Win%']) assert.match(allHtml, new RegExp(`>${h}</th>`));
+// The type filter counts each game under the type it was played under (byKind): Ana played 3 games
+// as SHS and 1 as UG, so the SHS board shows her 3 SHS games and the UG board the 1.
+run(`profiles.get('ana').byKind = [{ kind: 'SHS', games: 3, points: 24, fgm: 9, fga: 20, wins: 2, losses: 1 }, { kind: 'UG', games: 1, points: 16, fgm: 6, fga: 10, wins: 1, losses: 0 }];
+  profiles.get('ben').byKind = [{ kind: 'UG', games: 3, points: 36, fgm: 2, fga: 4, wins: 0, losses: 0 }]; actions.leaderKind('', 'SHS')`);
+assert.match(els.leaderBoard.innerHTML, /Ana<\/b>[\s\S]*?<td class="r mono gm">3<\/td><td class="r pts">8\.0<\/td>/);
+assert.doesNotMatch(els.leaderBoard.innerHTML, /title="Ben"/);
+run(`actions.leaderKind('', 'UG')`);
+assert.deepEqual([...els.leaderBoard.innerHTML.matchAll(/<b title="([^"]+)"/g)].map(m => m[1]), ['Ben', 'Ana']); // Ana: 1 UG game, unranked
+run(`actions.leaderKind('', 'all'); delete profiles.get('ana').byKind; delete profiles.get('ben').byKind; renderLeaders()`);
 // Types work for anyone in the database, not just tonight's players: mark Ana from All-time.
 assert.match(allHtml, /data-action="pickKind" data-name="Ana"/);
 run(`actions.pickKind('Ana')`);
@@ -255,7 +284,7 @@ run(`actions.pickKind('Ana')`);
 // A type shows on every screen for someone playing: Check in, leaderboard, diagram, scoreboard.
 const onCourt1 = run(`state.game.onCourt.find(c => player(c.name).games).name`); // on the leaderboard's table
 run(`actions.setKind(${JSON.stringify(onCourt1)}, 'Outsider'); commit();`);
-assert.match(els.roster.innerHTML, new RegExp(`class="kt k-outsider"[^>]*>?[\\s\\S]{0,200}?Vis</button><b>${onCourt1}</b>`));
+assert.match(bothLists(), new RegExp(`class="kt k-outsider"[^>]*>?[\\s\\S]{0,200}?Vis</button><b>${onCourt1}</b>`));
 assert.match(els.leaderBoard.innerHTML, new RegExp(`${onCourt1}</b><span class="kt k-outsider" title="Visitor">Vis</span>`));
 assert.match(els.qmap.innerHTML, new RegExp(`data-p="${onCourt1}" data-src="court"[^]*?<span class="qsub"><span class="kt k-outsider" title="Visitor">Vis</span><small>`));
 assert.match(els.homePlayers.innerHTML + els.awayPlayers.innerHTML, new RegExp(`<b>${onCourt1}</b><span class="kt k-outsider" title="Visitor">Vis</span><small class="mono">`));
@@ -285,14 +314,14 @@ assert.equal(run(`seatOf(${JSON.stringify(first)}).team`), awaySide);
 
 // Undo a check-in: someone who hasn't played goes back to To arrive; anyone else stays.
 run(`state.players.push({ name: 'Oops New', games: 0, readyAt: 0, present: true, totalPoints: 0, fgm: 0, fga: 0, wins: 0, losses: 0 }); state.expected = state.expected.filter(n => n !== 'Oops New'); render();`);
-assert.match(els.roster.innerHTML, /data-action="uncheck"\s+data-name="Oops New"/);
+assert.match(bothLists(), /data-action="uncheck"\s+data-name="Oops New"/);
 run(`actions.uncheck('Oops New'); commit();`);
 assert.equal(els.msg.textContent, 'Oops New is back on To arrive.');
 assert.equal(run(`player('Oops New')`), undefined);
-assert.match(els.roster.innerHTML, /<b>Oops New<\/b><button class="btn s" data-action="checkIn"/);
+assert.match(bothLists(), /<b>Oops New<\/b><button class="btn s" data-action="checkIn"/);
 const veteran = run(`state.players.find(p => p.games && !seatOf(p.name))?.name`);
 if (veteran) {
-  assert.doesNotMatch(els.roster.innerHTML, new RegExp(`data-action="uncheck"\\s+data-name="${veteran}"`));
+  assert.doesNotMatch(bothLists(), new RegExp(`data-action="uncheck"\\s+data-name="${veteran}"`));
   assert.equal(run(`actions.uncheck(${JSON.stringify(veteran)})`), false);
   assert.ok(run(`player(${JSON.stringify(veteran)})`));
 }
@@ -664,7 +693,7 @@ assert.notEqual(run(`state.startedAt`), 200);
   const html = body.innerHTML, tag = '<span class="kt k-ug" title="UG">UG</span>';
   // The players are a table of their own, collapsed, with their totals for the night: by points, then
   // games, then name. Cy and Old Timer tie on both, so by name; Dee checked in and never played.
-  assert.match(html, /^<details class="dd"><summary>Players · 5<\/summary><div class="lb">/);
+  assert.match(html, /^<details class="dd"><summary>Players · 5<\/summary><div class="lb" style="--k:1">/);
   assert.deepEqual([...html.matchAll(/<b title="([^"]+)">/g)].map(m => m[1]), ['Ana', 'Cy', 'Old Timer', 'Ben &#60;b&#62;', 'Dee']); // names go through esc
   assert.doesNotMatch(html, /Ben <b>/);
   assert.match(html, /<th>Player<\/th><th class="r gm">Games<\/th><th class="r">Points<\/th><th class="r">FG<\/th><th class="r">W-L<\/th>/);
@@ -685,6 +714,47 @@ assert.notEqual(run(`state.startedAt`), 200);
   await onToggle({ target: nested });
   assert.equal(fetched.length, 0);
   assert.equal(body.innerHTML, html);
+  // The players table splits into columns of 10, in order down the first column and then the next, as
+  // the leaderboard splits (.lb.split, and split3 from three columns); each column has its own header.
+  const names = html => [...html.matchAll(/<b title="([^"]+)">/g)].map(m => m[1]);
+  const many = n => {
+    const rows = Array.from({ length: n }, (_, i) => ({ name: `P${String(i + 1).padStart(2, '0')}`, points: 40 - i, fgm: 0, fga: 0, won: null, team: null }));
+    const html = run(`sessionHtml(${JSON.stringify({ participants: [], games: [{ game: 1, rows: rows.reverse() }] })})`);
+    const players = html.slice(0, html.indexOf('</details>'));
+    return { cls: players.match(/<div class="(lb[^"]*)" style="--k:(\d)">/).slice(1), cols: players.split('<div class="tw">').slice(1).map(names), heads: players.match(/<thead>/g).length };
+  };
+  let split = many(11);
+  assert.deepEqual(split.cls, ['lb split', '2']);
+  assert.deepEqual(split.cols.map(c => c.length), [10, 1]);
+  assert.equal(split.heads, 2);
+  assert.equal(split.cols[0][0], 'P01'); // the order reads down the first column, then the second
+  assert.equal(split.cols[1][0], 'P11');
+  split = many(25);
+  assert.deepEqual(split.cls, ['lb split split3', '3']);
+  assert.deepEqual(split.cols.map(c => c.length), [10, 10, 5]);
+  assert.deepEqual(split.cols.flat(), Array.from({ length: 25 }, (_, i) => `P${String(i + 1).padStart(2, '0')}`));
+  assert.deepEqual(many(10).cls, ['lb', '1']); // one column: no split
+  // Inside a game the sides come first and each is sorted by points, then name, whatever order the rows
+  // arrive in. Games from before teams were kept are split by won (winners first); a tie has no sides.
+  const row = (name, points, extra) => ({ name, points, fgm: 0, fga: 0, won: null, team: null, ...extra });
+  const gameOf = rows => run(`sessionHtml(${JSON.stringify({ participants: [], games: [{ game: 3, rows }] })})`).split('<summary>Game 3')[1];
+  const order = html => [...html.matchAll(/<td>([^<]+)(?:<span[^>]*>[^<]*<\/span>)?<\/td><td class="r mono">\d+<\/td>/g)].map(m => m[1]);
+  let g = gameOf([row('Lo', 8, { won: 0 }), row('Cat', 9, { won: 1 }), row('Bea', 9, { won: 1 }), row('Dan', 10, { won: 0 }), row('Al', 3, { won: 1 })]);
+  assert.match(g, /^ · 21-18<\/summary>/); // winners' total first
+  assert.match(g, /<th>Winners<\/th>[^]*?<b>21<\/b>[^]*?<th>Losers<\/th>[^]*?<b>18<\/b>/);
+  assert.deepEqual(order(g), ['Bea', 'Cat', 'Al', 'Dan', 'Lo']);
+  g = gameOf([row('Zed', 2), row('Amy', 5), row('Bob', 5)]); // a tie: no teams and no winner
+  assert.match(g, /^ · 3 players<\/summary>/);
+  assert.match(g, /<th>Player<\/th>/);
+  assert.doesNotMatch(g, /Winners|Home|Total/);
+  assert.deepEqual(order(g), ['Amy', 'Bob', 'Zed']);
+  g = gameOf([row('Yan', 2, { won: 1 }), row('Zed', 5, { won: 1 })]); // every row a winner: not usable either
+  assert.match(g, /^ · 2 players<\/summary>/);
+  g = gameOf([row('Aw2', 1, { team: 1 }), row('Ho1', 2, { team: 0 }), row('Aw1', 6, { team: 1 }), row('Ho2', 9, { team: 0 })]);
+  assert.match(g, /^ · Home 11, Away 7<\/summary>/);
+  assert.match(g, /<th>Home<\/th>[^]*?<th>Away<\/th>/);
+  assert.deepEqual(order(g), ['Ho2', 'Ho1', 'Aw1', 'Aw2']);
+  assert.equal(order(gameOf([row('B', 4, { team: 0, won: 1 }), row('A', 4, { team: 0, won: 1 }), row('C', 1, { team: 1, won: 0 })]))[0], 'A'); // a team beats won, and ties go by name
   // Offline: one line, and it tries again next time.
   const shut = { open: true, dataset: { id: '5' }, querySelector: () => body };
   reply = () => ({ status: 500 });
@@ -693,6 +763,44 @@ assert.notEqual(run(`state.startedAt`), 200);
   assert.equal(shut.dataset.shown, undefined);
   await run(`renderHistory()`);
   assert.match(els.historyList.innerHTML, /<p class="empty">History needs a connection\.<\/p>/);
+
+  // A row keeps the type it was played under: Ana is UG on file now, but played game 1 as SHS.
+  const typed = run(`sessionHtml(${JSON.stringify({ id: 5, date: '2026-11-06', participants: [], games: [{ game: 1, rows: [{ name: 'Ana', points: 2, fgm: 1, fga: 1, won: null, team: null, kind: 'SHS' }] }] })})`);
+  assert.match(typed, /<td>Ana<span class="kt k-shs" title="SHS">SHS<\/span><\/td>/);
+  assert.match(typed, /<b title="Ana">Ana<\/b><span class="kt k-shs"/); // the players table too
+  assert.doesNotMatch(typed, /k-ug/);
+  // Each game in a loaded session can be fixed.
+  assert.match(typed, /data-action="editGame" data-name="5" data-arg="1">Fix this game</);
+
+  // fixGame: tonight's totals lose the old rows and gain the new ones, for players checked in tonight.
+  // A fix for another session changes nothing here.
+  run(`state.players = state.players.filter(p => !['Ana', 'Ben'].includes(p.name)).concat([
+    { name: 'Ana', games: 2, readyAt: 0, present: false, totalPoints: 9, fgm: 4, fga: 9, wins: 1, losses: 1 },
+    { name: 'Ben', games: 1, readyAt: 0, present: false, totalPoints: 0, fgm: 0, fga: 2, wins: 0, losses: 1 }])`);
+  const old = [{ name: 'Ana', points: 4, fgm: 2, fga: 5, won: 0, team: 0 }, { name: 'Visitor X', points: 6, fgm: 3, fga: 3, won: 1, team: 1 }];
+  const fixed = [{ name: 'ana', points: 2, fgm: 1, fga: 5, won: 1, team: 0 }, { name: 'Ben', points: 6, fgm: 3, fga: 3, won: 0, team: 1 }];
+  assert.equal(run(`act('fixGame', { session: state.startedAt + 1, old: ${JSON.stringify(old)} }, ${JSON.stringify(fixed)})`), false);
+  run(`act('fixGame', { session: state.startedAt, old: ${JSON.stringify(old)} }, ${JSON.stringify(fixed)})`);
+  assert.deepEqual(run(`JSON.stringify(state.players.filter(p => ['Ana', 'Ben'].includes(p.name)).map(({ name, games, totalPoints, fgm, fga, wins, losses }) => ({ name, games, totalPoints, fgm, fga, wins, losses })))`),
+    JSON.stringify([{ name: 'Ana', games: 2, totalPoints: 7, fgm: 3, fga: 9, wins: 2, losses: 0 }, { name: 'Ben', games: 2, totalPoints: 6, fgm: 3, fga: 5, wins: 0, losses: 2 }]));
+  assert.equal(run(`pending.at(-1)[0]`), 'fixGame'); // shared: the other laptops get it too
+  assert.ok(run(`SESSION_OPS.has('fixGame')`)); // and it still applies after the game moves on
+
+  // A sub after the start keeps the court locked through a clock reset with no score, so Fill and Pick
+  // can't call the subbed-off player back (they would be counted twice).
+  const saved = run(`JSON.stringify(state.game)`);
+  run(`state.game.started = false; state.game.onCourt.forEach(c => { c.points = 0; }); state.game.subbedOut = []`);
+  assert.equal(run(`locked()`), false);
+  run(`state.game.subbedOut = [{ name: 'Gone', team: 'home', points: 0, fgm: 0, fga: 0, log: [], half: false }]`);
+  assert.equal(run(`locked()`), true);
+  assert.equal(run(`act('fill')`), false);
+  // Check-in once play has begun marks a late arrival; before it, nobody is late.
+  run(`state.game.subbedOut = []; act('checkIn', 'Early Bird')`);
+  assert.equal(run(`player('Early Bird').late`), undefined);
+  run(`state.game.started = true; act('checkIn', 'Night Owl')`);
+  assert.equal(run(`player('Night Owl').late`), true);
+  assert.equal(run(`player('Night Owl').turns`), 0);
+  run(`state.game = JSON.parse(${JSON.stringify(saved)})`);
 
   context.location.protocol = 'file:';
   console.log('app.test.js: all checks passed');

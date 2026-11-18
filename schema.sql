@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS results (
   fga INTEGER NOT NULL DEFAULT 0, -- field goals attempted: makes plus misses
   won INTEGER CHECK (won IN (0, 1)), -- 1 a win, 0 a loss, NULL a tie (or played before results were kept)
   team INTEGER CHECK (team IN (0, 1)), -- 0 home, 1 away; NULL before teams were kept
+  kind TEXT CHECK (kind IN ('UG', 'SHS', 'Alumni', 'Outsider')), -- the player's type at the time; NULL: use players.kind
   UNIQUE (session, game, name)
 );
 -- The night every laptop shares (2026-11): one row per session, pushed by the app with a version.

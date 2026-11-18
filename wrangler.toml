@@ -1,5 +1,5 @@
 # Cloudflare Worker: organizer sign-in, then public/ and the API in worker/index.js on D1.
-name = "pickup-rotation"
+name = "hexagames"
 main = "worker/index.js"
 compatibility_date = "2025-06-01"
 

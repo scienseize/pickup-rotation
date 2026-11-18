@@ -45,7 +45,8 @@ export function kindBody(body) {
 // POST /api/results { session, date, game, rows: [{ name, points, fgm?, fga?, won?, team? }] }
 // fgm and fga (field goals made and attempted) are optional, as 0, and won (1 a win, 0 a loss,
 // null a tie) is optional, as null, so games saved by an older version of the app still sync.
-// team (0 home, 1 away) is optional, as null.
+// team (0 home, 1 away) is optional, as null, and so is kind (the player's type at the time).
+// A name may appear once: one row per player per game.
 export function gameBody(body) {
   const session = whole(body?.session, 0, 2 ** 53, 'session');
   const game = whole(body.game, 1, 1000, 'game');
@@ -59,8 +60,11 @@ export function gameBody(body) {
     if (won !== null && won !== 0 && won !== 1) throw new Invalid('won must be 1, 0 or null');
     const team = r.team ?? null;
     if (team !== null && team !== 0 && team !== 1) throw new Invalid('team must be 0, 1 or null');
-    return { name: cleanName(r.name), points: whole(r.points, 0, MAX_POINTS, 'points'), fgm, fga, won, team };
+    const kind = r.kind ?? null;
+    if (kind !== null && !KINDS.includes(kind)) throw new Invalid(`kind must be one of ${KINDS.join(', ')}, or null`);
+    return { name: cleanName(r.name), points: whole(r.points, 0, MAX_POINTS, 'points'), fgm, fga, won, team, kind };
   });
+  if (new Set(rows.map(r => r.name.toLowerCase())).size < rows.length) throw new Invalid('a player can be in a game only once');
   return { session, date, game, rows };
 }
 

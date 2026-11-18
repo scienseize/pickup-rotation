@@ -17,7 +17,8 @@ Goals:
    has not played their first. The same rule holds for the third game, fourth,
    and so on.
 2. **Late arrivals.** People are added only when they show up. A latecomer
-   jumps ahead of everyone who has already played.
+   jumps ahead of everyone who has already played, for their first game only;
+   after it they rotate like everyone else.
 3. **Scoreboard.** Two team scores and a 20:00 countdown in very large digits,
    readable from the court, with a buzzer at 0:00.
 4. **Per-player scoring.** The attendant credits each basket (+1, +2, +3) to
@@ -45,26 +46,37 @@ Goals:
 
 ## 3. Fairness rule (the core of the app)
 
-Each checked-in player carries two numbers:
+Each checked-in player carries these numbers:
 
 | Field     | Meaning                                                           |
 |-----------|-------------------------------------------------------------------|
-| `games`   | How many games this player has finished this session.            |
-| `readyAt` | When they became available: check-in time, or when their last game ended. Kept in the saved data; nothing uses it now. |
+| `turns`   | The rotation's count (`Queue.turn`): +1 per game, +0.5 for both players in a mid-game sub, and raised to the level of the others after a latecomer's first game. Players saved before it existed use `games`. |
+| `games`   | How many games this player has played this session: the stat, always whole. |
+| `readyAt` | When they became available: check-in time, or when their last game ended. Breaks ties between players with the same `turns`: the earlier one has waited longer. |
+| `late`    | Checked in once play had begun (after game 1, or once game 1 started). Cleared at the end of their first game. |
 
 **Calling the next game:** from all players who are present and not on court,
-sort by `games` ascending, with ties in check-in order, and take the first 10.
+sort by `turns` ascending, with ties to whoever has waited longest (`readyAt`), and take the first 10.
 
 That one sort covers every case:
 
 - **No repeats before everyone plays.** Anyone with 0 games sorts ahead of
   anyone with 1, and so on.
-- **Late arrivals.** A latecomer has `games = 0` and goes straight to the
-  front, ahead of everyone who has already played.
+- **Late arrivals.** A latecomer has `turns = 0` and goes straight to the
+  front, ahead of everyone who has already played. That priority is for one
+  game: when it ends their `turns` rise to the fewest any other present player
+  has, so they wait like the others who just played instead of playing every
+  game until their count catches up. Their games played stay as played.
+- **Half games.** A substitution after play has started counts half a turn
+  for both the player coming off and the one coming on, so both are called a
+  little sooner next time. A plain swap before the start is a whole game for
+  the player who plays it, and an undone sub counts nothing.
 - **Fair order within a tier.** Among players with the same game count, the
-  one who checked in first goes first. Waiting time doesn't count.
+  one who has waited longest goes first: someone who sat through the last game
+  goes ahead of someone who just played it. Players equal on that too go in
+  check-in order.
 - **Short queue.** If fewer than 10 players have the lowest game count, the
-  open spots fill from the next tier (fewest games, then check-in order). There is no
+  open spots fill from the next tier (fewest games, then longest wait). There is no
   special case in the code.
 
 Worked example (13 present, A to M checked in in that order):
@@ -116,7 +128,7 @@ the scoreboard (*Switch sides*) is not part of it: each laptop keeps its own
 ```js
 state = {
   players: [
-    { name, games, readyAt, present, totalPoints, fgm, fga, wins, losses } // name is the key; present = false means done for the night
+    { name, turns, games, readyAt, present, late?, totalPoints, fgm, fga, wins, losses } // name is the key; present = false means done for the night
   ],
   game: {                           // the current or next game; never empty
     number,                         // 1, 2, 3 ... within the session
@@ -124,7 +136,7 @@ state = {
                                     // fgm/fga: field goals made/attempted; log: taps for Undo
                                     // (0 a miss, 2 or 3 a make); sub: came on as a substitute
     subbedOut: [ { name, team, points, fgm, fga, log } ], // came off after play started; still count
-    plan: [ { name, team } ] | null, // Up next's lineup once the organizer edits it
+    plan: [ { name, team, pin?, for? } ] | null, // Up next's edits: teams, players put in by hand (pin) and who each replaced (for); the rest is recomputed
     satOut: [ names ],              // sat out this game; Fill skips them
     homeName, awayName,             // editable labels, default "Home" / "Away"
     endsAt,                         // timestamp while the clock runs, else null
@@ -176,14 +188,16 @@ Design choices:
    spot, and they keep their place (section 3). Same timing rule. *Remove*
    frees a spot the same way but without the sit-out mark, to undo a call made
    by mistake. Sit out, Remove, Fill and Pick all lock once the clock has
-   started or anyone has scored, so a clock reset cannot drop a scorer's
-   points.
+   started, anyone has scored or anyone has been subbed off, so a clock reset
+   cannot drop a scorer's points or call a subbed-off player back (they would
+   be counted twice).
    **Substitution** still works then: on the queue diagram, drag a waiting
    player onto someone on court (or click one, then the other). There is no
    confirm. The sub takes that seat and team. Once play has started, the
    player coming off moves to `subbedOut` with their points, so the team score
-   holds and the game counts for both (`Queue.played`). Before that it is a
-   plain swap. A player who comes back on gets their points back, so each
+   holds and the game counts for both (`Queue.played`): a game played in
+   their stats, and half a turn each in the rotation (`half`). Before that it
+   is a plain swap. A player who comes back on gets their points back, so each
    player is one results row. A sub who comes back off without scoring is
    treated as an undo (a sub made by mistake): they leave no results row.
 5. **Assign teams.** Every called player is on a team: Fill and Pick put each
@@ -272,7 +286,10 @@ laptop screen and still works at phone width.
 - **Player types** (UG, SHS, Alumni, Visitor): each row starts with a small
   tag, or a faint "Type" when none is set. Clicking it opens the four types
   under the row; × clears a type, and Esc or a click elsewhere closes it. The
-  type lives on the person in the database, so it covers their past games too.
+  type lives on the person in the database, and End game also saves it on each
+  of that game's result rows (`results.kind`), so a player who moves from SHS to
+  UG to Alumni keeps their earlier games under the type they had then. Rows
+  saved before that was kept count under the player's type now.
   Changes wait in `state.kinds` until the database has them, so this works
   offline. Players who aren't here tonight can be marked from the All-time
   leaderboard. Tags use short labels (UG, SHS, Alum, Vis); hover gives the full
@@ -281,17 +298,20 @@ laptop screen and still works at phone width.
   teams. The same colored tags show on the Tonight leaderboard
   and beside names on the queue diagram and the scoreboard, where they can't be
   edited.
-- **Tonight, as a board:** everyone on tonight's list plus walk-ins, in numbered
-  columns that run to the bottom of the screen. Each column has a serif header
+- **Tonight, as a board:** everyone on tonight's list plus walk-ins, one
+  full-width list at a time (To arrive first), with a To arrive / Here toggle in
+  the middle of its header; the choice is per laptop. Rows and type scale up to
+  the largest size at which the list still fits the screen (sized for 30 to 40
+  people). Lists run to the bottom of the
+  screen, and if a name is cut off by its column every name shows as First L. Each column has a serif header
   and a count, and players are quiet one-line rows in rounded cards with
   hairline separators. Names sort with numbers in order (Test 2 before Test 10).
-  1. **01. On court:** one column split in the middle, Home above Away, each
-     card with its team band.
-  2. **02. Here:** checked in and waiting. *Done* marks a player done for the
+  1. **01. Here:** everyone checked in, on court or not (who is on court is the
+     Queue tab's job). *Done* marks a waiting player done for the
      night, so the queue never calls them again. The ← button undoes a mistaken
      check-in, sending them back to To arrive. It only shows for players who
      haven't played tonight, since it forgets the player for the night.
-  3. **03. To arrive:** *Check in*, and a × to take them off the list.
+  2. **02. To arrive:** *Check in*, and a × to take them off the list.
      **Done for the night** sits at the foot of this column, with *Undo* to put
      a player back in line.
 
@@ -313,13 +333,19 @@ the screen, and its type and boxes scale with its width (as in full screen),
 so it reads from across the gym. Phones keep a stacked layout.
 
 - **Layout:** On court (Home and Away, "Home · 4 of 5"), then Up next, then everyone else waiting, grouped by games played
+  On laptops and the TV the diagram is exactly one screen tall and never scrolls:
+  On court and Up next are narrow lanes with one box per row, each team's five
+  places (open ones shown as dashed slots) sharing half the lane's height;
+  Waiting takes the rest of the width.
   tonight, then Done for the night. Each box shows the first name, games
   played, plus "sitting out" or "passed over" when they apply.
   Before the game fills, Up next is who Fill calls now. Once it's full, Up
   next is the following game's lineup, already split into Home and Away (5
   and 5, with a team-colored edge): the fairness order for that game
   (`Queue.nextGame`, the same rule run on a copy), balanced between the
-  teams. Edits to it are kept in `game.plan`; a planned player who leaves, or
+  teams. Only the edits are kept in `game.plan` (teams, hand-picked players and
+  who they replaced); the rest is recomputed, so a late arrival with fewer games
+  still gets in. A hand-picked player who leaves, or
   who subs onto the court (they've now played this game), is replaced by the
   next in fairness order. End game seats this lineup. *Fill open spots* sits at the top of On court while spots are open;
   *Full screen* sits at the top of Waiting and puts only the diagram on the TV.
@@ -357,6 +383,8 @@ rows are numbered, and ties share a rank (1, 2, 2, 4).
   It needs the database; without it the view says so.
 - **Type filter:** chips for All, UG, SHS, Alumni and Visitor, in both views.
   The filter comes before the ranking, so ranks start at 1 within the type.
+  All-time counts each game under the type it was played under (`byKind` in
+  the profiles), so a player can show under two types with the games of each.
 - **FG%** shows makes, attempts and the percentage ("6/10 60%"), blank with no
   attempts. Under 5 attempts (`MIN_FG_SHOTS`) it is greyed out, since 1 of 1
   isn't 100% shooting; hovering says why. **W-L** is the record ("3-1"); ties
@@ -389,7 +417,18 @@ client; someone who never played shows dashes), and one collapsed `<details>` pe
 game, headed by the result ("Game 3 · Home 21, Away 18", or the player count for
 older games). A game shows both teams with their points total when it was saved
 with teams (`results.team`), and one list otherwise. Player types show beside
-names when the app knows them. Sessions from before sessions were stored show
+names: the type saved with the game, or today's for rows saved before that.
+
+**Fix this game** sits under each game. It opens a dialog with one row per
+player (name, team, points, makes, attempts), where a basket credited to the
+wrong player can be moved, a row added or removed, and numbers corrected.
+Removing every row deletes the game (End game pressed by mistake). The dialog
+refuses a name twice, more makes than attempts, and points outside 2 to 3 per
+make (when shots were kept). Saving sends `POST /api/results/fix`, which
+replaces the game's rows; a teamed game's wins and losses are worked out again
+from the new points. If the game is from tonight's session, tonight's totals
+follow as one shared change (`fixGame`). It needs the connection and the
+passcode. Sessions from before sessions were stored show
 the players who played. It needs the connection: offline it says so in one line.
 
 ### Scoreboard view (for the court; full screen)
@@ -563,6 +602,7 @@ results (session INTEGER, played_on TEXT, game INTEGER, name TEXT,
          fgm INTEGER DEFAULT 0, fga INTEGER DEFAULT 0, -- field goals made / attempted
          won INTEGER CHECK (won IN (0, 1)),           -- 1 a win, 0 a loss, NULL a tie
          team INTEGER CHECK (team IN (0, 1)),         -- 0 home, 1 away; NULL on older rows
+         kind TEXT,                                   -- the player's type at the time; NULL: use players.kind
          UNIQUE (session, game, name))
 sessions (id INTEGER PRIMARY KEY,   -- the session id, as in results.session
           played_on TEXT,           -- YYYY-MM-DD, set when the session starts
@@ -576,11 +616,13 @@ sessions (id INTEGER PRIMARY KEY,   -- the session id, as in results.session
   `--local` for local testing). `schema.sql` always has the full current
   tables for a new database. `0001_fg.sql` added `fgm` and `fga`, and
   `0002_wins.sql` added `won`, and `0003_kind.sql` added `players.kind`, and
-  `0004_sessions.sql` added the `sessions` table and `results.team`; each
+  `0004_sessions.sql` added the `sessions` table and `results.team`, and
+  `0005_result_kind.sql` added `results.kind`; each
   must run on the live database before the Worker that uses it is deployed.
   After 0003, deploy right away: until then the old Worker can't add new names.
   Otherwise saves fail and games wait on the laptop until it has run. The same
-  holds for 0004: the new Worker's result inserts name the `team` column.
+  holds for 0004 and 0005: the new Worker's result inserts name the `team` and
+  `kind` columns.
 
 - **One row per player per game.** Averages are computed by a query and never
   stored. The same rows will set over/under lines later.
@@ -598,20 +640,21 @@ Every call except sign-in needs the session cookie (section 13).
 | `POST /api/login {passcode}` | Signs this device in for 30 days (cookie), returns the profiles | The passcode itself |
 | `POST /api/logout` | Clears this device's session cookie | No |
 | `GET /api/session` | 204 when this device is signed in, else 401 | No (session only) |
-| `GET /api/profiles` | Every player with type (`kind`), games, points, average, all-time `fgm` / `fga`, and `wins` / `losses` | No (session only) |
+| `GET /api/profiles` | Every player with type (`kind`), games, points, average, all-time `fgm` / `fga`, and `wins` / `losses`, plus `byKind`: the same totals split by the type each game was played under | No (session only) |
 | `POST /api/players {names}` | Adds new names from tonight's list | Yes |
 | `POST /api/kind {name, kind}` | Sets a player's type, or clears it with null; adds the player if new | Yes |
-| `POST /api/results {session, date, game, rows: [{name, points, fgm, fga, won, team}]}` | Saves one finished game (`team`: 0 home, 1 away, optional) | Yes |
+| `POST /api/results {session, date, game, rows: [{name, points, fgm, fga, won, team, kind}]}` | Saves one finished game (`team`: 0 home, 1 away, and `kind`, both optional) | Yes |
+| `POST /api/results/fix` (same body) | Replaces that game's rows in one batch; no rows deletes the game | Yes |
 | `GET /api/live?id=&v=` | The current session (the highest id): 204 if the caller already holds that id and version, or there is no session; else `{id, date, version, state}` | No (session only) |
 | `POST /api/live {id, date, version, state}` | Pushes the shared session: 200 `{version}` if `version` is the current one (a new id is created at version 1), else 409 with the current `{id, date, version, state}` | Yes |
 | `GET /api/sessions` | Every session, newest first: `[{id, date, players, games}]`, from `sessions` and `results` together | No (session only) |
-| `GET /api/sessions/<id>` | `{id, date, participants, games: [{game, rows: [{name, points, fgm, fga, won, team}]}]}`; 404 if unknown, 400 if the id is not a number | No (session only) |
+| `GET /api/sessions/<id>` | `{id, date, participants, games: [{game, rows: [{name, points, fgm, fga, won, team, kind}]}]}`; 404 if unknown, 400 if the id is not a number | No (session only) |
 
 The Worker validates every input: names are 1 to 60 characters, points are
 whole numbers from 0 to 200, field goals are whole numbers with made no more
 than attempted (both optional, as 0), `won` is 1, 0 or null (optional, as
-null) and `team` is 0, 1 or null (optional, as null), so older saved games
-still sync, rows are a list of objects, and the date is real. A pushed session
+null), `team` is 0, 1 or null and `kind` one of the four types or null (both
+optional, as null), so older saved games still sync, a name appears once per game, rows are a list of objects, and the date is real. A pushed session
 needs a whole id, a real date, a version from 0 and a state object with a
 `players` list.
 POSTs must be JSON, so other websites can't write. Only the files in `public/`
@@ -637,7 +680,7 @@ highest id.
   sides) return `false` and are not shared. An op carries everything it needs as
   plain data, so it can be replayed. Ops about the night as a whole are
   `checkIn`, `uncheck`, `removeName`, `addNames`, `done`, `undoDone`, `setKind`,
-  `posted` and `kindPosted`; everything else belongs to the current game
+  `posted`, `kindPosted` and `fixGame`; everything else belongs to the current game
   (`fill`, `pick`, `sitOut`, `remove`, `miss`, `make`, `undo`, `startPause`,
   `clockEnd`, `resetClock`, `endGame`, `sub`, `swapTeams`, `setTeam`,
   `teamName`, `planSwap`, `planTeams`, `planMove`).
