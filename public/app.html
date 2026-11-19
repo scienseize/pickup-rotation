@@ -56,6 +56,10 @@ ol,ul,dl{margin:0;padding:0;list-style:none}
 .island-tabs button:hover{color:var(--btn-tx)}
 .island-tabs button[aria-selected="true"]{color:var(--btn)}
 .island-tabs button:focus-visible{outline:2px solid var(--ember);outline-offset:-2px}
+/* The guest view's way in for organizers, after the tabs: an outlined pill in the island's own colors. */
+.island-signin{flex-shrink:0;border:1px solid color-mix(in srgb,var(--btn-tx) 35%,transparent);background:none;color:var(--btn-tx);font:600 12px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;padding:11px 16px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.island-signin:hover{background:color-mix(in srgb,var(--btn-tx) 12%,transparent)}
+.island-signin:focus-visible{outline:2px solid var(--ember);outline-offset:2px}
 
 .page{padding-inline:24px;padding-block:calc(env(safe-area-inset-top,0px) + 88px) 120px}
 .hero{max-width:900px;margin:0 auto;text-align:center;padding-block:56px 56px;display:flex;flex-direction:column;align-items:center;gap:28px}
@@ -170,6 +174,13 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 dialog h3{font-family:var(--serif);font-weight:400;font-size:28px;line-height:1.1}
 dialog form{display:flex;flex-direction:column;gap:12px}
 dialog textarea.in{width:100%;min-height:12em;resize:vertical}
+.passmsg{margin:0;font-weight:500;color:var(--ink)}
+.in.code{font-family:var(--mono);font-size:24px;letter-spacing:.3em;text-transform:uppercase;text-align:center}
+/* Home: this week's guest code, big enough to read off the laptop, under the session date. */
+.gcode{display:flex;flex-direction:column;align-items:center;gap:2px;margin:6px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mu)}
+.gcode b{font-size:30px;letter-spacing:.3em;color:var(--ink);font-weight:500;text-transform:none}
+.gcode small{font-size:11px;letter-spacing:.04em;text-transform:none}
+.passmsg:empty{display:none}
 /* Fix a game (History): a row per player, the name column takes what the numbers leave. */
 #fixDlg{width:min(720px,calc(100vw - 32px))}
 .fixw{overflow-x:auto}
@@ -340,9 +351,23 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .hist .empty{color:var(--mu);font-size:15px;margin:12px 0 0}
 .hist table{font-size:15px}
 .hist .lb{max-width:none}
+.hist .hctl{margin:10px 0 8px}
 .hist table.box{table-layout:fixed}
 .hist .box th.r,.hist .box td.r{width:84px}
 .hist th,.hist td{padding-block:8px}
+/* A game's two sides, Home left and Away right; stacked on a phone. */
+.hist .sides{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:32px;align-items:start}
+@media (max-width:700px){.hist .sides{grid-template-columns:minmax(0,1fr);gap:0}}
+.hist .sides .tw{padding:2px 12px;border-radius:10px}
+.hist .sides .win{--w:var(--ok);background:color-mix(in srgb,var(--w) 8%,transparent);box-shadow:inset 3px 0 0 var(--w)}
+.hist .sides .win.home{--w:var(--home)}
+.hist .sides .win.away{--w:var(--away)}
+/* The watermark: a faint word behind the side's rows, kept out of screen readers (the summary has the score). */
+.hist .sides :is(.win,.tie){position:relative;isolation:isolate}
+.hist .sides :is(.win,.tie)::after{content:"WIN" / "";position:absolute;inset:0;z-index:-1;display:grid;place-items:center;pointer-events:none;
+  font-family:var(--serif);font-size:clamp(48px,7vw,96px);letter-spacing:.12em;color:var(--w);opacity:.13}
+.hist .sides .tie{--w:var(--mu)}
+.hist .sides .tie::after{content:"TIE" / ""}
 .pl .pts{font-family:var(--serif);font-size:32px;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums;min-width:2ch;text-align:right}
 .pl .pt{display:flex;gap:6px}
 .pl .pt .btn{min-width:54px;min-height:50px;padding:8px 10px;font-size:17px;font-variant-numeric:tabular-nums}
@@ -427,6 +452,11 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .rrow .btn.o{border:0;background:var(--panel);color:var(--ink)}
 .rrow .xbtn{width:calc(26px*var(--rs,1));height:calc(26px*var(--rs,1))}
 .s-done .rrow b{color:var(--mu)}
+/* New player: a four-leaf clover before the name, in ink (green would read as the UG tag). */
+.clover{display:inline-flex;flex-shrink:0;color:var(--ink)}
+.clover svg{width:1em;height:1em;fill:currentColor}
+.rrow .clover{font-size:calc(15px*var(--rs,1))}
+.qn b .clover{margin-right:.3em;vertical-align:-.1em;font-size:.8em}
 /* Player type: a small tinted tag, muted so it stays quiet: sage UG, gold SHS, plum Alumni, dusty
    rose Visitor. No orange or blue: those mean the teams. As a button it opens the picker, a strip
    of the four types under the row; a player with no type shows a faint dashed "Type". */
@@ -593,6 +623,7 @@ button.kt:hover{border-color:var(--mu)}
     <button role="tab" id="tab-leaders" data-tab="leaders" aria-controls="leaders" aria-selected="false" tabindex="-1">Leaderboard</button>
     <button role="tab" id="tab-history" data-tab="history" aria-controls="history" aria-selected="false" tabindex="-1">History</button>
   </div>
+  <button type="button" class="island-signin" id="signinBtn" hidden>Sign in</button>
   <span class="clk" id="islandClock"></span>
 </nav>
 <button type="button" class="theme-btn" id="themeBtn" data-action="theme"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg></button>
@@ -603,6 +634,7 @@ button.kt:hover{border-color:var(--mu)}
       <img class="home-logo" src="logo.png" alt="" aria-hidden="true">
       <h1>Hexagames</h1>
       <p class="date" id="homeDate"></p>
+      <p class="gcode" title="Players type this on the link to see the leaderboard and history">Guest code <b id="guestCodeText">------</b><small id="guestCodeNote"></small></p>
       <div class="btns">
         <button class="btn" id="homeNext" data-action="goTab" data-arg="checkin">Check in players</button>
         <button class="btn o" data-action="standby">Standby on TV</button>
@@ -741,11 +773,25 @@ button.kt:hover{border-color:var(--mu)}
   </form>
 </dialog>
 
+<dialog id="guestDlg" aria-labelledby="guestTitle">
+  <form method="dialog">
+    <h3 id="guestTitle">This week's guest code</h3>
+    <p class="tl">Ask an organizer for the code. It changes every Thursday, the start of session day.</p>
+    <input class="in code" id="guestText" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12" aria-label="Guest code">
+    <p class="passmsg" id="guestMsg" role="alert"></p>
+    <div class="btns left">
+      <button class="btn o s" value="cancel">Cancel</button>
+      <button class="btn s" value="enter">Enter</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="passDlg" aria-labelledby="passTitle">
   <form method="dialog">
     <h3 id="passTitle">Organizer passcode</h3>
-    <p class="tl">Needed once on each laptop to save players and results. Viewing works without it.</p>
+    <p class="tl" id="passNote">Needed once on each laptop to save players and results. Viewing works without it.</p>
     <input class="in" id="passText" type="password" autocomplete="current-password" aria-label="Organizer passcode">
+    <p class="passmsg" id="passMsg" role="alert"></p>
     <div class="btns left">
       <button class="btn o s" value="cancel">Cancel</button>
       <button class="btn s" value="save">Save</button>

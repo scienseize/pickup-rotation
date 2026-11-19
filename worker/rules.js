@@ -122,3 +122,36 @@ export async function sessionOk(cookieHeader, passcode, now, sessionSecret) {
   try { bytes = unb64url(sig); } catch { return false; }
   return crypto.subtle.verify('HMAC', await sessionKey(passcode, sessionSecret, 'verify'), bytes, enc(`session:${exp}`));
 }
+
+// The guest code: anyone with it reads the leaderboard and history (POST /api/guest). It changes every
+// week, at the start of session day (Thursday 00:00 in the club's time zone), so the code shown at a
+// session works until the next one. It is worked out from the secrets and the week number, so nothing is
+// stored: changing the passcode or SESSION_SECRET also changes it at once (and signs every guest out).
+export const TZ_HOURS = 8; // the club's time zone, UTC+8
+const DAY = 864e5, TZ = TZ_HOURS * 36e5;
+// Day 0 of the epoch was a Thursday, so a week of whole local days from it starts on Thursday.
+export const weekOf = now => Math.floor(Math.floor((now + TZ) / DAY) / 7);
+export const weekEnds = week => (week + 1) * 7 * DAY - TZ; // the moment the next week's code starts
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O, 1/I/L: read aloud or off a screen
+export const GUEST_CODE_LENGTH = 6;
+export async function guestCode(passcode, sessionSecret, week) {
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', await sessionKey(passcode, sessionSecret, 'sign'), enc(`guest-code:${week}`)));
+  return Array.from(mac.slice(0, GUEST_CODE_LENGTH), b => CODE_CHARS[b % CODE_CHARS.length]).join('');
+}
+// What a guest typed, as a code: case and spaces don't matter.
+export const cleanCode = s => (typeof s === 'string' ? s.toUpperCase().replace(/[^A-Z0-9]/g, '') : '');
+
+// A guest's cookie: the week it is for and an HMAC of it. Good only during that week.
+export async function signGuest(passcode, sessionSecret, week) {
+  return `${week}.${b64url(await crypto.subtle.sign('HMAC', await sessionKey(passcode, sessionSecret, 'sign'), enc(`guest:${week}`)))}`;
+}
+export async function guestOk(cookieHeader, passcode, now, sessionSecret) {
+  if (!passcode || !sessionSecret || !cookieHeader) return false;
+  const value = cookieHeader.split(/;\s*/).find(c => c.startsWith('guest='))?.slice(6) ?? '';
+  const parts = value.split('.');
+  const [week, sig] = parts;
+  if (parts.length !== 2 || !/^\d+$/.test(week) || Number(week) !== weekOf(now) || !sig) return false;
+  let bytes;
+  try { bytes = unb64url(sig); } catch { return false; }
+  return crypto.subtle.verify('HMAC', await sessionKey(passcode, sessionSecret, 'verify'), bytes, enc(`guest:${week}`));
+}

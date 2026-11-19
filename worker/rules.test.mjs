@@ -1,6 +1,7 @@
 // Run: node worker/rules.test.mjs
 import assert from 'node:assert';
-import { Invalid, cleanName, playersBody, gameBody, kindBody, liveBody, isJson, passcodeOk, signSession, sessionOk, SESSION_DAYS } from './rules.js';
+import { Invalid, cleanName, playersBody, gameBody, kindBody, liveBody, isJson, passcodeOk, signSession, sessionOk, SESSION_DAYS,
+  weekOf, weekEnds, guestCode, cleanCode, signGuest, guestOk } from './rules.js';
 
 const rejects = (fn, why) => assert.throws(fn, Invalid, why);
 const req = type => ({ headers: new Headers(type ? { 'Content-Type': type } : {}) });
@@ -106,5 +107,30 @@ for (const bad of [null, '', 'theme=dark', 'session=', 'session=abc.def']) asser
 assert.equal(await sessionOk(jar, '', t0, S), false);
 await assert.rejects(signSession(P, t0, ''));
 await assert.rejects(signSession('', t0, S));
+
+// The guest code's week starts Thursday 00:00 in UTC+8 (Wednesday 16:00 UTC) and ends at the next one.
+const thu = Date.UTC(2026, 10, 18, 16); // Thu 19 Nov 2026, 00:00 in UTC+8
+assert.equal(weekOf(thu), weekOf(thu - 1) + 1);
+assert.equal(weekOf(thu + 7 * 864e5 - 1), weekOf(thu));
+assert.equal(weekEnds(weekOf(thu)), thu + 7 * 864e5);
+// The code: six characters with no look-alikes, the same all week, new each week and with new secrets.
+const code = await guestCode('pass', 'secret', weekOf(thu));
+assert.match(code, /^[A-HJKMNP-Z2-9]{6}$/);
+assert.equal(await guestCode('pass', 'secret', weekOf(thu)), code);
+assert.notEqual(await guestCode('pass', 'secret', weekOf(thu) + 1), code);
+assert.notEqual(await guestCode('other', 'secret', weekOf(thu)), code);
+assert.equal(cleanCode(' ab c-12 '), 'ABC12');
+assert.equal(cleanCode(null), '');
+// The guest cookie: good for its own week only, and only as signed.
+const gc = `guest=${await signGuest('pass', 'secret', weekOf(thu))}`;
+assert.equal(await guestOk(gc, 'pass', thu + 1000, 'secret'), true);
+assert.equal(await guestOk(`a=1; ${gc}`, 'pass', thu + 1000, 'secret'), true);
+assert.equal(await guestOk(gc, 'pass', thu + 7 * 864e5, 'secret'), false); // the next week
+assert.equal(await guestOk(gc, 'pass', thu - 1, 'secret'), false); // before it began
+assert.equal(await guestOk(gc, 'changed', thu + 1000, 'secret'), false); // the passcode changed
+const flip = (str, i) => str.slice(0, i) + (str[i] === 'A' ? 'B' : 'A') + str.slice(i + 1); // a middle character: the last one has padding bits
+assert.equal(await guestOk(flip(gc, gc.indexOf('.') + 10), 'pass', thu + 1000, 'secret'), false);
+assert.equal(await guestOk('session=1.x', 'pass', thu, 'secret'), false); // an organizer cookie is not a guest one
+assert.equal(await guestOk(gc, '', thu + 1000, 'secret'), false);
 
 console.log('rules.test.mjs: all checks passed');

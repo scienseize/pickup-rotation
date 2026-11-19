@@ -244,17 +244,52 @@ and the floating island tab bar. The fonts come from Google Fonts when the lapto
 is online. Offline, the page falls back to Georgia and the system font, and
 everything still works.
 
-One page with six tabs in the island: Home, Check in, Queue, Scoreboard,
+One page with six tabs in the island for organizers (two for guests, see Guest view): Home, Check in, Queue, Scoreboard,
 Leaderboard and History. Each tab is a whole view, and its name is kept in the
 URL (`#checkin`, `#queue`, ...) so a refresh returns to it. A small dot beside
 the mark in the island shows the database: green when online and live (this
 laptop shares the session), red when offline. Hovering over it (or a screen
 reader) gives the state, how many changes are waiting to reach the other
 laptops, and any games not saved yet. Clicking it asks for the passcode only when the database
-refused it, and retries when offline; when online it does nothing. The half-filled circle in the top right corner, outside the island, switches between light and dark. The choice is saved per device (`pickup-theme`), and the sign-in page follows it. Dark is the default. On a laptop the island folds to a small notch (the mark and
+refused it, and retries when offline; when online it does nothing. The half-filled circle in the top right corner, outside the island, switches between light and dark. The choice is saved per device (`pickup-theme`), and the guest view follows it. Dark is the default. On a laptop the island folds to a small notch (the mark and
 the database dot) and opens when the pointer is over it or it has keyboard
 focus. Touch screens keep the full bar. The layout targets a
 laptop screen and still works at phone width.
+
+### Guest view (the home page, for players)
+
+Anyone with the link who isn't signed in gets the guest view at `/`: the same
+page in a read-only mode, chosen by the path (`GUEST` in `app.js`). The island
+has two tabs, Leaderboard (Tonight and All-time) and History, plus *Sign in*.
+Nothing can be changed: only view actions run (`VIEW_OPS`), types show as plain
+tags, History has no *Fix this game*, and no session is read from or saved to
+the browser. Tonight comes from `GET /api/tonight` and the all-time stats from
+`GET /api/profiles`, refreshed every 30 seconds while the page is visible
+(`GUEST_MS`): slow on purpose, so a gym full of phones stays far below the free
+plan's daily request limit. The server enforces all of this; the page only hides
+what a guest couldn't do anyway.
+
+**Guest code.** The leaderboard and history are for the club, so a guest
+types this week's guest code once: six letters and digits without look-alikes
+(no 0/O, 1/I/L), shown only on the organizers' Home tab under the session date
+(`GET /api/guest-code`). It changes every Thursday at 00:00 in UTC+8, the start
+of session day (`weekOf`, `TZ_HOURS` in `worker/rules.js`), so the code read
+out at a session works until the next one. Nothing is stored: the code is an
+HMAC of the week number keyed with `SESSION_SECRET` and the passcode
+(`guestCode`), so changing either also changes the code at once and signs
+every guest out. The right code (`POST /api/guest`; case and spaces don't
+matter) gets the phone an `HttpOnly; Secure; SameSite=Strict` guest cookie for
+that week only, ending when the code changes; guessing is limited to 30 tries
+a minute per address (`GUEST_LIMIT`), looser than sign-in's because a gym full
+of phones shares one. Without the code, or once the week has moved on, the
+guest view asks for it once, says so on the leaderboard (with *Enter the
+code*) and in History, and fetches nothing until it is in.
+
+*Sign in* opens the passcode dialog. A right passcode signs the device in for
+30 days, keeps the passcode for the app's writes and opens `/app`; a wrong one,
+or too many tries, says so in the dialog. An organizer whose sign-in ran out
+lands here with the dialog open (`/?signin`). Every answer also carries
+`X-Robots-Tag: noindex` to keep the site out of search engines.
 
 ### Home tab (where signing in lands)
 
@@ -303,9 +338,18 @@ laptop screen and still works at phone width.
   the middle of its header; the choice is per laptop. Rows and type scale up to
   the largest size at which the list still fits the screen (sized for 30 to 40
   people). Lists run to the bottom of the
-  screen, and if a name is cut off by its column every name shows as First L. Each column has a serif header
+  screen. If a name is cut off by its column, the type steps down a size
+  (more rows a column, so fewer and wider columns) until every whole name
+  fits; only if none fits at the smallest size does every name show as
+  First L., at the largest size that then fits. Names are measured again once
+  the web fonts arrive, since they are wider than the fallback. On a TV
+  mirrored at 1280x720 or larger, 30 to 40 whole names fit. Each column has a serif header
   and a count, and players are quiet one-line rows in rounded cards with
   hairline separators. Names sort with numbers in order (Test 2 before Test 10).
+  **New players** have a four-leaf clover before their name, here and on the
+  queue diagram: no games in the database before tonight (`isNew`), so the
+  mark stays all night. It is drawn in ink, since green would read as the UG
+  tag, and needs the profiles, so offline it doesn't show.
   1. **01. Here:** everyone checked in, on court or not (who is on court is the
      Queue tab's job). *Done* marks a waiting player done for the
      night, so the queue never calls them again. The ← button undoes a mistaken
@@ -415,7 +459,7 @@ fetches; the ones inside it do not). Inside are a collapsed *Players* table, in
 the leaderboard's style (games, points, FG, W-L for the night, worked out on the
 client; someone who never played shows dashes), and one collapsed `<details>` per
 game, headed by the result ("Game 3 · Home 21, Away 18", or the player count for
-older games). A game shows both teams with their points total when it was saved
+older games). A game shows both teams side by side (Home left, Away right; stacked on a phone; the winning side has a quiet tint and edge in its team color, or green for Winners in older games, and a faint WIN watermark; a tie has no highlight and a faint TIE watermark on both sides) with their points total when it was saved
 with teams (`results.team`), and one list otherwise. Player types show beside
 names: the type saved with the game, or today's for rows saved before that.
 
@@ -522,7 +566,7 @@ the scoreboard code.
 
 | Not included                      | Add it when                                              |
 |-----------------------------------|----------------------------------------------------------|
-| Accounts, logins                  | Several organizers need separate permissions.           |
+| Accounts, logins                  | Several organizers need separate permissions. (Guests already read without one.) |
 | Instant updates between laptops (WebSockets / Durable Objects), per-field merging | The 2-second poll feels slow, or two people regularly change the same thing at once (the later change wins today). |
 | Stats beyond points (rebounds, assists, fouls) | Someone is actually available to track them during play. |
 | Season leaderboards, CSV export   | The organization wants them. The `results` table already has the rows. |
@@ -537,8 +581,7 @@ the scoreboard code.
 ## 10. Files
 
 ```
-public/index.html   the home page: logo backdrop, Enter as organizer, the passcode form
-public/app.html     the app (served at /app): markup and styles
+public/app.html     the app (served at /app, and at / as the read-only guest view): markup and styles
 public/logo.png     the ISO logo from iso.jpg: transparent background, in the app's
                     warm black and white (ink #1c1a19 to paper #faf8f5)
 public/favicon.png  the tab icon, the same logo at 64px
@@ -548,7 +591,7 @@ public/queue.js     fairness rules, no DOM: waitingOrder, nextInLine, fill, pick
                     sitOut, passedOver, endGame
 public/names.js     name matching, no DOM: suggest (ranked prefix match), resolve
 public/sw.js        service worker: opens the page offline once it has loaded
-worker/index.js     Cloudflare Worker: the sign-in gate, files and the API on D1
+worker/index.js     Cloudflare Worker: the gate (guests read, organizers write), files and the API on D1
 worker/rules.js     API input rules, the passcode check and the session cookie, no I/O
 schema.sql          the D1 tables
 migrations/         one SQL file per change to an existing database
@@ -633,22 +676,25 @@ sessions (id INTEGER PRIMARY KEY,   -- the session id, as in results.session
 
 API (JSON):
 
-Every call except sign-in needs the session cookie (section 13).
+The read-only calls marked *Guest code* work with this week's guest cookie or an organizer session (section 13). Every other call needs the organizer session cookie, and writes need the passcode as well.
 
 | Call | Does | Passcode |
 |------|------|----------|
 | `POST /api/login {passcode}` | Signs this device in for 30 days (cookie), returns the profiles | The passcode itself |
 | `POST /api/logout` | Clears this device's session cookie | No |
+| `POST /api/guest {code}` | With this week's guest code, sets a guest cookie until the code changes (204); else 401, 429 past 30 tries a minute | The guest code itself |
+| `GET /api/guest-code` | This week's guest code and when it changes, `{code, until}`, for the Home tab | No (session only) |
 | `GET /api/session` | 204 when this device is signed in, else 401 | No (session only) |
-| `GET /api/profiles` | Every player with type (`kind`), games, points, average, all-time `fgm` / `fga`, and `wins` / `losses`, plus `byKind`: the same totals split by the type each game was played under | No (session only) |
+| `GET /api/profiles` | Every player with type (`kind`), games, points, average, all-time `fgm` / `fga`, and `wins` / `losses`, plus `byKind`: the same totals split by the type each game was played under | Guest code |
 | `POST /api/players {names}` | Adds new names from tonight's list | Yes |
 | `POST /api/kind {name, kind}` | Sets a player's type, or clears it with null; adds the player if new | Yes |
 | `POST /api/results {session, date, game, rows: [{name, points, fgm, fga, won, team, kind}]}` | Saves one finished game (`team`: 0 home, 1 away, and `kind`, both optional) | Yes |
 | `POST /api/results/fix` (same body) | Replaces that game's rows in one batch; no rows deletes the game | Yes |
 | `GET /api/live?id=&v=` | The current session (the highest id): 204 if the caller already holds that id and version, or there is no session; else `{id, date, version, state}` | No (session only) |
 | `POST /api/live {id, date, version, state}` | Pushes the shared session: 200 `{version}` if `version` is the current one (a new id is created at version 1), else 409 with the current `{id, date, version, state}` | Yes |
-| `GET /api/sessions` | Every session, newest first: `[{id, date, players, games}]`, from `sessions` and `results` together | No (session only) |
-| `GET /api/sessions/<id>` | `{id, date, participants, games: [{game, rows: [{name, points, fgm, fga, won, team, kind}]}]}`; 404 if unknown, 400 if the id is not a number | No (session only) |
+| `GET /api/tonight` | The current session's players for a leaderboard, `{date, players: [{name, games, totalPoints, fgm, fga, wins, losses, present}]}`: whole numbers and cleaned names only, nothing about who is expected, the game or the laptops; 204 with no session | Guest code |
+| `GET /api/sessions` | Every session, newest first: `[{id, date, players, games}]`, from `sessions` and `results` together | Guest code |
+| `GET /api/sessions/<id>` | `{id, date, participants, games: [{game, rows: [{name, points, fgm, fga, won, team, kind}]}]}`; 404 if unknown, 400 if the id is not a number | Guest code |
 
 The Worker validates every input: names are 1 to 60 characters, points are
 whole numbers from 0 to 200, field goals are whole numbers with made no more
@@ -743,17 +789,17 @@ games in History but only the players who played.
   stored in the repository. A missing or wrong passcode gets 401; the app opens
   the passcode dialog and keeps the games until it is right. Entering it there also
   renews the device's sign-in.
-- **Organizers only:** the link opens the home page (`/`), with the ISO logo
-  as the backdrop and an *Enter as organizer* button that links to the app at
-  `/app`. The Worker runs before any file is served (`run_worker_first`) and
-  lets through only the home page, the logo, the tab icon and
-  `POST /api/login` without a session. Everything else, the app's own files
-  and `GET /api/profiles` included, redirects to `/?signin` (pages), which
-  opens the passcode form on the home page, or gets 401 (API). A signed-in
-  device that opens `/` is redirected straight to `/app`, which opens on the
-  Home tab; on the sign-in page the button asks `GET /api/session` (204 signed
-  in, 401 not), and any other device gets the passcode box in place, without a
-  reload. The old `/login` address redirects home. A right passcode sets a `session` cookie: its expiry plus an
+- **Guests and organizers:** the link opens the guest view (`/`, section 6).
+  The Worker runs before any file is served (`run_worker_first`). Without a
+  session it lets through the guest view, the app's own files (the guest view
+  runs them too; they hold no data), the logo, the tab icon, `POST /api/guest`
+  and `POST /api/login`. The read-only API (`/api/profiles`, `/api/tonight`,
+  `/api/sessions`, `/api/sessions/<id>`) needs this week's guest cookie or an
+  organizer session.
+  The organizer app (`/app`) redirects to `/?signin`; the shared session
+  (`/api/live`) and every write get 401. A signed-in device that opens `/` is
+  redirected straight to `/app`, which opens on the Home tab. The old `/login`
+  address redirects home. Every answer carries `X-Robots-Tag: noindex`. A right passcode sets a `session` cookie: its expiry plus an
   HMAC-SHA256 of it keyed with `ORGANIZER_PASSCODE`, `HttpOnly; Secure;
   SameSite=Strict`, 30 days. Nothing is stored on the server, and changing the
   passcode signs every device out. Sign-in is limited to 5 tries a minute per
