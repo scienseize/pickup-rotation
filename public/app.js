@@ -34,7 +34,7 @@ const newSession = (now = Date.now()) => ({ players: [], game: newGame(1), expec
 // refreshed every 30 seconds from the public API. The server enforces it; this only hides what can't work.
 const GUEST = location.pathname === '/' || location.pathname === '/index.html';
 const GUEST_MS = 30000; // slow on purpose: many phones at 2 s would use up the free plan's daily requests
-const VIEW_OPS = new Set(['leaderMode', 'leaderKind', 'goTab', 'theme', 'askGuest']); // the only actions a guest can run
+const VIEW_OPS = new Set(['leaderMode', 'leaderKind', 'histKind', 'goTab', 'theme', 'askGuest']); // the only actions a guest can run
 let guestLocked = false; // a guest without this week's code (none yet, or the week moved on)
 
 let fresh = true; // nothing was saved here: this laptop must join the server's session, never replace it
@@ -60,6 +60,7 @@ let profiles = new Map();
 try { profiles = new Map(JSON.parse(stored(PROFILES_KEY)).map(p => [p.name.toLowerCase(), p])); } catch {} // corrupt copy: start empty
 let leaderMode = 'tonight'; // 'tonight' | 'alltime', the leaderboard toggle
 let leaderKind = 'all'; // 'all' or a player type, the leaderboard filter
+let histKind = 'all'; // the same, for the players of History's sessions
 let kindPick = null; // the player whose type picker is open
 let db = 'connecting'; // 'online' | 'offline' | 'locked' (needs the organizer passcode)
 
@@ -138,6 +139,12 @@ const KINDS = ['UG', 'SHS', 'Alumni', 'Outsider'];
 const KIND_SHORT = { UG: 'UG', SHS: 'SHS', Alumni: 'Alum', Outsider: 'Vis' };
 // Shown as Visitor; the database keeps the value Outsider, since its rule allows only the original four.
 const kindLabel = k => (k === 'Outsider' ? 'Visitor' : k);
+// The leaderboard filter: Alumni and Visitors share one choice, AV.
+const LEADER_KINDS = [['all', 'All'], ['UG', 'UG'], ['SHS', 'SHS'], ['AV', 'Alumni & Visitors']];
+// The same choices filter a History session's players (histKind).
+const inKind = (f, k) => f === 'all' || (f === 'AV' ? k === 'Alumni' || k === 'Outsider' : k === f);
+const kindChoices = (action, on, name = '') => LEADER_KINDS
+  .map(([k, label]) => btn(action, name, esc(label), { arg: k, pressed: on === k, cls: on === k ? 's' : 'o s' })).join('');
 const kindOf = name => { const k = state.kinds.find(x => x.name === name); return k ? k.kind : profileOf(name)?.kind ?? null; };
 const kindShort = name => KIND_SHORT[kindOf(name)] ?? '';
 const kindClass = name => (kindOf(name) ? `k-${esc(kindOf(name).toLowerCase())}` : 'unset');
@@ -158,6 +165,8 @@ function themeLabel() {
 function closeKindPick() { kindPick = null; renderTonight(); renderLeaders(); }
 const playerNamed = name => state.players.find(p => p.name.toLowerCase() === name.toLowerCase());
 const pct = (made, tried) => `${Math.round((made / tried) * 100)}%`;
+// A record: "3-1", or "2-1-1" once there is a tie (a level score at the buzzer: neither a win nor a loss).
+const record = (w, l, t) => (w + l + t ? `${w}-${l}${t ? `-${t}` : ''}` : '');
 const avgText = name => {
   if (!profiles.size) return '';
   const p = profileOf(name);
@@ -507,6 +516,15 @@ const actions = {
   undoDone: name => { player(name).present = true; },
   leaderMode(_, mode) { leaderMode = mode; keepFocus(renderLeaders); return false; }, // a view choice, not saved
   leaderKind(_, kind) { leaderKind = kind; keepFocus(renderLeaders); return false; }, // so is the filter
+  // History's filter: one choice for every session; each open one redraws its players, its games stay as they are.
+  histKind(_, kind) {
+    histKind = kind;
+    keepFocus(() => $('historyList').querySelectorAll('details[data-id] .hplayers').forEach(box => {
+      const d = histData.get(Number(box.closest('details[data-id]').dataset.id));
+      if (d) box.innerHTML = playersHtml(d);
+    }));
+    return false;
+  },
   checkIn(raw) {
     const typed = cleanName(raw);
     if (!typed) return false;
@@ -1003,16 +1021,17 @@ function renderLeaders() {
     : 'Tonight, ranked by points.';
   $('leaderMode').innerHTML = [['tonight', 'Tonight'], ['alltime', 'All-time']]
     .map(([m, label]) => btn('leaderMode', '', label, { arg: m, pressed: leaderMode === m, cls: leaderMode === m ? 's' : 'o s' })).join('');
-  $('leaderKinds').innerHTML = [['all', 'All'], ...KINDS.map(k => [k, kindLabel(k)])]
-    .map(([k, label]) => btn('leaderKind', '', label, { arg: k, pressed: leaderKind === k, cls: leaderKind === k ? 's' : 'o s' })).join('');
+  $('leaderKinds').innerHTML = kindChoices('leaderKind', leaderKind);
   // All-time players come from the database profiles, in the shape Queue.leaderboard takes. The
   // type filter comes first, so ranks start at 1 within the type.
   // All-time counts each game under the type it was played under (byKind); a copy of the profiles
   // from before that existed falls back to today's type.
-  const asRow = (name, p) => ({ name, games: p.games, totalPoints: p.points, fgm: p.fgm ?? 0, fga: p.fga ?? 0, wins: p.wins ?? 0, losses: p.losses ?? 0 });
-  const allTime = () => [...profiles.values()].flatMap(p => leaderKind === 'all' ? [asRow(p.name, p)]
-    : (p.byKind ?? [{ ...p, kind: kindOf(p.name) }]).filter(k => k.kind === leaderKind).map(k => asRow(p.name, k))).filter(p => p.games);
-  const list = all ? allTime() : state.players.filter(p => leaderKind === 'all' || kindOf(p.name) === leaderKind);
+  // A player with games under both Alumni and Visitor gets one row, the two added up.
+  const asRow = (name, ks) => ({ name, ...Object.fromEntries(['games', 'points', 'fgm', 'fga', 'wins', 'losses', 'ties']
+    .map(f => [f === 'points' ? 'totalPoints' : f, ks.reduce((n, k) => n + (k[f] ?? 0), 0)])) });
+  const allTime = () => [...profiles.values()].map(p => asRow(p.name, leaderKind === 'all' ? [p]
+    : (p.byKind ?? [{ ...p, kind: kindOf(p.name) }]).filter(k => inKind(leaderKind, k.kind)))).filter(p => p.games);
+  const list = all ? allTime() : state.players.filter(p => inKind(leaderKind, kindOf(p.name)));
   const rows = Queue.leaderboard(list, all ? 'perGame' : 'total', all ? MIN_ALLTIME_GAMES : MIN_RANKED_GAMES);
   const played = rows.filter(r => r.player.games), notYet = all ? [] : rows.filter(r => !r.player.games);
   const when = all ? 'every week' : 'tonight';
@@ -1022,7 +1041,8 @@ function renderLeaders() {
       p.fga < MIN_FG_SHOTS ? `, under ${MIN_FG_SHOTS} attempts` : ''}"><small>${p.fgm}/${p.fga}</small> ${fgPct}%</td>`);
   // Record, e.g. "3-1" (ties count for neither), and the share of decided games won.
   const decided = p => (p.wins ?? 0) + (p.losses ?? 0);
-  const wl = p => (decided(p) ? `${p.wins ?? 0}-${p.losses ?? 0}` : '');
+  // Tonight's ties are the games neither won nor lost; all-time ones come from the database (older games kept no result).
+  const wl = p => record(p.wins ?? 0, p.losses ?? 0, all ? p.ties ?? 0 : Math.max(0, p.games - decided(p)));
   const cell = (v, cls = 'r mono') => `<td class="${cls}">${v}</td>`;
   const big = v => cell(v, 'r pts');
   const row = ({ player: p, perGame: pg, fgPct, rank }) => `<tr class="${!rank ? 'un' : rank <= 3 ? `top p${rank}` : ''}">
@@ -1033,9 +1053,9 @@ function renderLeaders() {
   const th = (label, title, cls = 'r') => `<th class="${cls}" title="${title}">${label}</th>`;
   const head = `<tr><th>#</th><th>Player</th>${th('Games', `Games ${when}`, 'r gm')}${all
     ? th('PPG', 'Points per game, every week') + th('Points', 'Total points, every week', 'r sub') + th('FG%', 'Field goals made / attempted, every week')
-      + th('W-L', 'Wins and losses, every week', 'r sub') + th('Win%', 'Share of decided games won, every week')
+      + th('W-L', 'Wins, losses and ties, every week', 'r sub') + th('Win%', 'Share of decided games won, every week')
     : th('Points', 'Points tonight') + th('Per game', 'Points per game tonight', 'r sub') + th('FG%', 'Field goals made / attempted tonight')
-      + th('W-L', 'Wins and losses tonight')}</tr>`;
+      + th('W-L', 'Wins, losses and ties tonight')}</tr>`;
   const table = part => `<div class="tw"><table><thead>${head}</thead><tbody>${part.map(row).join('')}</tbody></table></div>`;
   const k = leaderTables(played.length), per = Math.ceil(played.length / k), parts = [];
   for (let i = 0; i < played.length; i += per) parts.push(played.slice(i, i + per));
@@ -1044,7 +1064,7 @@ function renderLeaders() {
   lb.style.setProperty('--k', k);
   lb.innerHTML = GUEST && guestLocked ? `<p class="empty">The leaderboard needs this week's guest code. Ask an organizer for it.</p><div class="btns">${btn('askGuest', '', 'Enter the code', { cls: 's' })}</div>`
     : all && !profiles.size ? '<p class="empty">All-time stats need the database. Check the dot in the top bar.</p>'
-    : !rows.length ? `<p class="empty">${leaderKind !== 'all' ? `No ${kindLabel(leaderKind)} players here yet.` : all ? 'No games in the database yet.' : 'No players yet.'}</p>`
+    : !rows.length ? `<p class="empty">${leaderKind !== 'all' ? `No ${esc(LEADER_KINDS.find(([k]) => k === leaderKind)?.[1] ?? leaderKind)} players here yet.` : all ? 'No games in the database yet.' : 'No players yet.'}</p>`
     : (!played.length ? '<p class="empty">No games played yet.</p>' : parts.map(table).join(''))
       + (notYet.length ? `<p class="rest">Not played yet: ${notYet.map(r => esc(r.player.name)).join(', ')}</p>` : '');
   fitLeaders();
@@ -1081,7 +1101,7 @@ window.addEventListener('resize', fitLeaders);
 
 // History: every session in the database, newest first, each a <details> that fetches its box
 // scores the first time it opens. Online only; a failed fetch says so in one line.
-const PER_COLUMN = 10; // rows in a column of a session's players table
+const PER_COLUMN = 10, MIN_COLUMN = 460; // a session's players table: rows in a column at least, and a column's width in px
 const histNote = text => `<p class="empty">${esc(text)}</p>`;
 async function renderHistory() {
   const box = $('historyList');
@@ -1099,6 +1119,31 @@ async function renderHistory() {
 const histData = new Map(); // session id -> its loaded detail, for Edit
 // The type a row was played under; rows from before that was kept show today's.
 const rowTag = r => (r.kind ? kindSpan(r.kind) : kindTag(r.name));
+// A session's players: a table, with each one's totals for the night, under the type filter (histKind).
+function playersHtml(d) {
+  // Everyone who checked in, plus anyone in the results; one who never played has 0 games and dashes.
+  const who = new Map([...d.participants, ...d.games.flatMap(g => g.rows.map(r => r.name))].map(n => [n, { games: 0, points: 0, fgm: 0, fga: 0, won: 0, lost: 0, tied: 0, kind: null }]));
+  for (const r of d.games.flatMap(g => g.rows)) {
+    const s = who.get(r.name);
+    s.games++; s.points += r.points; s.fgm += r.fgm; s.fga += r.fga; s.won += r.won === 1; s.lost += r.won === 0;
+    s.tied += r.won === null && (r.team === 0 || r.team === 1); // a teamed game with no winner: a tie
+    s.kind = r.kind ?? s.kind; // the type of their last game that night
+  }
+  const dash = '<td class="r mono">-</td>';
+  const row = ([name, s]) => `<tr><td class="who"><div><b title="${esc(name)}">${esc(name)}</b>${rowTag({ name, kind: s.kind })}</div></td><td class="r mono gm">${esc(s.games)}</td>${
+    s.games ? `<td class="r pts">${esc(s.points)}</td>` : dash}${
+    s.fga ? `<td class="r mono fg${s.fga < MIN_FG_SHOTS ? ' few' : ''}"><small>${esc(s.fgm)}/${esc(s.fga)}</small> ${esc(pct(s.fgm, s.fga))}</td>` : dash}${
+    s.won + s.lost + s.tied ? `<td class="r mono">${esc(record(s.won, s.lost, s.tied))}</td>` : dash}</tr>`;
+  const ranked = [...who].filter(([name, s]) => inKind(histKind, s.kind ?? kindOf(name))).sort(([an, a], [bn, b]) => b.points - a.points || b.games - a.games || byName(an, bn));
+  // Columns of PER_COLUMN rows or more, side by side as on the leaderboard (.lb.split; stacked on a narrow page):
+  // as many as fit at about MIN_COLUMN px each, so whole names show, and the rows spread evenly across them.
+  const k = Math.max(1, Math.min(Math.ceil(ranked.length / PER_COLUMN), Math.floor($('historyList').clientWidth / MIN_COLUMN))), per = Math.ceil(ranked.length / k);
+  const column = i => `<div class="tw"><table><thead><tr><th>Player</th><th class="r gm">Games</th><th class="r">Points</th><th class="r">FG</th><th class="r">W-L</th></tr></thead><tbody>${
+    ranked.slice(i * per, (i + 1) * per).map(row).join('')}</tbody></table></div>`;
+  const filter = `<div class="hctl"><div class="seg" role="group" aria-label="Player type">${kindChoices('histKind', histKind)}</div></div>`;
+  return filter + (!ranked.length ? histNote(`No ${LEADER_KINDS.find(([k]) => k === histKind)?.[1]} players this session.`)
+    : `<div class="lb${k > 1 ? ' split' : ''}${k > 2 ? ' split3' : ''}" style="--k:${k}">${Array.from({ length: k }, (_, i) => column(i)).join('')}</div>`);
+}
 function sessionHtml(d) {
   const sum = rows => rows.reduce((t, r) => t + r.points, 0);
   const table = (label, rows, total, cls = '') => `<div class="tw${cls}"><table class="box"><thead><tr><th>${esc(label)}</th><th class="r">PTS</th><th class="r">FG</th></tr></thead><tbody>${
@@ -1119,25 +1164,8 @@ function sessionHtml(d) {
       sides ? `<div class="sides">${sides.map(([label, list], i) => table(label, list, true, teamed && win < 0 ? ' tie' : i !== win ? '' : ` win${teamed ? ['', ' home', ' away'][i + 1] : ''}`)).join('')}</div>` : table('Player', top(rows), false)}${
       d.id === undefined || GUEST ? '' : `<div class="btns left">${btn('editGame', d.id, 'Fix this game', { arg: g.game })}</div>`}</details>`;
   };
-  // Everyone who checked in, plus anyone in the results; one who never played has 0 games and dashes.
-  const who = new Map([...d.participants, ...d.games.flatMap(g => g.rows.map(r => r.name))].map(n => [n, { games: 0, points: 0, fgm: 0, fga: 0, won: 0, lost: 0, kind: null }]));
-  for (const r of d.games.flatMap(g => g.rows)) {
-    const s = who.get(r.name);
-    s.games++; s.points += r.points; s.fgm += r.fgm; s.fga += r.fga; s.won += r.won === 1; s.lost += r.won === 0;
-    s.kind = r.kind ?? s.kind; // the type of their last game that night
-  }
-  const dash = '<td class="r mono">-</td>';
-  const row = ([name, s]) => `<tr><td class="who"><div><b title="${esc(name)}">${esc(name)}</b>${rowTag({ name, kind: s.kind })}</div></td><td class="r mono gm">${esc(s.games)}</td>${
-    s.games ? `<td class="r pts">${esc(s.points)}</td>` : dash}${
-    s.fga ? `<td class="r mono fg${s.fga < MIN_FG_SHOTS ? ' few' : ''}"><small>${esc(s.fgm)}/${esc(s.fga)}</small> ${esc(pct(s.fgm, s.fga))}</td>` : dash}${
-    s.won + s.lost ? `<td class="r mono">${esc(s.won)}-${esc(s.lost)}</td>` : dash}</tr>`;
-  const ranked = [...who].sort(([an, a], [bn, b]) => b.points - a.points || b.games - a.games || byName(an, bn));
-  // Columns of PER_COLUMN rows, side by side as on the leaderboard (.lb.split; stacked on a narrow page).
-  const k = Math.ceil(ranked.length / PER_COLUMN);
-  const column = i => `<div class="tw"><table><thead><tr><th>Player</th><th class="r gm">Games</th><th class="r">Points</th><th class="r">FG</th><th class="r">W-L</th></tr></thead><tbody>${
-    ranked.slice(i * PER_COLUMN, (i + 1) * PER_COLUMN).map(row).join('')}</tbody></table></div>`;
-  const players = who.size ? `<details class="dd"><summary>Players · ${esc(who.size)}</summary><div class="lb${k > 1 ? ' split' : ''}${k > 2 ? ' split3' : ''}" style="--k:${k}">${
-    Array.from({ length: k }, (_, i) => column(i)).join('')}</div></details>` : histNote('No players on file.');
+  const n = new Set([...d.participants, ...d.games.flatMap(g => g.rows.map(r => r.name))]).size;
+  const players = n ? `<details class="dd"><summary>Players · ${esc(n)}</summary><div class="hplayers">${playersHtml(d)}</div></details>` : histNote('No players on file.');
   return players + (d.games.map(game).join('') || histNote('No games saved.'));
 }
 // toggle doesn't bubble, so listen while it travels down. Only a session's own <details> (it has an id)

@@ -272,12 +272,17 @@ run(`actions.setKind('Ana', 'UG'); actions.setKind('Cy', 'SHS'); commit(); actio
 const ugRows = [...els.leaderBoard.innerHTML.matchAll(/<td class="n">(\d*)<\/td><td class="who"><div><b title="([^"]+)"/g)].map(m => `${m[1] || '-'}${m[2]}`);
 assert.deepEqual(ugRows, ['1Ana']);
 assert.match(els.leaderKinds.innerHTML, /data-arg="UG" aria-pressed="true">UG</);
-run(`actions.leaderKind('', 'Alumni');`);
-assert.match(els.leaderBoard.innerHTML, /No Alumni players here yet/);
-run(`actions.leaderKind('', 'all'); actions.leaderMode('', 'tonight');`);
-// The app says Visitor everywhere; only the stored value stays Outsider.
-assert.match(els.leaderKinds.innerHTML, /data-arg="Outsider"[^>]*>Visitor</);
-assert.doesNotMatch(els.leaderKinds.innerHTML, />Outsider</);
+run(`actions.leaderKind('', 'AV');`);
+assert.match(els.leaderBoard.innerHTML, /No Alumni &#38; Visitors players here yet/);
+// Alumni and Visitors share one filter; a player with games under both gets one row, added up, ties included.
+run(`profiles.get('ben').byKind = [{ kind: 'Alumni', games: 2, points: 20, fgm: 2, fga: 4, wins: 1, losses: 0, ties: 1 },
+  { kind: 'Outsider', games: 1, points: 16, fgm: 0, fga: 0, wins: 0, losses: 1, ties: 0 }, { kind: 'UG', games: 4, points: 1 }]; renderLeaders()`);
+assert.match(els.leaderBoard.innerHTML, /title="Ben"[\s\S]*?<td class="r mono gm">3<\/td>[\s\S]*?>36<[\s\S]*?>1-1-1</);
+assert.doesNotMatch(els.leaderBoard.innerHTML, /title="Ana"/);
+run(`delete profiles.get('ben').byKind; actions.leaderKind('', 'all'); actions.leaderMode('', 'tonight');`);
+// The filter has no separate Alumni or Visitor choice; the app says Visitor everywhere else.
+assert.match(els.leaderKinds.innerHTML, /data-arg="AV"[^>]*>Alumni &#38; Visitors</);
+assert.doesNotMatch(els.leaderKinds.innerHTML, /data-arg="(Alumni|Outsider)"/);
 run(`actions.pickKind('Ana')`);
 assert.match(run(`kindPicker('Ana')`), /data-arg="Outsider"[^>]*>Visitor</);
 run(`actions.pickKind('Ana')`);
@@ -693,7 +698,7 @@ assert.notEqual(run(`state.startedAt`), 200);
   const html = body.innerHTML, tag = '<span class="kt k-ug" title="UG">UG</span>';
   // The players are a table of their own, collapsed, with their totals for the night: by points, then
   // games, then name. Cy and Old Timer tie on both, so by name; Dee checked in and never played.
-  assert.match(html, /^<details class="dd"><summary>Players · 5<\/summary><div class="lb" style="--k:1">/);
+  assert.match(html, /^<details class="dd"><summary>Players · 5<\/summary><div class="hplayers"><div class="hctl">[\s\S]*?<\/div><\/div><div class="lb" style="--k:1">/);
   assert.deepEqual([...html.matchAll(/<b title="([^"]+)">/g)].map(m => m[1]), ['Ana', 'Cy', 'Old Timer', 'Ben &#60;b&#62;', 'Dee']); // names go through esc
   assert.doesNotMatch(html, /Ben <b>/);
   assert.match(html, /<th>Player<\/th><th class="r gm">Games<\/th><th class="r">Points<\/th><th class="r">FG<\/th><th class="r">W-L<\/th>/);
@@ -714,7 +719,7 @@ assert.notEqual(run(`state.startedAt`), 200);
   await onToggle({ target: nested });
   assert.equal(fetched.length, 0);
   assert.equal(body.innerHTML, html);
-  // The players table splits into columns of 10, in order down the first column and then the next, as
+  // The players table splits into columns of 10 or more, as many as fit, spread evenly, in order down the first column and then the next, as
   // the leaderboard splits (.lb.split, and split3 from three columns); each column has its own header.
   const names = html => [...html.matchAll(/<b title="([^"]+)">/g)].map(m => m[1]);
   const many = n => {
@@ -723,16 +728,43 @@ assert.notEqual(run(`state.startedAt`), 200);
     const players = html.slice(0, html.indexOf('</details>'));
     return { cls: players.match(/<div class="(lb[^"]*)" style="--k:(\d)">/).slice(1), cols: players.split('<div class="tw">').slice(1).map(names), heads: players.match(/<thead>/g).length };
   };
+  els.historyList.clientWidth = 1400; // room for three columns
   let split = many(11);
   assert.deepEqual(split.cls, ['lb split', '2']);
-  assert.deepEqual(split.cols.map(c => c.length), [10, 1]);
+  assert.deepEqual(split.cols.map(c => c.length), [6, 5]);
   assert.equal(split.heads, 2);
   assert.equal(split.cols[0][0], 'P01'); // the order reads down the first column, then the second
-  assert.equal(split.cols[1][0], 'P11');
+  assert.equal(split.cols[1][0], 'P07');
   split = many(25);
   assert.deepEqual(split.cls, ['lb split split3', '3']);
-  assert.deepEqual(split.cols.map(c => c.length), [10, 10, 5]);
+  assert.deepEqual(split.cols.map(c => c.length), [9, 9, 7]); // spread evenly
   assert.deepEqual(split.cols.flat(), Array.from({ length: 25 }, (_, i) => `P${String(i + 1).padStart(2, '0')}`));
+  split = many(34); // a big night: no more columns than fit, so names keep their room
+  assert.deepEqual(split.cls, ['lb split split3', '3']);
+  assert.deepEqual(split.cols.map(c => c.length), [12, 12, 10]);
+  els.historyList.clientWidth = 1000;
+  assert.deepEqual(many(34).cols.map(c => c.length), [17, 17]);
+  // A tied game (teams, no winner) shows in the record as a tie: 1-0 then a 46-46 game reads 1-0-1.
+  const tie = run(`sessionHtml(${JSON.stringify({ participants: [], games: [
+    { game: 1, rows: [{ name: 'Ana', points: 4, fgm: 2, fga: 3, won: 1, team: 0 }, { name: 'Ben', points: 2, fgm: 1, fga: 1, won: 0, team: 1 }] },
+    { game: 2, rows: [{ name: 'Ana', points: 2, fgm: 1, fga: 1, won: null, team: 0 }, { name: 'Ben', points: 2, fgm: 1, fga: 1, won: null, team: 1 }] }] })})`);
+  assert.match(tie, /title="Ana"[\s\S]*?<td class="r mono">1-0-1<\/td>/);
+  assert.match(tie, /title="Ben"[\s\S]*?<td class="r mono">0-1-1<\/td>/);
+  // The type filter, as on the leaderboard: the players table keeps only that type (Alumni and Visitors together,
+  // each under the type they played that night); the games below still list everyone.
+  const byType = { participants: [], games: [{ game: 1, rows: [{ name: 'Ana', points: 4, fgm: 2, fga: 3, won: 1, team: 0, kind: 'Alumni' },
+    { name: 'Ben', points: 2, fgm: 1, fga: 1, won: 0, team: 1, kind: 'Outsider' }, { name: 'Cy', points: 2, fgm: 1, fga: 1, won: 0, team: 1, kind: 'UG' }] }] };
+  const shown = html => names(html.slice(0, html.indexOf('</details>')));
+  assert.match(run(`sessionHtml(${JSON.stringify(byType)})`), /data-action="histKind"[^>]*data-arg="AV" aria-pressed="false">Alumni &#38; Visitors</);
+  assert.deepEqual(shown(run(`sessionHtml(${JSON.stringify(byType)})`)), ['Ana', 'Ben', 'Cy']);
+  run(`histKind = 'AV'`);
+  const av = run(`sessionHtml(${JSON.stringify(byType)})`);
+  assert.deepEqual(shown(av), ['Ana', 'Ben']);
+  assert.match(av, /Players · 3/); // the count is the whole night
+  assert.match(av.slice(av.indexOf('</details>')), /Cy/);
+  run(`histKind = 'SHS'`);
+  assert.match(run(`sessionHtml(${JSON.stringify(byType)})`), /No SHS players this session/);
+  run(`histKind = 'all'`);
   assert.deepEqual(many(10).cls, ['lb', '1']); // one column: no split
   // Inside a game the sides come first and each is sorted by points, then name, whatever order the rows
   // arrive in. Games from before teams were kept are split by won (winners first); a tie has no sides.

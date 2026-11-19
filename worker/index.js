@@ -49,7 +49,8 @@ async function readJson(request) {
 async function profiles(db) {
   const stats = `COUNT(r.points) AS games, COALESCE(SUM(r.points), 0) AS points,
       COALESCE(SUM(r.fgm), 0) AS fgm, COALESCE(SUM(r.fga), 0) AS fga,
-      COALESCE(SUM(r.won = 1), 0) AS wins, COALESCE(SUM(r.won = 0), 0) AS losses`;
+      COALESCE(SUM(r.won = 1), 0) AS wins, COALESCE(SUM(r.won = 0), 0) AS losses,
+      COALESCE(SUM(r.won IS NULL AND r.team IS NOT NULL), 0) AS ties`; // no winner in a teamed game; older games kept no team
   const [{ results }, { results: split }] = await Promise.all([db.prepare(`
     SELECT p.name AS name, p.kind AS kind, ${stats}, AVG(r.points) AS avg
     FROM players p LEFT JOIN results r ON r.name = p.name
