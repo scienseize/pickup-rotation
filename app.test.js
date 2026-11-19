@@ -220,16 +220,16 @@ const lbHtml = els.leaderBoard.innerHTML;
 assert.match(lbHtml, /<th class="r" title="Field goals made \/ attempted tonight">FG%<\/th>/);
 // B made 1 of 2: under MIN_FG_SHOTS attempts, so the FG% is greyed out and says why on hover.
 assert.match(lbHtml, /Player B<\/b>[\s\S]*?<td class="r mono fg few" title="1 of 2 tonight, under 5 attempts"><small>1\/2<\/small> 50%<\/td>/);
-assert.match(lbHtml, /Player A<\/b>[\s\S]*?<td class="r mono fg"><\/td>\s*<td class="r mono">1-0<\/td>/); // W-L tonight
-assert.match(lbHtml, /Player F<\/b>[\s\S]*?<td class="r mono">0-1<\/td>/);
-assert.match(lbHtml, />W-L<\/th>/);
+assert.match(lbHtml, /Player A<\/b>[\s\S]*?<td class="r mono fg"><\/td>\s*<td class="r mono">1-0-0<\/td>/); // W-L-T tonight
+assert.match(lbHtml, /Player F<\/b>[\s\S]*?<td class="r mono">0-1-0<\/td>/);
+assert.match(lbHtml, />W-L-T<\/th>/);
 assert.doesNotMatch(lbHtml, />PPG<\/th>|>Win%<\/th>/); // all-time numbers have their own view now
 // The toggle is Tonight / All-time (no Per game).
 assert.match(els.leaderMode.innerHTML, /data-arg="tonight" aria-pressed="true">Tonight<[\s\S]*data-arg="alltime" aria-pressed="false">All-time</);
 assert.doesNotMatch(els.leaderMode.innerHTML, /perGame/);
 
 // All-time: everyone in the database with a game, ranked by points per game with at least
-// MIN_ALLTIME_GAMES games; fewer are listed after, unranked. Columns: PPG, Points, FG%, W-L, Win%.
+// MIN_ALLTIME_GAMES games; fewer are listed after, unranked. Columns: PPG, Points, FG%, W-L-T, Win%.
 run(`actions.leaderMode('', 'alltime')`);
 assert.match(els.leaderBoard.innerHTML, /need the database/); // nothing loaded yet in this test
 run(`profiles = new Map([
@@ -241,9 +241,9 @@ run(`profiles = new Map([
 const allHtml = els.leaderBoard.innerHTML;
 const allRows = [...allHtml.matchAll(/<td class="n">(\d*)<\/td><td class="who"><div><b title="([^"]+)"/g)].map(m => `${m[1] || '-'}${m[2]}`);
 assert.deepEqual(allRows, ['1Ben', '2Ana', '-Cy']); // Cy has 1 game: listed, not ranked; Dee never played
-assert.match(allHtml, /Ana<\/b>[\s\S]*?<\/button><\/div><\/td><td class="r mono gm">4<\/td><td class="r pts">10\.0<\/td><td class="r mono sub">40<\/td><td class="r mono fg" title="15 of 30 every week"><small>15\/30<\/small> 50%<\/td><td class="r mono sub">3-1<\/td><td class="r mono">75%<\/td>/);
+assert.match(allHtml, /Ana<\/b>[\s\S]*?<\/button><\/div><\/td><td class="r mono gm">4<\/td><td class="r pts">10\.0<\/td><td class="r mono sub">40<\/td><td class="r mono fg" title="15 of 30 every week"><small>15\/30<\/small> 50%<\/td><td class="r mono sub">3-1-0<\/td><td class="r mono">75%<\/td>/);
 assert.match(allHtml, /Ben<\/b>[\s\S]*?<td class="r mono fg few"/); // 2 of 4: too few attempts
-for (const h of ['PPG', 'Points', 'FG%', 'W-L', 'Win%']) assert.match(allHtml, new RegExp(`>${h}</th>`));
+for (const h of ['PPG', 'Points', 'FG%', 'W-L-T', 'Win%']) assert.match(allHtml, new RegExp(`>${h}</th>`));
 // The type filter counts each game under the type it was played under (byKind): Ana played 3 games
 // as SHS and 1 as UG, so the SHS board shows her 3 SHS games and the UG board the 1.
 run(`profiles.get('ana').byKind = [{ kind: 'SHS', games: 3, points: 24, fgm: 9, fga: 20, wins: 2, losses: 1 }, { kind: 'UG', games: 1, points: 16, fgm: 6, fga: 10, wins: 1, losses: 0 }];
@@ -701,12 +701,12 @@ assert.notEqual(run(`state.startedAt`), 200);
   assert.match(html, /^<details class="dd"><summary>Players · 5<\/summary><div class="hplayers"><div class="hctl">[\s\S]*?<\/div><\/div><div class="lb" style="--k:1">/);
   assert.deepEqual([...html.matchAll(/<b title="([^"]+)">/g)].map(m => m[1]), ['Ana', 'Cy', 'Old Timer', 'Ben &#60;b&#62;', 'Dee']); // names go through esc
   assert.doesNotMatch(html, /Ben <b>/);
-  assert.match(html, /<th>Player<\/th><th class="r gm">Games<\/th><th class="r">Points<\/th><th class="r">FG<\/th><th class="r">W-L<\/th>/);
-  assert.match(html, new RegExp(`<b title="Ana">Ana</b>${tag}</div></td><td class="r mono gm">2</td><td class="r pts">11</td><td class="r mono fg"><small>5/13</small> 38%</td><td class="r mono">1-0</td></tr>`));
+  assert.match(html, /<th>Player<\/th><th class="r gm">Games<\/th><th class="r">Points<\/th><th class="r" title="Points per game">PPG<\/th><th class="r">FG<\/th><th class="r" title="Wins, losses and ties">W-L-T<\/th>/);
+  assert.match(html, new RegExp(`<b title="Ana">Ana</b>${tag}</div></td><td class="r mono gm">2</td><td class="r pts">11</td><td class="r mono">5.5</td><td class="r mono fg"><small>5/13</small> 38%</td><td class="r mono">1-0-0</td></tr>`));
   assert.match(html, /<b title="Cy">Cy<\/b><\/div><\/td>/); // no type on file: no tag
-  assert.match(html, /<b title="Old Timer">Old Timer<\/b><\/div><\/td><td class="r mono gm">1<\/td><td class="r pts">4<\/td><td class="r mono">-<\/td><td class="r mono">-<\/td><\/tr>/); // no shots, no result
-  assert.match(html, /<b title="Dee">Dee<\/b><\/div><\/td><td class="r mono gm">0<\/td><td class="r mono">-<\/td><td class="r mono">-<\/td><td class="r mono">-<\/td><\/tr>/);
-  assert.match(html, /<b title="Ben &#60;b&#62;">[^]*?<td class="r mono">0-1<\/td>/);
+  assert.match(html, /<b title="Old Timer">Old Timer<\/b><\/div><\/td><td class="r mono gm">1<\/td><td class="r pts">4<\/td><td class="r mono">4.0<\/td><td class="r mono">-<\/td><td class="r mono">-<\/td><\/tr>/); // no shots, no result
+  assert.match(html, /<b title="Dee">Dee<\/b><\/div><\/td><td class="r mono gm">0<\/td>(<td class="r mono">-<\/td>){4}<\/tr>/); // never played: dashes, PPG too
+  assert.match(html, /<b title="Ben &#60;b&#62;">[^]*?<td class="r mono">0-1-0<\/td>/);
   // Each game is its own <details>, headed by the result; the box score is inside.
   assert.equal((html.match(/<details class="dd">/g) || []).length, 3);
   assert.match(html, /<summary>Game 1 · Home 11, Away 2<\/summary><div class="sides"><div class="tw win home"><table class="box"><thead><tr><th>Home<\/th>[\s\S]*?<td>Ana<span class="kt k-ug"[\s\S]*?<td><b>Total<\/b><\/td><td class="r mono"><b>11<\/b><\/td>[\s\S]*?<th>Away<\/th>[\s\S]*?<td><b>Total<\/b><\/td><td class="r mono"><b>2<\/b>/);
@@ -744,7 +744,7 @@ assert.notEqual(run(`state.startedAt`), 200);
   assert.deepEqual(split.cols.map(c => c.length), [12, 12, 10]);
   els.historyList.clientWidth = 1000;
   assert.deepEqual(many(34).cols.map(c => c.length), [17, 17]);
-  // A tied game (teams, no winner) shows in the record as a tie: 1-0 then a 46-46 game reads 1-0-1.
+  // A tied game (teams, no winner) shows in the record as a tie: a win then a 46-46 game reads 1-0-1.
   const tie = run(`sessionHtml(${JSON.stringify({ participants: [], games: [
     { game: 1, rows: [{ name: 'Ana', points: 4, fgm: 2, fga: 3, won: 1, team: 0 }, { name: 'Ben', points: 2, fgm: 1, fga: 1, won: 0, team: 1 }] },
     { game: 2, rows: [{ name: 'Ana', points: 2, fgm: 1, fga: 1, won: null, team: 0 }, { name: 'Ben', points: 2, fgm: 1, fga: 1, won: null, team: 1 }] }] })})`);

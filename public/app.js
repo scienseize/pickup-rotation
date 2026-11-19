@@ -165,8 +165,8 @@ function themeLabel() {
 function closeKindPick() { kindPick = null; renderTonight(); renderLeaders(); }
 const playerNamed = name => state.players.find(p => p.name.toLowerCase() === name.toLowerCase());
 const pct = (made, tried) => `${Math.round((made / tried) * 100)}%`;
-// A record: "3-1", or "2-1-1" once there is a tie (a level score at the buzzer: neither a win nor a loss).
-const record = (w, l, t) => (w + l + t ? `${w}-${l}${t ? `-${t}` : ''}` : '');
+// A record: wins, losses and ties, "2-1-0" (a tie is a level score at the buzzer: neither a win nor a loss).
+const record = (w, l, t) => (w + l + t ? `${w}-${l}-${t}` : '');
 const avgText = name => {
   if (!profiles.size) return '';
   const p = profileOf(name);
@@ -1053,9 +1053,9 @@ function renderLeaders() {
   const th = (label, title, cls = 'r') => `<th class="${cls}" title="${title}">${label}</th>`;
   const head = `<tr><th>#</th><th>Player</th>${th('Games', `Games ${when}`, 'r gm')}${all
     ? th('PPG', 'Points per game, every week') + th('Points', 'Total points, every week', 'r sub') + th('FG%', 'Field goals made / attempted, every week')
-      + th('W-L', 'Wins, losses and ties, every week', 'r sub') + th('Win%', 'Share of decided games won, every week')
+      + th('W-L-T', 'Wins, losses and ties, every week', 'r sub') + th('Win%', 'Share of decided games won, every week')
     : th('Points', 'Points tonight') + th('Per game', 'Points per game tonight', 'r sub') + th('FG%', 'Field goals made / attempted tonight')
-      + th('W-L', 'Wins, losses and ties tonight')}</tr>`;
+      + th('W-L-T', 'Wins, losses and ties tonight')}</tr>`;
   const table = part => `<div class="tw"><table><thead>${head}</thead><tbody>${part.map(row).join('')}</tbody></table></div>`;
   const k = leaderTables(played.length), per = Math.ceil(played.length / k), parts = [];
   for (let i = 0; i < played.length; i += per) parts.push(played.slice(i, i + per));
@@ -1131,14 +1131,14 @@ function playersHtml(d) {
   }
   const dash = '<td class="r mono">-</td>';
   const row = ([name, s]) => `<tr><td class="who"><div><b title="${esc(name)}">${esc(name)}</b>${rowTag({ name, kind: s.kind })}</div></td><td class="r mono gm">${esc(s.games)}</td>${
-    s.games ? `<td class="r pts">${esc(s.points)}</td>` : dash}${
+    s.games ? `<td class="r pts">${esc(s.points)}</td><td class="r mono">${esc((s.points / s.games).toFixed(1))}</td>` : dash + dash}${
     s.fga ? `<td class="r mono fg${s.fga < MIN_FG_SHOTS ? ' few' : ''}"><small>${esc(s.fgm)}/${esc(s.fga)}</small> ${esc(pct(s.fgm, s.fga))}</td>` : dash}${
     s.won + s.lost + s.tied ? `<td class="r mono">${esc(record(s.won, s.lost, s.tied))}</td>` : dash}</tr>`;
   const ranked = [...who].filter(([name, s]) => inKind(histKind, s.kind ?? kindOf(name))).sort(([an, a], [bn, b]) => b.points - a.points || b.games - a.games || byName(an, bn));
   // Columns of PER_COLUMN rows or more, side by side as on the leaderboard (.lb.split; stacked on a narrow page):
   // as many as fit at about MIN_COLUMN px each, so whole names show, and the rows spread evenly across them.
   const k = Math.max(1, Math.min(Math.ceil(ranked.length / PER_COLUMN), Math.floor($('historyList').clientWidth / MIN_COLUMN))), per = Math.ceil(ranked.length / k);
-  const column = i => `<div class="tw"><table><thead><tr><th>Player</th><th class="r gm">Games</th><th class="r">Points</th><th class="r">FG</th><th class="r">W-L</th></tr></thead><tbody>${
+  const column = i => `<div class="tw"><table><thead><tr><th>Player</th><th class="r gm">Games</th><th class="r">Points</th><th class="r" title="Points per game">PPG</th><th class="r">FG</th><th class="r" title="Wins, losses and ties">W-L-T</th></tr></thead><tbody>${
     ranked.slice(i * per, (i + 1) * per).map(row).join('')}</tbody></table></div>`;
   const filter = `<div class="hctl"><div class="seg" role="group" aria-label="Player type">${kindChoices('histKind', histKind)}</div></div>`;
   return filter + (!ranked.length ? histNote(`No ${LEADER_KINDS.find(([k]) => k === histKind)?.[1]} players this session.`)

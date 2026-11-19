@@ -243,8 +243,8 @@ td.empty{color:var(--mu)}
   .lb.split3 tr.top td{padding-block:4px}
   .lb.split3 > .rest{margin-top:4px}
 }
-@media (max-width:600px){.lb :is(.gm,.sub),.lb td.fg small{display:none}}
 .lb td.fg small{display:inline;font-size:.85em;color:var(--mu);margin-right:2px}
+@media (max-width:600px){.lb :is(.gm,.sub),.lb td.fg small{display:none}} /* after the rule above, or it never hides */
 .lb > :is(.rest,.empty){grid-column:1 / -1}
 .lb > .rest{color:var(--mu);font-size:15px;margin-top:12px}
 .lb > .empty{color:var(--mu)}
@@ -352,6 +352,8 @@ details.dd summary .mono{margin-left:auto;margin-right:8px}
 .hist table{font-size:15px}
 .hist .lb{max-width:none}
 .hist .hctl{margin:10px 0 8px}
+/* History shows whole names beside its five numbers: a long one wraps instead of being cut. */
+.hist .lb td.who b{white-space:normal;overflow-wrap:anywhere}
 .hist table.box{table-layout:fixed}
 .hist .box th.r,.hist .box td.r{width:84px}
 .hist th,.hist td{padding-block:8px}
